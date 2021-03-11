@@ -1,48 +1,136 @@
-use std::char;
-
-use parcel;
-use parcel::prelude::v1::*;
-
 mod tokens;
 
-pub struct ScanErr;
-
-pub fn scan<'a>(src: &'a [char]) -> Result<Vec<tokens::Token>, ScanErr> {
-    parcel::left(parcel::join(
-        parcel::one_or_more(token()),
-        parcel::zero_or_more(parcel::parsers::character::whitespace())
-            .and_then(|_| parcel::parsers::character::eof()),
-    ))
-    .parse(src)
-    .map_err(|_| ScanErr)
-    .and_then(|ms| match ms {
-        MatchStatus::Match((_, toks)) => Ok(toks
-            .into_iter()
-            .chain(vec![tokens::Token::EOF].into_iter())
-            .collect()),
-        MatchStatus::NoMatch(_) => Err(ScanErr),
-    })
+pub struct ScanErr<T> {
+    inner: T,
 }
 
-fn token<'a>() -> impl Parser<'a, &'a [char], tokens::Token> {
-    parcel::optional(parcel::parsers::character::whitespace())
-        .and_then(|_| integer_literal().or(|| special_characters()))
+impl<T> ScanErr<T> {
+    fn new(inner: T) -> Self {
+        Self { inner }
+    }
 }
 
-fn integer_literal<'a>() -> impl Parser<'a, &'a [char], tokens::Token> {
-    parcel::parsers::character::digit(10).map(|digit| {
-        // this should never be in a case that it shouldn't match a valid
-        //digit.
-        let d = char::to_digit(digit, 10).unwrap() as u8;
-        tokens::Token::INTLITERAL(d)
-    })
+impl<T> std::fmt::Debug for ScanErr<T>
+where
+    T: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unable to scan: {:?}", self.inner)
+    }
 }
 
-fn special_characters<'a>() -> impl Parser<'a, &'a [char], tokens::Token> {
-    parcel::one_of(vec![
-        parcel::parsers::character::expect_character('+').map(|_| tokens::Token::PLUS),
-        parcel::parsers::character::expect_character('-').map(|_| tokens::Token::MINUS),
-        parcel::parsers::character::expect_character('*').map(|_| tokens::Token::STAR),
-        parcel::parsers::character::expect_character('/').map(|_| tokens::Token::SLASH),
-    ])
+/// Positional represents a type with line and column metadata associated with it.
+#[derive(Clone, Copy, PartialEq)]
+pub struct Positional<T> {
+    line: usize,
+    col: usize,
+    inner: T,
+}
+
+impl<T> Positional<T> {
+    pub fn new(line: usize, col: usize, inner: T) -> Self {
+        Self { line, col, inner }
+    }
+}
+
+impl std::cmp::PartialEq<char> for Positional<char> {
+    fn eq(&self, other: &char) -> bool {
+        *other == self.inner
+    }
+}
+
+impl<T> std::fmt::Debug for Positional<T>
+where
+    T: std::fmt::Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "line: {}, column: {}, value: {:?}",
+            self.line, self.col, self.inner
+        )
+    }
+}
+
+struct PositionalCharStreamIterator {
+    inner: Vec<char>,
+    index: usize,
+    end: usize,
+    line: usize,
+    col: usize,
+}
+
+impl Iterator for PositionalCharStreamIterator {
+    type Item = Positional<char>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.end {
+            let c = self.inner[self.index].clone();
+
+            // increment indexes
+            self.index += 1;
+            if c == '\n' {
+                self.line += 1;
+                self.col = 0;
+            } else {
+                self.col += 1;
+            }
+
+            Some(Positional::new(self.line, self.col, c))
+        } else {
+            None
+        }
+    }
+}
+
+impl PositionalCharStreamIterator {
+    fn new(src: Vec<char>) -> Self {
+        Self {
+            index: 0,
+            end: src.len(),
+            line: 0,
+            col: 0,
+
+            inner: src,
+        }
+    }
+}
+
+pub fn scan<'a>(
+    src: &'a [char],
+) -> Result<Vec<Positional<tokens::Token>>, ScanErr<Positional<char>>> {
+    PositionalCharStreamIterator::new(src.to_vec())
+        .into_iter()
+        .map(|pc| match pc.inner {
+            '+' => Some(Ok(Positional::new(pc.line, pc.col, tokens::Token::PLUS))),
+            '-' => Some(Ok(Positional::new(pc.line, pc.col, tokens::Token::MINUS))),
+            '*' => Some(Ok(Positional::new(pc.line, pc.col, tokens::Token::STAR))),
+            '/' => Some(Ok(Positional::new(pc.line, pc.col, tokens::Token::SLASH))),
+            c if c.is_digit(10) => {
+                let d = char::to_digit(c, 10).unwrap() as u8;
+                Some(Ok(Positional::new(
+                    pc.line,
+                    pc.col,
+                    tokens::Token::INTLITERAL(d),
+                )))
+            }
+            c if c.is_whitespace() => None,
+            _ => Some(Err(ScanErr::new(pc))),
+        })
+        .filter_map(|opt| opt)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+
+    #[test]
+    fn should_parse_sample_input() {
+        let input = "2 + 3 * 5 - 8 / 3".chars().collect::<Vec<_>>();
+        let output = super::scan(&input);
+        assert!(super::scan(&input).is_ok());
+
+        // should generate 9 tokens from the input
+        assert_eq!(9, output.unwrap().len())
+    }
 }
