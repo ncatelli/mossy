@@ -6,6 +6,11 @@ pub enum Token {
     STAR,
     SLASH,
 
+    // Whitespace
+    SPACE,
+    TAB,
+    NEWLINE,
+
     // literals
     INTLITERAL(u8),
 }

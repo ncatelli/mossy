@@ -96,6 +96,8 @@ impl PositionalCharStreamIterator {
     }
 }
 
+/// scan takes an input character array and converts it into a stream of Tokens
+/// with positional metadata associated with each token.
 pub fn scan<'a>(
     src: &'a [char],
 ) -> Result<Vec<Positional<tokens::Token>>, ScanErr<Positional<char>>> {
@@ -106,6 +108,9 @@ pub fn scan<'a>(
             '-' => Some(Ok(Positional::new(pc.line, pc.col, tokens::Token::MINUS))),
             '*' => Some(Ok(Positional::new(pc.line, pc.col, tokens::Token::STAR))),
             '/' => Some(Ok(Positional::new(pc.line, pc.col, tokens::Token::SLASH))),
+            ' ' => Some(Ok(Positional::new(pc.line, pc.col, tokens::Token::SPACE))),
+            '\t' => Some(Ok(Positional::new(pc.line, pc.col, tokens::Token::TAB))),
+            '\n' => Some(Ok(Positional::new(pc.line, pc.col, tokens::Token::NEWLINE))),
             c if c.is_digit(10) => {
                 let d = char::to_digit(c, 10).unwrap() as u8;
                 Some(Ok(Positional::new(
@@ -114,7 +119,6 @@ pub fn scan<'a>(
                     tokens::Token::INTLITERAL(d),
                 )))
             }
-            c if c.is_whitespace() => None,
             _ => Some(Err(ScanErr::new(pc))),
         })
         .filter_map(|opt| opt)
@@ -130,7 +134,7 @@ mod tests {
         let output = super::scan(&input);
         assert!(super::scan(&input).is_ok());
 
-        // should generate 9 tokens from the input
-        assert_eq!(9, output.unwrap().len())
+        // should generate 17 tokens from the input
+        assert_eq!(17, output.unwrap().len())
     }
 }
