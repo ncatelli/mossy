@@ -8,4 +8,7 @@ pub enum Token {
 
     // literals
     INTLITERAL(u8),
+
+    // EOF
+    EOF,
 }

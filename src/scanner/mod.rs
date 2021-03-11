@@ -16,7 +16,10 @@ pub fn scan<'a>(src: &'a [char]) -> Result<Vec<tokens::Token>, ScanErr> {
     .parse(src)
     .map_err(|_| ScanErr)
     .and_then(|ms| match ms {
-        MatchStatus::Match((_, toks)) => Ok(toks),
+        MatchStatus::Match((_, toks)) => Ok(toks
+            .into_iter()
+            .chain(vec![tokens::Token::EOF].into_iter())
+            .collect()),
         MatchStatus::NoMatch(_) => Err(ScanErr),
     })
 }
