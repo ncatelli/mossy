@@ -19,10 +19,14 @@ pub fn scan<'a>(src: &'a [char]) -> Result<Vec<tokens::Token>, ScanErr> {
 }
 
 fn token<'a>() -> impl Parser<'a, &'a [char], tokens::Token> {
+    parcel::one_of(vec![special_characters()])
+}
+
+fn special_characters<'a>() -> impl Parser<'a, &'a [char], tokens::Token> {
     parcel::one_of(vec![
         parcel::parsers::character::expect_character('+').map(|_| tokens::Token::PLUS),
-        parcel::parsers::character::expect_character('+').map(|_| tokens::Token::MINUS),
-        parcel::parsers::character::expect_character('+').map(|_| tokens::Token::STAR),
-        parcel::parsers::character::expect_character('+').map(|_| tokens::Token::SLASH),
+        parcel::parsers::character::expect_character('-').map(|_| tokens::Token::MINUS),
+        parcel::parsers::character::expect_character('*').map(|_| tokens::Token::STAR),
+        parcel::parsers::character::expect_character('/').map(|_| tokens::Token::SLASH),
     ])
 }
