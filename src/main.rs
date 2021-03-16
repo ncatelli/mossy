@@ -36,7 +36,11 @@ fn run_file(filename: &str) -> Result<(), String> {
 
 fn compile(source: String) -> RuntimeResult<usize> {
     let res = parser::grammar::parser::expression(&source);
-    res.map(|expr| println!("{:#?}", expr))
-        .map_err(|e| println!("{}", e));
+    res.map(|expr| {
+        let lit = ast::interpret::interpret(expr);
+        println!("{}", lit)
+    })
+    .map_err(|e| println!("{}", e))
+    .unwrap();
     Ok(0)
 }

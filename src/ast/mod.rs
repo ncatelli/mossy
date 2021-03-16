@@ -1,4 +1,4 @@
-mod interpret;
+pub mod interpret;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum Expr {
