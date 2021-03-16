@@ -8,3 +8,4 @@ edition = "2018"
 lto = true
 
 [dependencies]
+peg = "0.6"

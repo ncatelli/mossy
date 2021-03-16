@@ -1,9 +1,10 @@
-mod scanner;
-
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 use std::process;
+
+mod ast;
+mod parser;
 
 type RuntimeResult<T> = Result<T, String>;
 
@@ -34,12 +35,8 @@ fn run_file(filename: &str) -> Result<(), String> {
 }
 
 fn compile(source: String) -> RuntimeResult<usize> {
-    let char_source = source.chars().collect::<Vec<_>>();
-    let token_iter = scanner::scan(&char_source)
-        .map_err(|_| "unable to parse tokens".to_string())?
-        .into_iter();
-    let token_count = token_iter.len();
-
-    token_iter.for_each(|t| println!("{:#?}", t));
-    Ok(token_count)
+    let res = parser::grammar::parser::expression(&source);
+    res.map(|expr| println!("{:#?}", expr))
+        .map_err(|e| println!("{}", e));
+    Ok(0)
 }
