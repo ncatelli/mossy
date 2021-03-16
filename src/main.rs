@@ -4,6 +4,7 @@ use std::io::prelude::*;
 use std::process;
 
 mod ast;
+mod lexer;
 mod parser;
 
 type RuntimeResult<T> = Result<T, String>;
