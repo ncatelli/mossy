@@ -1,0 +1,33 @@
+program = _{ SOI ~ "\n"* ~ (stmt ~ "\n"+) * ~ stmt? ~ EOI }
+
+stmt = _{ expr }
+
+expr = {
+    unaryExpr
+    | binaryExpr
+    | string
+    | terms
+}
+
+unaryExpr = { verb ~ expr }
+
+binaryExpr = { (unaryExpr | terms) ~ verb ~ expr }
+
+terms = { term+ }
+
+term = _{ decimal | integer | "(" ~ expr ~ ")" }
+
+verb = {
+  "=" | "+"  | "*" | "-" | "/"
+  | "<" | ">" | "<=" | ">="
+}
+
+integer = @{ "-"? ~ ASCII_DIGIT+ }
+
+decimal = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* }
+
+string = @{ "'" ~ ( "''" | (!"'" ~ ANY) )* ~ "'" }
+
+WHITESPACE = _{ " " | "\t" }
+
+COMMENT = _{ "NB." ~ (!"\n" ~ ANY)* }

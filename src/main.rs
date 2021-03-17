@@ -3,6 +3,9 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::process;
 
+#[macro_use]
+extern crate pest_derive;
+
 mod ast;
 mod parser;
 
@@ -35,12 +38,7 @@ fn run_file(filename: &str) -> Result<(), String> {
 }
 
 fn compile(source: String) -> RuntimeResult<usize> {
-    let res = parser::grammar::parser::expression(&source);
-    res.map(|expr| {
-        let lit = ast::interpret::interpret(expr);
-        println!("{}", lit)
-    })
-    .map_err(|e| println!("{}", e))
-    .unwrap();
+    let astnode = parser::parse(&source).expect("unsuccessful parse");
+    println!("{:?}", &astnode);
     Ok(0)
 }
