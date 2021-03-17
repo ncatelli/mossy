@@ -3,28 +3,22 @@ program = _{ SOI ~ "\n"* ~ (stmt ~ "\n"+) * ~ stmt? ~ EOI }
 stmt = _{ expr }
 
 expr = {
-    unaryExpr
-    | binaryExpr
+    binaryExpr
     | string
     | terms
 }
 
-unaryExpr = { verb ~ expr }
-
-binaryExpr = { (unaryExpr | terms) ~ verb ~ expr }
+binaryExpr = { terms ~ verb ~ expr }
 
 terms = { term+ }
 
-term = _{ decimal | integer | "(" ~ expr ~ ")" }
+term = _{ integer | "(" ~ expr ~ ")" }
 
 verb = {
-  "=" | "+"  | "*" | "-" | "/"
-  | "<" | ">" | "<=" | ">="
+  "+"  | "*" | "-" | "/"
 }
 
 integer = @{ "-"? ~ ASCII_DIGIT+ }
-
-decimal = @{ "-"? ~ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT* }
 
 string = @{ "'" ~ ( "''" | (!"'" ~ ANY) )* ~ "'" }
 
