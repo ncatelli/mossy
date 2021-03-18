@@ -1,0 +1,21 @@
+program = _{ SOI ~ "\n"* ~ (expression ~ "\n"+) * ~ expression? ~ EOI }
+
+expression = {
+    binaryExpr 
+    | integerConstant 
+}
+
+binaryExpr = {
+    integerConstant ~ binaryOp ~ expression
+}
+
+binaryOp = { 
+    "+"
+    | "-"
+    | "*"
+    | "/"
+}
+
+integerConstant = @{ ASCII_DIGIT+ }
+
+WHITESPACE = _{ " " | "\t" }

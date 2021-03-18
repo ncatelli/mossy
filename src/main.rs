@@ -1,9 +1,13 @@
-mod scanner;
-
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 use std::process;
+
+#[macro_use]
+extern crate pest_derive;
+
+mod ast;
+mod parser;
 
 type RuntimeResult<T> = Result<T, String>;
 
@@ -34,12 +38,11 @@ fn run_file(filename: &str) -> Result<(), String> {
 }
 
 fn compile(source: String) -> RuntimeResult<usize> {
-    let char_source = source.chars().collect::<Vec<_>>();
-    let token_iter = scanner::scan(&char_source)
-        .map_err(|_| "unable to parse tokens".to_string())?
-        .into_iter();
-    let token_count = token_iter.len();
-
-    token_iter.for_each(|t| println!("{:#?}", t));
-    Ok(token_count)
+    let astnode = parser::parse(&source)
+        .expect("unsuccessful parse")
+        .first()
+        .unwrap()
+        .to_owned();
+    println!("{:?}", ast::interpret::interpret(*astnode));
+    Ok(0)
 }
