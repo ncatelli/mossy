@@ -8,6 +8,5 @@ edition = "2018"
 lto = true
 
 [dependencies]
-peg = "0.6"
 pest = "2.1"
 pest_derive = "2.1"
