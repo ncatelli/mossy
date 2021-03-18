@@ -80,6 +80,8 @@ mod tests {
     #[test]
     fn should_parse_multi_expression_binary_expression() {
         let input = "5 + 5 - 5 * 5 / 5";
-        assert!(super::parse(input).is_ok());
+        let ast = super::parse(input);
+        println!("{:#?}", &ast);
+        assert!(ast.is_ok());
     }
 }

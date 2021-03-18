@@ -38,7 +38,11 @@ fn run_file(filename: &str) -> Result<(), String> {
 }
 
 fn compile(source: String) -> RuntimeResult<usize> {
-    let astnode = parser::parse(&source).expect("unsuccessful parse");
-    println!("{:?}", &astnode);
+    let astnode = parser::parse(&source)
+        .expect("unsuccessful parse")
+        .first()
+        .unwrap()
+        .to_owned();
+    println!("{:?}", ast::interpret::interpret(*astnode));
     Ok(0)
 }
