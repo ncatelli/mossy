@@ -74,3 +74,12 @@ fn build_ast_from_integer_constant(pair: pest::iterators::Pair<Rule>) -> AstNode
         unknown_term => panic!("Unexpected term: {:?}", unknown_term),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn should_parse_multi_expression_binary_expression() {
+        let input = "5 + 5 - 5 * 5 / 5";
+        assert!(super::parse(input).is_ok());
+    }
+}
