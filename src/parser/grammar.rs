@@ -1,8 +1,7 @@
-use self::AstNode::*;
 use pest::error::Error;
 use pest::Parser;
 
-use crate::ast::{AstNode, BinaryExpr, Literal};
+use crate::ast::{AstNode, BinaryExpr, Number};
 
 pub enum ParseErr {
     Unspecified,
@@ -24,7 +23,7 @@ pub fn parse(source: &str) -> Result<Vec<Box<AstNode>>, Error<Rule>> {
     let ast: Vec<Box<AstNode>> = CParser::parse(Rule::program, source)?
         .into_iter()
         .map(|pair| match pair.as_rule() {
-            Rule::expr => Some(Box::new(build_ast_from_expr(pair))),
+            Rule::expression => Some(Box::new(build_ast_from_expr(pair))),
             _ => None,
         })
         .filter_map(|elem| elem)
@@ -35,31 +34,23 @@ pub fn parse(source: &str) -> Result<Vec<Box<AstNode>>, Error<Rule>> {
 
 fn build_ast_from_expr(pair: pest::iterators::Pair<Rule>) -> AstNode {
     match pair.as_rule() {
-        Rule::expr => build_ast_from_expr(pair.into_inner().next().unwrap()),
+        Rule::expression => build_ast_from_expr(pair.into_inner().next().unwrap()),
         Rule::binaryExpr => {
             let mut pair = pair.into_inner();
             let lhspair = pair.next().unwrap();
             let lhs = build_ast_from_expr(lhspair);
-            let verb = pair.next().unwrap();
+            let op = pair.next().unwrap();
             let rhspair = pair.next().unwrap();
             let rhs = build_ast_from_expr(rhspair);
-            parse_binary_op(verb, lhs, rhs)
+            parse_binary_op(op, lhs, rhs)
         }
-        Rule::terms => {
-            let terms: Vec<AstNode> = pair.into_inner().map(build_ast_from_term).collect();
-            // If there's just a single term, return it without
-            // wrapping it in a Terms node.
-            match terms.len() {
-                1 => terms.get(0).unwrap().clone(),
-                _ => Terms(terms),
-            }
-        }
+        Rule::integerConstant => build_ast_from_integer_constant(pair),
         unknown_expr => panic!("Unexpected expression: {:?}", unknown_expr),
     }
 }
 
 fn parse_binary_op(pair: pest::iterators::Pair<Rule>, lhs: AstNode, rhs: AstNode) -> AstNode {
-    AstNode::BinaryExpr({
+    AstNode::Expression({
         let lhs = Box::new(lhs);
         let rhs = Box::new(rhs);
         match pair.as_str() {
@@ -72,14 +63,14 @@ fn parse_binary_op(pair: pest::iterators::Pair<Rule>, lhs: AstNode, rhs: AstNode
     })
 }
 
-fn build_ast_from_term(pair: pest::iterators::Pair<Rule>) -> AstNode {
+fn build_ast_from_integer_constant(pair: pest::iterators::Pair<Rule>) -> AstNode {
     match pair.as_rule() {
-        Rule::integer => {
+        Rule::integerConstant => {
             let istr = pair.as_str();
             let ui: u64 = istr.parse().unwrap();
-            AstNode::Literal(Literal::UnsignedInteger(ui))
+            AstNode::Number(Number(ui))
         }
-        Rule::expr => build_ast_from_expr(pair),
+        Rule::expression => build_ast_from_expr(pair),
         unknown_term => panic!("Unexpected term: {:?}", unknown_term),
     }
 }

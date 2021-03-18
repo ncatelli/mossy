@@ -10,12 +10,9 @@ pub enum BinaryExpr {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum AstNode {
-    Literal(Literal),
-    BinaryExpr(BinaryExpr),
-    Terms(Vec<AstNode>),
+    Expression(BinaryExpr),
+    Number(Number),
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum Literal {
-    UnsignedInteger(u64),
-}
+pub struct Number(pub u64);

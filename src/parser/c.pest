@@ -1,27 +1,21 @@
-program = _{ SOI ~ "\n"* ~ (stmt ~ "\n"+) * ~ stmt? ~ EOI }
+program = _{ SOI ~ "\n"* ~ (expression ~ "\n"+) * ~ expression? ~ EOI }
 
-stmt = _{ expr }
-
-expr = {
-    binaryExpr
-    | string
-    | terms
+expression = {
+    binaryExpr 
+    | integerConstant 
 }
 
-binaryExpr = { terms ~ verb ~ expr }
-
-terms = { term+ }
-
-term = _{ integer | "(" ~ expr ~ ")" }
-
-verb = {
-  "+"  | "*" | "-" | "/"
+binaryExpr = {
+    integerConstant ~ binaryOp ~ expression
 }
 
-integer = @{ "-"? ~ ASCII_DIGIT+ }
+binaryOp = { 
+    "+"
+    | "-"
+    | "*"
+    | "/"
+}
 
-string = @{ "'" ~ ( "''" | (!"'" ~ ANY) )* ~ "'" }
+integerConstant = @{ ASCII_DIGIT+ }
 
 WHITESPACE = _{ " " | "\t" }
-
-COMMENT = _{ "NB." ~ (!"\n" ~ ANY)* }
