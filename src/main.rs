@@ -43,6 +43,6 @@ fn compile(source: String) -> RuntimeResult<usize> {
         .first()
         .unwrap()
         .to_owned();
-    println!("{:?}", ast::interpret::interpret(*astnode));
+    println!("{:?}", ast::interpret::interpret(astnode.unwrap()));
     Ok(0)
 }

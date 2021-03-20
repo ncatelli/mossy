@@ -1,7 +1,7 @@
 use pest::error::Error;
 use pest::Parser;
 
-use crate::ast::{AstNode, BinaryExpr, Number};
+use crate::ast::{AstNode, BinaryExpr, Number, SpannedAstNode};
 
 pub enum ParseErr {
     Unspecified,
@@ -19,11 +19,14 @@ impl std::fmt::Debug for ParseErr {
 #[grammar = "parser/c.pest"]
 pub struct CParser;
 
-pub fn parse(source: &str) -> Result<Vec<Box<AstNode>>, Error<Rule>> {
-    let ast: Vec<Box<AstNode>> = CParser::parse(Rule::program, source)?
+pub fn parse<'a>(source: &'a str) -> Result<Vec<Box<SpannedAstNode>>, Error<Rule>> {
+    let ast: Vec<Box<SpannedAstNode>> = CParser::parse(Rule::program, source)?
         .into_iter()
         .map(|pair| match pair.as_rule() {
-            Rule::expression => Some(Box::new(build_ast_from_expr(pair))),
+            Rule::expression => Some(Box::new(SpannedAstNode::new(
+                pair.as_span(),
+                build_ast_from_expr(pair),
+            ))),
             _ => None,
         })
         .filter_map(|elem| elem)
