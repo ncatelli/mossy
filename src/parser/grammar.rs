@@ -19,7 +19,7 @@ impl std::fmt::Debug for ParseErr {
 #[grammar = "parser/c.pest"]
 pub struct CParser;
 
-pub fn parse<'a>(source: &'a str) -> Result<Vec<Box<SpannedAstNode>>, Error<Rule>> {
+pub fn parse(source: &str) -> Result<Vec<Box<SpannedAstNode>>, Error<Rule>> {
     let ast: Vec<Box<SpannedAstNode>> = CParser::parse(Rule::program, source)?
         .into_iter()
         .map(|pair| match pair.as_rule() {
