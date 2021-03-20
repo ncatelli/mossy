@@ -1,7 +1,7 @@
 use pest::error::Error;
 use pest::Parser;
 
-use crate::ast::{AstNode, BinaryExpr, Number};
+use crate::ast::{AstNode, BinaryExpr, Number, SpannedAstNode};
 
 pub enum ParseErr {
     Unspecified,
@@ -19,8 +19,8 @@ impl std::fmt::Debug for ParseErr {
 #[grammar = "parser/c.pest"]
 pub struct CParser;
 
-pub fn parse(source: &str) -> Result<Vec<Box<AstNode>>, Error<Rule>> {
-    let ast: Vec<Box<AstNode>> = CParser::parse(Rule::program, source)?
+pub fn parse(source: &str) -> Result<Vec<Box<SpannedAstNode>>, Error<Rule>> {
+    let ast: Vec<Box<SpannedAstNode>> = CParser::parse(Rule::program, source)?
         .into_iter()
         .map(|pair| match pair.as_rule() {
             Rule::expression => Some(Box::new(build_ast_from_expr(pair))),
@@ -32,45 +32,43 @@ pub fn parse(source: &str) -> Result<Vec<Box<AstNode>>, Error<Rule>> {
     Ok(ast)
 }
 
-fn build_ast_from_expr(pair: pest::iterators::Pair<Rule>) -> AstNode {
+fn build_ast_from_expr(pair: pest::iterators::Pair<Rule>) -> SpannedAstNode {
+    let span = pair.as_span();
     match pair.as_rule() {
         Rule::expression => build_ast_from_expr(pair.into_inner().next().unwrap()),
-        Rule::binaryExpr => {
-            let mut pair = pair.into_inner();
-            let lhspair = pair.next().unwrap();
-            let lhs = build_ast_from_expr(lhspair);
-            let op = pair.next().unwrap();
-            let rhspair = pair.next().unwrap();
-            let rhs = build_ast_from_expr(rhspair);
-            parse_binary_op(op, lhs, rhs)
-        }
+        Rule::binaryExpr => SpannedAstNode::new(span, parse_binary_expr(pair.into_inner())),
         Rule::integerConstant => build_ast_from_integer_constant(pair),
         unknown_expr => panic!("Unexpected expression: {:?}", unknown_expr),
     }
 }
 
-fn parse_binary_op(pair: pest::iterators::Pair<Rule>, lhs: AstNode, rhs: AstNode) -> AstNode {
+fn parse_binary_expr(pairs: pest::iterators::Pairs<Rule>) -> AstNode {
+    let mut pairs = pairs;
+    let lhs = pairs.next().map(build_ast_from_expr).unwrap().unwrap();
+    let op = pairs.next().unwrap();
+    let rhs = pairs.next().map(build_ast_from_expr).unwrap().unwrap();
+
     AstNode::Expression({
         let lhs = Box::new(lhs);
         let rhs = Box::new(rhs);
-        match pair.as_str() {
+        match op.as_str() {
             "+" => BinaryExpr::Plus(lhs, rhs),
             "-" => BinaryExpr::Minus(lhs, rhs),
             "*" => BinaryExpr::Multiply(lhs, rhs),
             "/" => BinaryExpr::Divide(lhs, rhs),
-            _ => panic!("Unexpected binary op: {}", pair.as_str()),
+            _ => panic!("Unexpected binary op: {}", op.as_str()),
         }
     })
 }
 
-fn build_ast_from_integer_constant(pair: pest::iterators::Pair<Rule>) -> AstNode {
-    match pair.as_rule() {
-        Rule::integerConstant => {
+fn build_ast_from_integer_constant(pair: pest::iterators::Pair<Rule>) -> SpannedAstNode {
+    match (pair.as_span(), pair.as_rule()) {
+        (span, Rule::integerConstant) => {
             let istr = pair.as_str();
             let ui: u64 = istr.parse().unwrap();
-            AstNode::Number(Number(ui))
+            SpannedAstNode::new(span, AstNode::Number(Number(ui)))
         }
-        Rule::expression => build_ast_from_expr(pair),
+        (_, Rule::expression) => build_ast_from_expr(pair),
         unknown_term => panic!("Unexpected term: {:?}", unknown_term),
     }
 }

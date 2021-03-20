@@ -37,12 +37,12 @@ fn run_file(filename: &str) -> Result<(), String> {
     }
 }
 
-fn compile(source: String) -> RuntimeResult<usize> {
+fn compile(source: String) -> RuntimeResult<()> {
     let astnode = parser::parse(&source)
         .expect("unsuccessful parse")
         .first()
         .unwrap()
         .to_owned();
-    println!("{:?}", ast::interpret::interpret(*astnode));
-    Ok(0)
+    println!("{:?}", ast::interpret::interpret(astnode.unwrap()));
+    Ok(())
 }
