@@ -1,10 +1,8 @@
+use parcel::prelude::v1::*;
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 use std::process;
-
-#[macro_use]
-extern crate pest_derive;
 
 mod ast;
 mod parser;
@@ -38,11 +36,11 @@ fn run_file(filename: &str) -> Result<(), String> {
 }
 
 fn compile(source: String) -> RuntimeResult<()> {
-    let astnode = parser::parse(&source)
+    let input: Vec<char> = source.chars().into_iter().collect();
+    let astnode = parser::expression()
+        .parse(&input)
         .expect("unsuccessful parse")
-        .first()
-        .unwrap()
-        .to_owned();
-    println!("{:?}", ast::interpret::interpret(astnode.unwrap()));
+        .unwrap();
+    println!("{:?}", ast::interpret::interpret(astnode));
     Ok(())
 }

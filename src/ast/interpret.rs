@@ -1,28 +1,43 @@
 use crate::ast::*;
 
-pub fn interpret(node: AstNode) -> Number {
+pub fn interpret(node: ExprNode) -> Number {
     match node {
-        AstNode::Expression(be) => interpret_binary_expression(be),
-        AstNode::Number(num) => num,
+        ExprNode::Number(num) => num,
+        ExprNode::Addition(lhs, rhs) => {
+            interpret_binary_arithmetic_expression(BinaryOperator::Plus, *lhs, *rhs)
+        }
+        ExprNode::Subtraction(lhs, rhs) => {
+            interpret_binary_arithmetic_expression(BinaryOperator::Minus, *lhs, *rhs)
+        }
+        ExprNode::Multiplication(lhs, rhs) => {
+            interpret_binary_arithmetic_expression(BinaryOperator::Star, *lhs, *rhs)
+        }
+        ExprNode::Division(lhs, rhs) => {
+            interpret_binary_arithmetic_expression(BinaryOperator::Slash, *lhs, *rhs)
+        }
     }
 }
 
-pub fn interpret_binary_expression(be: BinaryExpr) -> Number {
-    let (tok, alhs, arhs) = match be {
-        BinaryExpr::Plus(lhs, rhs) => ('+', *lhs, *rhs),
-        BinaryExpr::Minus(lhs, rhs) => ('-', *lhs, *rhs),
-        BinaryExpr::Multiply(lhs, rhs) => ('*', *lhs, *rhs),
-        BinaryExpr::Divide(lhs, rhs) => ('/', *lhs, *rhs),
-    };
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BinaryOperator {
+    Plus,
+    Minus,
+    Star,
+    Slash,
+}
 
-    let lhs = interpret(alhs);
-    let rhs = interpret(arhs);
+fn interpret_binary_arithmetic_expression(
+    op: BinaryOperator,
+    lhs: ExprNode,
+    rhs: ExprNode,
+) -> Number {
+    let lhs = interpret(lhs);
+    let rhs = interpret(rhs);
 
-    match (tok, lhs, rhs) {
-        ('+', Number(l), Number(r)) => Number(l + r),
-        ('-', Number(l), Number(r)) => Number(l - r),
-        ('*', Number(l), Number(r)) => Number(l * r),
-        ('/', Number(l), Number(r)) => Number(l / r),
-        _ => panic!("this will never be hit"),
+    match (op, lhs, rhs) {
+        (BinaryOperator::Plus, Number(l), Number(r)) => Number(l + r),
+        (BinaryOperator::Minus, Number(l), Number(r)) => Number(l - r),
+        (BinaryOperator::Star, Number(l), Number(r)) => Number(l * r),
+        (BinaryOperator::Slash, Number(l), Number(r)) => Number(l / r),
     }
 }
