@@ -112,11 +112,5 @@ fn dec_u64<'a>() -> impl Parser<'a, &'a [char], u64> {
 }
 
 fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
-    let mut left_vec: Vec<A> = vec![];
-    let mut right_vec: Vec<B> = vec![];
-    pair.into_iter().for_each(|(left, right)| {
-        left_vec.push(left);
-        right_vec.push(right);
-    });
-    (left_vec, right_vec)
+    pair.into_iter().unzip()
 }
