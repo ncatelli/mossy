@@ -3,13 +3,18 @@ A C-frontend built around cranelift.
 
 ## Grammar
 ```
-expression: number
-          | expression '*' expression
-          | expression '/' expression
-          | expression '+' expression
-          | expression '-' expression
+expression: addition
           ;
 
+addition: multiplication ( ( "-" | "+" ) multiplication )* 
+          ;
+
+multiplication: primary ( ( "/" | "*" ) primary )* 
+        ;
+
+primary: number 
+        ;
+
 number:  INTLITERAL
-         ;
+        ;
 ```

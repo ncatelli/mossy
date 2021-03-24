@@ -1,33 +1,32 @@
 pub mod interpret;
 
+pub type Span = std::ops::Range<usize>;
+
 #[derive(PartialEq, Debug, Clone)]
-pub struct SpannedAstNode<'a> {
-    pub span: pest::Span<'a>,
-    pub node: AstNode,
+pub struct SpannedExprNode {
+    pub span: Span,
+    pub node: ExprNode,
 }
 
-impl<'a> SpannedAstNode<'a> {
-    pub fn new(span: pest::Span<'a>, node: AstNode) -> Self {
+impl<'a> SpannedExprNode {
+    #[allow(dead_code)]
+    pub fn new(span: Span, node: ExprNode) -> Self {
         Self { span, node }
     }
 
-    pub fn unwrap(self) -> AstNode {
+    #[allow(dead_code)]
+    pub fn unwrap(self) -> ExprNode {
         self.node
     }
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub enum AstNode {
-    Expression(BinaryExpr),
+pub enum ExprNode {
     Number(Number),
-}
-
-#[derive(PartialEq, Debug, Clone)]
-pub enum BinaryExpr {
-    Minus(Box<AstNode>, Box<AstNode>),
-    Divide(Box<AstNode>, Box<AstNode>),
-    Plus(Box<AstNode>, Box<AstNode>),
-    Multiply(Box<AstNode>, Box<AstNode>),
+    Subtraction(Box<ExprNode>, Box<ExprNode>),
+    Division(Box<ExprNode>, Box<ExprNode>),
+    Addition(Box<ExprNode>, Box<ExprNode>),
+    Multiplication(Box<ExprNode>, Box<ExprNode>),
 }
 
 #[derive(PartialEq, Debug, Clone)]
