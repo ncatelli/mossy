@@ -37,10 +37,7 @@ fn run_file(filename: &str) -> Result<(), String> {
 
 fn compile(source: String) -> RuntimeResult<()> {
     let input: Vec<char> = source.chars().into_iter().collect();
-    let astnode = parser::expression()
-        .parse(&input)
-        .expect("unsuccessful parse")
-        .unwrap();
+    let astnode = parser::parse(&input).expect("unsuccessful parse");
     println!("{:?}", ast::interpret::interpret(astnode));
     Ok(())
 }

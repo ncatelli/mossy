@@ -3,8 +3,35 @@ use parcel::parsers::character::*;
 use parcel::prelude::v1::*;
 use parcel::*;
 
-pub fn expression<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
+/// ParseErr represents a parser response that doesn't return a correct AstNode.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParseErr {
+    UnexpectedToken(String),
+    Unspecified(String),
+}
+
+/// parse expects a character slice as input and attempts to parse a valid
+/// expression, returning a parse error if it is invalid.
+pub fn parse(input: &[char]) -> Result<ExprNode, ParseErr> {
+    expression()
+        .parse(input)
+        .map_err(|e| ParseErr::UnexpectedToken(e))
+        .and_then(|ms| match ms {
+            MatchStatus::Match((_, en)) => Ok(en),
+            MatchStatus::NoMatch(_) => {
+                Err(ParseErr::Unspecified("not a valid expression".to_string()))
+            }
+        })
+}
+
+fn expression<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
     addition()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum AdditionExprOp {
+    Plus,
+    Minus,
 }
 
 #[allow(clippy::redundant_closure)]
@@ -14,7 +41,9 @@ fn addition<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
         right(join(
             parcel::zero_or_more(non_newline_whitespace()),
             parcel::zero_or_more(join(
-                expect_character('+').or(|| expect_character('-')),
+                expect_character('+')
+                    .map(|_| AdditionExprOp::Plus)
+                    .or(|| expect_character('-').map(|_| AdditionExprOp::Minus)),
                 right(join(
                     zero_or_more(non_newline_whitespace()),
                     multiplication(),
@@ -36,14 +65,19 @@ fn addition<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
             // this is fairly safe due to the parser guaranteeing enough args.
             let left = operands_iter.next().unwrap();
             last = match op {
-                '+' => ExprNode::Addition(Box::new(left), Box::new(last)),
-                '-' => ExprNode::Subtraction(Box::new(left), Box::new(last)),
-                _ => panic!(format!("unexpected token: {}", op)),
+                AdditionExprOp::Plus => ExprNode::Addition(Box::new(left), Box::new(last)),
+                AdditionExprOp::Minus => ExprNode::Subtraction(Box::new(left), Box::new(last)),
             }
         }
         last
     })
     .or(|| multiplication())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum MultiplicationExprOp {
+    Star,
+    Slash,
 }
 
 #[allow(clippy::redundant_closure)]
@@ -53,7 +87,9 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
         right(join(
             parcel::zero_or_more(non_newline_whitespace()),
             parcel::zero_or_more(join(
-                expect_character('*').or(|| expect_character('/')),
+                expect_character('*')
+                    .map(|_| MultiplicationExprOp::Star)
+                    .or(|| expect_character('/').map(|_| MultiplicationExprOp::Slash)),
                 right(join(zero_or_more(non_newline_whitespace()), primary())),
             )),
         ))
@@ -72,9 +108,10 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
             // this is fairly safe due to the parser guaranteeing enough args.
             let left = operands_iter.next().unwrap();
             last = match op {
-                '*' => ExprNode::Multiplication(Box::new(left), Box::new(last)),
-                '/' => ExprNode::Division(Box::new(left), Box::new(last)),
-                _ => panic!(format!("unexpected token: {}", op)),
+                MultiplicationExprOp::Star => {
+                    ExprNode::Multiplication(Box::new(left), Box::new(last))
+                }
+                MultiplicationExprOp::Slash => ExprNode::Division(Box::new(left), Box::new(last)),
             }
         }
         last
