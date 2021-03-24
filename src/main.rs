@@ -13,7 +13,7 @@ fn main() {
     let args_len = args.len();
 
     match args_len {
-        2 => run_file(&args[1]).expect("Unable to parse file"),
+        2 => run_file(&args[1]).expect("Unable to open file"),
         _ => {
             println!("Usage: mossy [script]");
             process::exit(64);
