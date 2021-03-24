@@ -1,4 +1,3 @@
-use parcel::prelude::v1::*;
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;

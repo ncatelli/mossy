@@ -9,10 +9,12 @@ pub struct SpannedExprNode {
 }
 
 impl<'a> SpannedExprNode {
+    #[allow(dead_code)]
     pub fn new(span: Span, node: ExprNode) -> Self {
         Self { span, node }
     }
 
+    #[allow(dead_code)]
     pub fn unwrap(self) -> ExprNode {
         self.node
     }
