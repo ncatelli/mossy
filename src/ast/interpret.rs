@@ -1,8 +1,8 @@
 use crate::ast::*;
 
-pub fn interpret(node: ExprNode) -> Number {
+pub fn interpret(node: ExprNode) -> IntegerConstant {
     match node {
-        ExprNode::Number(num) => num,
+        ExprNode::Primary(num) => num,
         ExprNode::Addition(lhs, rhs) => {
             interpret_binary_arithmetic_expression(BinaryOperator::Plus, *lhs, *rhs)
         }
@@ -30,14 +30,14 @@ fn interpret_binary_arithmetic_expression(
     op: BinaryOperator,
     lhs: ExprNode,
     rhs: ExprNode,
-) -> Number {
+) -> IntegerConstant {
     let lhs = interpret(lhs);
     let rhs = interpret(rhs);
 
     match (op, lhs, rhs) {
-        (BinaryOperator::Plus, Number(l), Number(r)) => Number(l + r),
-        (BinaryOperator::Minus, Number(l), Number(r)) => Number(l - r),
-        (BinaryOperator::Star, Number(l), Number(r)) => Number(l * r),
-        (BinaryOperator::Slash, Number(l), Number(r)) => Number(l / r),
+        (BinaryOperator::Plus, IntegerConstant(l), IntegerConstant(r)) => IntegerConstant(l + r),
+        (BinaryOperator::Minus, IntegerConstant(l), IntegerConstant(r)) => IntegerConstant(l - r),
+        (BinaryOperator::Star, IntegerConstant(l), IntegerConstant(r)) => IntegerConstant(l * r),
+        (BinaryOperator::Slash, IntegerConstant(l), IntegerConstant(r)) => IntegerConstant(l / r),
     }
 }
