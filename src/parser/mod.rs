@@ -121,7 +121,7 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
 
 #[allow(clippy::redundant_closure)]
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
-    number().map(|num| ExprNode::Primary(num))
+    number().map(|num| ExprNode::Primary(Primary::IntegerConstant(num)))
 }
 
 #[allow(clippy::redundant_closure)]

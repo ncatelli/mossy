@@ -2,7 +2,7 @@ use crate::ast::*;
 
 pub fn interpret(node: ExprNode) -> IntegerConstant {
     match node {
-        ExprNode::Primary(num) => num,
+        ExprNode::Primary(Primary::IntegerConstant(num)) => num,
         ExprNode::Addition(lhs, rhs) => {
             interpret_binary_arithmetic_expression(BinaryOperator::Plus, *lhs, *rhs)
         }
@@ -39,5 +39,26 @@ fn interpret_binary_arithmetic_expression(
         (BinaryOperator::Minus, IntegerConstant(l), IntegerConstant(r)) => IntegerConstant(l - r),
         (BinaryOperator::Star, IntegerConstant(l), IntegerConstant(r)) => IntegerConstant(l * r),
         (BinaryOperator::Slash, IntegerConstant(l), IntegerConstant(r)) => IntegerConstant(l / r),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+
+    use crate::ast::*;
+    #[test]
+    fn should_interpret_expected_arithmetic_result() {
+        // 5 +_5
+        let ast = ExprNode::Addition(
+            Box::new(ExprNode::Primary(Primary::IntegerConstant(
+                IntegerConstant(5),
+            ))),
+            Box::new(ExprNode::Primary(Primary::IntegerConstant(
+                IntegerConstant(5),
+            ))),
+        );
+
+        // 5 + 5 == 10
+        assert_eq!(IntegerConstant(10), crate::ast::interpret::interpret(ast))
     }
 }
