@@ -15,7 +15,7 @@ pub enum ParseErr {
 pub fn parse(input: &[char]) -> Result<ExprNode, ParseErr> {
     expression()
         .parse(input)
-        .map_err(|e| ParseErr::UnexpectedToken(e))
+        .map_err(ParseErr::UnexpectedToken)
         .and_then(|ms| match ms {
             MatchStatus::Match((_, en)) => Ok(en),
             MatchStatus::NoMatch(_) => {

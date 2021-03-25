@@ -46,9 +46,17 @@ fn interpret_binary_arithmetic_expression(
 mod tests {
 
     use crate::ast::*;
+
+    #[test]
+    fn should_interpret_primary_ast_result() {
+        let ast = ExprNode::Primary(Primary::IntegerConstant(IntegerConstant(5)));
+
+        assert_eq!(IntegerConstant(5), crate::ast::interpret::interpret(ast))
+    }
+
     #[test]
     fn should_interpret_expected_arithmetic_result() {
-        // 5 +_5
+        // 5 + 5
         let ast = ExprNode::Addition(
             Box::new(ExprNode::Primary(Primary::IntegerConstant(
                 IntegerConstant(5),
