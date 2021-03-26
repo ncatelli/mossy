@@ -1,10 +1,9 @@
+use mossy::ast;
+use mossy::parser;
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 use std::process;
-
-mod ast;
-mod parser;
 
 type RuntimeResult<T> = Result<T, String>;
 
