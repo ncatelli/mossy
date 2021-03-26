@@ -15,7 +15,7 @@ pub enum ParseErr {
 pub fn parse(input: &[char]) -> Result<ExprNode, ParseErr> {
     expression()
         .parse(input)
-        .map_err(|e| ParseErr::UnexpectedToken(e))
+        .map_err(ParseErr::UnexpectedToken)
         .and_then(|ms| match ms {
             MatchStatus::Match((_, en)) => Ok(en),
             MatchStatus::NoMatch(_) => {
@@ -121,12 +121,12 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
 
 #[allow(clippy::redundant_closure)]
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
-    number().map(|num| ExprNode::Number(num))
+    number().map(|num| ExprNode::Primary(Primary::IntegerConstant(num)))
 }
 
 #[allow(clippy::redundant_closure)]
-fn number<'a>() -> impl parcel::Parser<'a, &'a [char], Number> {
-    dec_u64().map(|num| Number(num))
+fn number<'a>() -> impl parcel::Parser<'a, &'a [char], IntegerConstant> {
+    dec_u64().map(|num| IntegerConstant(num))
 }
 
 fn dec_u64<'a>() -> impl Parser<'a, &'a [char], u64> {

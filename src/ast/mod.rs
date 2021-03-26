@@ -22,7 +22,7 @@ impl<'a> SpannedExprNode {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum ExprNode {
-    Number(Number),
+    Primary(Primary),
     Subtraction(Box<ExprNode>, Box<ExprNode>),
     Division(Box<ExprNode>, Box<ExprNode>),
     Addition(Box<ExprNode>, Box<ExprNode>),
@@ -30,4 +30,15 @@ pub enum ExprNode {
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct Number(pub u64);
+pub enum Primary {
+    IntegerConstant(IntegerConstant),
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub struct IntegerConstant(pub u64);
+
+impl std::fmt::Display for IntegerConstant {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
