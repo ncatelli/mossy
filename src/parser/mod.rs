@@ -38,17 +38,13 @@ enum AdditionExprOp {
 fn addition<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
     join(
         multiplication(),
-        right(join(
-            parcel::zero_or_more(non_newline_whitespace()),
-            parcel::zero_or_more(join(
+        parcel::zero_or_more(join(
+            whitespace_wrapped(
                 expect_character('+')
                     .map(|_| AdditionExprOp::Plus)
                     .or(|| expect_character('-').map(|_| AdditionExprOp::Minus)),
-                right(join(
-                    zero_or_more(non_newline_whitespace()),
-                    multiplication(),
-                )),
-            )),
+            ),
+            whitespace_wrapped(multiplication()),
         ))
         .map(unzip),
     )
@@ -84,14 +80,13 @@ enum MultiplicationExprOp {
 fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
     join(
         primary(),
-        right(join(
-            parcel::zero_or_more(non_newline_whitespace()),
-            parcel::zero_or_more(join(
+        parcel::zero_or_more(join(
+            whitespace_wrapped(
                 expect_character('*')
                     .map(|_| MultiplicationExprOp::Star)
                     .or(|| expect_character('/').map(|_| MultiplicationExprOp::Slash)),
-                right(join(zero_or_more(non_newline_whitespace()), primary())),
-            )),
+            ),
+            whitespace_wrapped(primary()),
         ))
         .map(unzip),
     )
@@ -146,6 +141,20 @@ fn dec_u64<'a>() -> impl Parser<'a, &'a [char], u64> {
             Err(e) => Err(e),
         }
     }
+}
+
+fn whitespace_wrapped<'a, P, B>(parser: P) -> impl Parser<'a, &'a [char], B>
+where
+    B: 'a,
+    P: Parser<'a, &'a [char], B> + 'a,
+{
+    parcel::right(parcel::join(
+        parcel::zero_or_more(non_newline_whitespace()),
+        parcel::left(parcel::join(
+            parser,
+            parcel::zero_or_more(non_newline_whitespace()),
+        )),
+    ))
 }
 
 fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
