@@ -47,13 +47,9 @@ fn addition<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
         ))
         .map(unzip),
     )
-    .map(|(lhe, (operators, mut operands))| {
-        operands.insert(0, lhe);
-        (operands, operators)
-    })
-    .map(|(operands, operators)| {
-        let mut operands_iter = operands.into_iter();
-        let first: ExprNode = operands_iter.next().unwrap();
+    .map(|(lhe, (operators, operands))| {
+        let operands_iter = operands.into_iter();
+        let first: ExprNode = lhe;
         let operators_iter = operators.into_iter();
 
         operators_iter
@@ -86,13 +82,9 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
         ))
         .map(unzip),
     )
-    .map(|(lhe, (operators, mut operands))| {
-        operands.insert(0, lhe);
-        (operands, operators)
-    })
-    .map(|(operands, operators)| {
-        let mut operands_iter = operands.into_iter();
-        let first: ExprNode = operands_iter.next().unwrap();
+    .map(|(lhe, (operators, operands))| {
+        let operands_iter = operands.into_iter();
+        let first: ExprNode = lhe;
         let operators_iter = operators.into_iter();
 
         operators_iter
