@@ -47,24 +47,14 @@ fn addition<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
         ))
         .map(unzip),
     )
-    .map(|(lhe, (operators, mut operands))| {
-        operands.insert(0, lhe);
-        (operands, operators)
-    })
-    .map(|(operands, operators)| {
-        let mut operands_iter = operands.into_iter().rev();
-        let operators_iter = operators.into_iter().rev();
-        let mut last: ExprNode = operands_iter.next().unwrap();
-
-        for op in operators_iter {
-            // this is fairly safe due to the parser guaranteeing enough args.
-            let left = operands_iter.next().unwrap();
-            last = match op {
-                AdditionExprOp::Plus => ExprNode::Addition(Box::new(left), Box::new(last)),
-                AdditionExprOp::Minus => ExprNode::Subtraction(Box::new(left), Box::new(last)),
-            }
-        }
-        last
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
+                AdditionExprOp::Plus => ExprNode::Addition(Box::new(lhs), Box::new(rhs)),
+                AdditionExprOp::Minus => ExprNode::Subtraction(Box::new(lhs), Box::new(rhs)),
+            })
     })
     .or(|| multiplication())
 }
@@ -89,26 +79,16 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
         ))
         .map(unzip),
     )
-    .map(|(lhe, (operators, mut operands))| {
-        operands.insert(0, lhe);
-        (operands, operators)
-    })
-    .map(|(operands, operators)| {
-        let mut operands_iter = operands.into_iter().rev();
-        let operators_iter = operators.into_iter().rev();
-        let mut last: ExprNode = operands_iter.next().unwrap();
-
-        for op in operators_iter {
-            // this is fairly safe due to the parser guaranteeing enough args.
-            let left = operands_iter.next().unwrap();
-            last = match op {
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
                 MultiplicationExprOp::Star => {
-                    ExprNode::Multiplication(Box::new(left), Box::new(last))
+                    ExprNode::Multiplication(Box::new(lhs), Box::new(rhs))
                 }
-                MultiplicationExprOp::Slash => ExprNode::Division(Box::new(left), Box::new(last)),
-            }
-        }
-        last
+                MultiplicationExprOp::Slash => ExprNode::Division(Box::new(lhs), Box::new(rhs)),
+            })
     })
     .or(|| primary())
 }
@@ -155,4 +135,48 @@ where
 
 fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
     pair.into_iter().unzip()
+}
+#[cfg(test)]
+mod tests {
+    macro_rules! term_expr {
+        ($lhs:expr, '+', $rhs:expr) => {
+            $crate::ast::ExprNode::Addition(Box::new($lhs), Box::new($rhs))
+        };
+        ($lhs:expr, '-', $rhs:expr) => {
+            $crate::ast::ExprNode::Subtraction(Box::new($lhs), Box::new($rhs))
+        };
+    }
+
+    macro_rules! factor_expr {
+        ($lhs:expr, '*', $rhs:expr) => {
+            $crate::ast::ExprNode::Multiplication(Box::new($lhs), Box::new($rhs))
+        };
+        ($lhs:expr, '/', $rhs:expr) => {
+            $crate::ast::ExprNode::Division(Box::new($lhs), Box::new($rhs))
+        };
+    }
+
+    macro_rules! primary_expr {
+        ($value:expr) => {
+            $crate::ast::ExprNode::Primary(Primary::IntegerConstant(IntegerConstant($value)))
+        };
+    }
+    use crate::ast::*;
+    #[test]
+    fn should_parse_complex_expression() {
+        let input: Vec<char> = "13 - 6 + 4 * 5 + 8 / 3".chars().collect();
+
+        assert_eq!(
+            Ok(term_expr!(
+                term_expr!(
+                    term_expr!(primary_expr!(13), '-', primary_expr!(6)),
+                    '+',
+                    factor_expr!(primary_expr!(4), '*', primary_expr!(5))
+                ),
+                '+',
+                factor_expr!(primary_expr!(8), '/', primary_expr!(3))
+            )),
+            crate::parser::parse(&input)
+        )
+    }
 }

@@ -15,6 +15,6 @@ multiplication: primary ( ( "/" | "*" ) primary )*
 primary: number 
         ;
 
-number:  INTLITERAL
+number:  [0-9]*
         ;
 ```
