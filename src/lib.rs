@@ -13,7 +13,6 @@ mod tests {
         )
     }
 
-    #[ignore = "known broken but actively fixing"]
     #[test]
     fn should_interpret_arithmetic_input_with_arbitrary_whitespace() {
         let input: Vec<char> = "13 -6+  4*
