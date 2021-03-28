@@ -52,16 +52,16 @@ fn addition<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
         (operands, operators)
     })
     .map(|(operands, operators)| {
-        let mut operands_iter = operands.into_iter().rev();
-        let operators_iter = operators.into_iter().rev();
+        let mut operands_iter = operands.into_iter();
+        let operators_iter = operators.into_iter();
         let mut last: ExprNode = operands_iter.next().unwrap();
 
         for op in operators_iter {
             // this is fairly safe due to the parser guaranteeing enough args.
-            let left = operands_iter.next().unwrap();
+            let right = operands_iter.next().unwrap();
             last = match op {
-                AdditionExprOp::Plus => ExprNode::Addition(Box::new(left), Box::new(last)),
-                AdditionExprOp::Minus => ExprNode::Subtraction(Box::new(left), Box::new(last)),
+                AdditionExprOp::Plus => ExprNode::Addition(Box::new(last), Box::new(right)),
+                AdditionExprOp::Minus => ExprNode::Subtraction(Box::new(last), Box::new(right)),
             }
         }
         last
@@ -155,4 +155,48 @@ where
 
 fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
     pair.into_iter().unzip()
+}
+#[cfg(test)]
+mod tests {
+    macro_rules! term_expr {
+        ($lhs:expr, '+', $rhs:expr) => {
+            $crate::ast::ExprNode::Addition(Box::new($lhs), Box::new($rhs))
+        };
+        ($lhs:expr, '-', $rhs:expr) => {
+            $crate::ast::ExprNode::Subtraction(Box::new($lhs), Box::new($rhs))
+        };
+    }
+
+    macro_rules! factor_expr {
+        ($lhs:expr, '*', $rhs:expr) => {
+            $crate::ast::ExprNode::Multiplication(Box::new($lhs), Box::new($rhs))
+        };
+        ($lhs:expr, '/', $rhs:expr) => {
+            $crate::ast::ExprNode::Division(Box::new($lhs), Box::new($rhs))
+        };
+    }
+
+    macro_rules! primary_expr {
+        ($value:expr) => {
+            $crate::ast::ExprNode::Primary(Primary::IntegerConstant(IntegerConstant($value)))
+        };
+    }
+    use crate::ast::*;
+    #[test]
+    fn should_parse_complex_expression() {
+        let input: Vec<char> = "13 - 6 + 4 * 5 + 8 / 3".chars().collect();
+
+        assert_eq!(
+            Ok(term_expr!(
+                term_expr!(
+                    term_expr!(primary_expr!(13), '-', primary_expr!(6)),
+                    '+',
+                    factor_expr!(primary_expr!(4), '*', primary_expr!(5))
+                ),
+                '+',
+                factor_expr!(primary_expr!(8), '/', primary_expr!(3))
+            )),
+            crate::parser::parse(&input)
+        )
+    }
 }
