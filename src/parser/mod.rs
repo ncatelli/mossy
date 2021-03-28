@@ -47,14 +47,11 @@ fn addition<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
         ))
         .map(unzip),
     )
-    .map(|(lhe, (operators, operands))| {
-        let operands_iter = operands.into_iter();
-        let first: ExprNode = lhe;
-        let operators_iter = operators.into_iter();
-
-        operators_iter
-            .zip(operands_iter)
-            .fold(first, |lhs, (operator, rhs)| match operator {
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
                 AdditionExprOp::Plus => ExprNode::Addition(Box::new(lhs), Box::new(rhs)),
                 AdditionExprOp::Minus => ExprNode::Subtraction(Box::new(lhs), Box::new(rhs)),
             })
@@ -82,14 +79,11 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
         ))
         .map(unzip),
     )
-    .map(|(lhe, (operators, operands))| {
-        let operands_iter = operands.into_iter();
-        let first: ExprNode = lhe;
-        let operators_iter = operators.into_iter();
-
-        operators_iter
-            .zip(operands_iter)
-            .fold(first, |lhs, (operator, rhs)| match operator {
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
                 MultiplicationExprOp::Star => {
                     ExprNode::Multiplication(Box::new(lhs), Box::new(rhs))
                 }
