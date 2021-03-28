@@ -53,18 +53,15 @@ fn addition<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
     })
     .map(|(operands, operators)| {
         let mut operands_iter = operands.into_iter();
+        let first: ExprNode = operands_iter.next().unwrap();
         let operators_iter = operators.into_iter();
-        let mut last: ExprNode = operands_iter.next().unwrap();
 
-        for op in operators_iter {
-            // this is fairly safe due to the parser guaranteeing enough args.
-            let right = operands_iter.next().unwrap();
-            last = match op {
-                AdditionExprOp::Plus => ExprNode::Addition(Box::new(last), Box::new(right)),
-                AdditionExprOp::Minus => ExprNode::Subtraction(Box::new(last), Box::new(right)),
-            }
-        }
-        last
+        operators_iter
+            .zip(operands_iter)
+            .fold(first, |lhs, (operator, rhs)| match operator {
+                AdditionExprOp::Plus => ExprNode::Addition(Box::new(lhs), Box::new(rhs)),
+                AdditionExprOp::Minus => ExprNode::Subtraction(Box::new(lhs), Box::new(rhs)),
+            })
     })
     .or(|| multiplication())
 }
@@ -94,21 +91,18 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
         (operands, operators)
     })
     .map(|(operands, operators)| {
-        let mut operands_iter = operands.into_iter().rev();
-        let operators_iter = operators.into_iter().rev();
-        let mut last: ExprNode = operands_iter.next().unwrap();
+        let mut operands_iter = operands.into_iter();
+        let first: ExprNode = operands_iter.next().unwrap();
+        let operators_iter = operators.into_iter();
 
-        for op in operators_iter {
-            // this is fairly safe due to the parser guaranteeing enough args.
-            let left = operands_iter.next().unwrap();
-            last = match op {
+        operators_iter
+            .zip(operands_iter)
+            .fold(first, |lhs, (operator, rhs)| match operator {
                 MultiplicationExprOp::Star => {
-                    ExprNode::Multiplication(Box::new(left), Box::new(last))
+                    ExprNode::Multiplication(Box::new(lhs), Box::new(rhs))
                 }
-                MultiplicationExprOp::Slash => ExprNode::Division(Box::new(left), Box::new(last)),
-            }
-        }
-        last
+                MultiplicationExprOp::Slash => ExprNode::Division(Box::new(lhs), Box::new(rhs)),
+            })
     })
     .or(|| primary())
 }
