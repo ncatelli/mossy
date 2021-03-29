@@ -34,17 +34,13 @@ fn run_file(filename: &str) -> Result<(), String> {
 
 fn compile(source: String) -> RuntimeResult<()> {
     let input: Vec<char> = source.chars().into_iter().collect();
-    /*    let expr_constant = parser::parse(&input)
-            .map_err(|e| format!("{:?}", e))
-            .map(ast::interpret::interpret)?;
-    */
     let binary = parser::parse(&input)
         .map_err(|e| format!("{:?}", e))
         .map(|ast_node| {
             use mossy::codegen::Compile;
-            mossy::codegen::Compiler::default().compile(vec![ast_node])
+            mossy::codegen::Compiler::default().compile(ast_node)
         });
 
-    println!("{:#?}", &binary);
+    println!("{:?}", &binary.unwrap());
     Ok(())
 }
