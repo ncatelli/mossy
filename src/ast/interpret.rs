@@ -1,8 +1,8 @@
 use crate::ast::*;
 
-pub fn interpret(node: ExprNode) -> IntegerConstant {
+pub fn interpret(node: ExprNode) -> Uint8 {
     match node {
-        ExprNode::Primary(Primary::IntegerConstant(num)) => num,
+        ExprNode::Primary(Primary::Uint8(num)) => num,
         ExprNode::Addition(lhs, rhs) => {
             interpret_binary_arithmetic_expression(BinaryOperator::Plus, *lhs, *rhs)
         }
@@ -30,15 +30,15 @@ fn interpret_binary_arithmetic_expression(
     op: BinaryOperator,
     lhs: ExprNode,
     rhs: ExprNode,
-) -> IntegerConstant {
+) -> Uint8 {
     let lhs = interpret(lhs);
     let rhs = interpret(rhs);
 
     match (op, lhs, rhs) {
-        (BinaryOperator::Plus, IntegerConstant(l), IntegerConstant(r)) => IntegerConstant(l + r),
-        (BinaryOperator::Minus, IntegerConstant(l), IntegerConstant(r)) => IntegerConstant(l - r),
-        (BinaryOperator::Star, IntegerConstant(l), IntegerConstant(r)) => IntegerConstant(l * r),
-        (BinaryOperator::Slash, IntegerConstant(l), IntegerConstant(r)) => IntegerConstant(l / r),
+        (BinaryOperator::Plus, Uint8(l), Uint8(r)) => Uint8(l + r),
+        (BinaryOperator::Minus, Uint8(l), Uint8(r)) => Uint8(l - r),
+        (BinaryOperator::Star, Uint8(l), Uint8(r)) => Uint8(l * r),
+        (BinaryOperator::Slash, Uint8(l), Uint8(r)) => Uint8(l / r),
     }
 }
 
@@ -49,24 +49,20 @@ mod tests {
 
     #[test]
     fn should_interpret_primary_ast_result() {
-        let ast = ExprNode::Primary(Primary::IntegerConstant(IntegerConstant(5)));
+        let ast = ExprNode::Primary(Primary::Uint8(Uint8(5)));
 
-        assert_eq!(IntegerConstant(5), crate::ast::interpret::interpret(ast))
+        assert_eq!(Uint8(5), crate::ast::interpret::interpret(ast))
     }
 
     #[test]
     fn should_interpret_expected_arithmetic_result() {
         // 5 + 5
         let ast = ExprNode::Addition(
-            Box::new(ExprNode::Primary(Primary::IntegerConstant(
-                IntegerConstant(5),
-            ))),
-            Box::new(ExprNode::Primary(Primary::IntegerConstant(
-                IntegerConstant(5),
-            ))),
+            Box::new(ExprNode::Primary(Primary::Uint8(Uint8(5)))),
+            Box::new(ExprNode::Primary(Primary::Uint8(Uint8(5)))),
         );
 
         // 5 + 5 == 10
-        assert_eq!(IntegerConstant(10), crate::ast::interpret::interpret(ast))
+        assert_eq!(Uint8(10), crate::ast::interpret::interpret(ast))
     }
 }

@@ -95,21 +95,21 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
 
 #[allow(clippy::redundant_closure)]
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
-    number().map(|num| ExprNode::Primary(Primary::IntegerConstant(num)))
+    number().map(|num| ExprNode::Primary(Primary::Uint8(num)))
 }
 
 #[allow(clippy::redundant_closure)]
-fn number<'a>() -> impl parcel::Parser<'a, &'a [char], IntegerConstant> {
-    dec_u64().map(|num| IntegerConstant(num))
+fn number<'a>() -> impl parcel::Parser<'a, &'a [char], Uint8> {
+    dec_u8().map(|num| Uint8(num))
 }
 
-fn dec_u64<'a>() -> impl Parser<'a, &'a [char], u64> {
+fn dec_u8<'a>() -> impl Parser<'a, &'a [char], u8> {
     move |input: &'a [char]| {
         let preparsed_input = input;
         let res = parcel::one_or_more(digit(10))
             .map(|digits| {
                 let vd: String = digits.into_iter().collect();
-                u64::from_str_radix(&vd, 10)
+                u8::from_str_radix(&vd, 10)
             })
             .parse(input);
 
@@ -158,7 +158,7 @@ mod tests {
 
     macro_rules! primary_expr {
         ($value:expr) => {
-            $crate::ast::ExprNode::Primary(Primary::IntegerConstant(IntegerConstant($value)))
+            $crate::ast::ExprNode::Primary(Primary::Uint8(Uint8($value)))
         };
     }
     use crate::ast::*;

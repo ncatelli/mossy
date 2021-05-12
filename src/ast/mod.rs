@@ -31,13 +31,13 @@ pub enum ExprNode {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum Primary {
-    IntegerConstant(IntegerConstant),
+    Uint8(Uint8),
 }
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct IntegerConstant(pub u64);
+pub struct Uint8(pub u8);
 
-impl std::fmt::Display for IntegerConstant {
+impl std::fmt::Display for Uint8 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }

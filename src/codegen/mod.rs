@@ -119,7 +119,7 @@ impl<'a> FunctionTranslator<'a> {
         use ast::{ExprNode, Primary};
 
         match expr {
-            ExprNode::Primary(Primary::IntegerConstant(ast::IntegerConstant(ic))) => {
+            ExprNode::Primary(Primary::Uint8(ast::Uint8(ic))) => {
                 use std::convert::TryFrom;
                 let v: i64 = i64::try_from(ic).unwrap();
                 self.builder.ins().iconst(self.pointer_type, v)

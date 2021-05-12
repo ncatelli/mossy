@@ -9,7 +9,7 @@ mod tests {
         let input: Vec<char> = "2 + 3 * 5 - 8 / 3".chars().collect();
 
         assert_eq!(
-            Ok(crate::ast::IntegerConstant(15)),
+            Ok(crate::ast::Uint8(15)),
             crate::parser::parse(&input).map(crate::ast::interpret::interpret)
         )
     }
@@ -23,7 +23,7 @@ mod tests {
             .chars()
             .collect();
         assert_eq!(
-            Ok(crate::ast::IntegerConstant(29)),
+            Ok(crate::ast::Uint8(29)),
             crate::parser::parse(&input).map(crate::ast::interpret::interpret)
         )
     }
