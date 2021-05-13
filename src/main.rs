@@ -52,7 +52,7 @@ fn compile(source: String) -> RuntimeResult<()> {
         .map_err(|e| format!("{:?}", e))
         .map(|ast_node| {
             use mossy::codegen::Compile;
-            mossy::codegen::Compiler::default().compile(ast_node)
+            mossy::codegen::Compiler::default().compile(ast_node[0].to_owned())
         })
         .unwrap()
         .map(|bin| {

@@ -22,7 +22,7 @@ impl std::fmt::Debug for CompileErr {
 }
 
 pub trait Compile {
-    fn compile(self, input: ast::ExprNode) -> Result<Vec<u8>, CompileErr>;
+    fn compile(self, input: ast::StmtNode) -> Result<Vec<u8>, CompileErr>;
 }
 
 pub struct Compiler {
@@ -55,7 +55,7 @@ impl Default for Compiler {
 
 impl Compile for Compiler {
     /// Compile a string in the toy language into machine code.
-    fn compile(mut self, input: ast::ExprNode) -> Result<Vec<u8>, CompileErr> {
+    fn compile(mut self, input: ast::StmtNode) -> Result<Vec<u8>, CompileErr> {
         // Then, translate the AST nodes into Cranelift IR.
         self.translate(input).map_err(CompileErr::Unspecified)?;
 
@@ -79,7 +79,7 @@ impl Compile for Compiler {
 }
 
 impl Compiler {
-    fn translate(&mut self, input: ast::ExprNode) -> Result<(), String> {
+    fn translate(&mut self, input: ast::StmtNode) -> Result<(), String> {
         let pointer_type = self.module.target_config().pointer_type();
         self.ctx
             .func
@@ -99,7 +99,7 @@ impl Compiler {
             builder,
         };
 
-        let ret = translator.translate_expr(input);
+        let ret = translator.translate_statement(input);
 
         // return and finalize
         translator.builder.ins().return_(&[ret]);
@@ -115,6 +115,21 @@ struct FunctionTranslator<'a> {
 }
 
 impl<'a> FunctionTranslator<'a> {
+    fn translate_statement(&mut self, stmt: ast::StmtNode) -> Value {
+        use ast::StmtNode;
+
+        match stmt {
+            StmtNode::Expression(expr) => {
+                self.translate_expr(expr);
+            }
+            StmtNode::Print(expr) => {
+                self.translate_expr(expr);
+            }
+        };
+
+        self.builder.ins().null(cranelift_codegen::ir::types::I8)
+    }
+
     fn translate_expr(&mut self, expr: ast::ExprNode) -> Value {
         use ast::{ExprNode, Primary};
 

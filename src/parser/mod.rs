@@ -9,10 +9,12 @@ pub enum ParseErr {
     Unspecified(String),
 }
 
+pub type Statements = Vec<StmtNode>;
+
 /// parse expects a character slice as input and attempts to parse a valid
 /// expression, returning a parse error if it is invalid.
-pub fn parse(input: &[char]) -> Result<ExprNode, ParseErr> {
-    expression()
+pub fn parse(input: &[char]) -> Result<Statements, ParseErr> {
+    statements()
         .parse(input)
         .map_err(ParseErr::UnexpectedToken)
         .and_then(|ms| match ms {
@@ -21,6 +23,33 @@ pub fn parse(input: &[char]) -> Result<ExprNode, ParseErr> {
                 Err(ParseErr::Unspecified("not a valid expression".to_string()))
             }
         })
+}
+
+fn statements<'a>() -> impl parcel::Parser<'a, &'a [char], Statements> {
+    parcel::one_or_more(statement())
+}
+
+fn statement<'a>() -> impl parcel::Parser<'a, &'a [char], StmtNode> {
+    parcel::or(print_statement(), || expression_statement())
+}
+
+fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [char], StmtNode> {
+    parcel::left(parcel::join(
+        whitespace_wrapped(expression()),
+        whitespace_wrapped(expect_character(';')),
+    ))
+    .map(|expr| StmtNode::Expression(expr))
+}
+
+fn print_statement<'a>() -> impl parcel::Parser<'a, &'a [char], StmtNode> {
+    parcel::left(parcel::join(
+        parcel::right(parcel::join(
+            whitespace_wrapped(expect_str("print")),
+            whitespace_wrapped(expression()),
+        )),
+        whitespace_wrapped(expect_character(';')),
+    ))
+    .map(|expr| StmtNode::Print(expr))
 }
 
 fn expression<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
@@ -164,10 +193,10 @@ mod tests {
     use crate::ast::*;
     #[test]
     fn should_parse_complex_expression() {
-        let input: Vec<char> = "13 - 6 + 4 * 5 + 8 / 3".chars().collect();
+        let input: Vec<char> = "13 - 6 + 4 * 5 + 8 / 3;".chars().collect();
 
         assert_eq!(
-            Ok(term_expr!(
+            Ok(vec![StmtNode::Expression(term_expr!(
                 term_expr!(
                     term_expr!(primary_expr!(13), '-', primary_expr!(6)),
                     '+',
@@ -175,7 +204,7 @@ mod tests {
                 ),
                 '+',
                 factor_expr!(primary_expr!(8), '/', primary_expr!(3))
-            )),
+            ))]),
             crate::parser::parse(&input)
         )
     }
