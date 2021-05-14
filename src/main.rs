@@ -44,7 +44,7 @@ fn write_dest_file(filename: &str, data: &[u8]) -> RuntimeResult<()> {
 }
 
 fn compile(source: String) -> RuntimeResult<()> {
-    let input: Vec<char> = source.chars().into_iter().collect();
+    let input: Vec<(usize, char)> = source.chars().enumerate().collect();
     parser::parse(&input)
         .map_err(|e| format!("{:?}", e))
         .map(|ast_node| {

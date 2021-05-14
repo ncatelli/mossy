@@ -13,27 +13,31 @@ pub type Statements = Vec<StmtNode>;
 
 /// parse expects a character slice as input and attempts to parse a valid
 /// expression, returning a parse error if it is invalid.
-pub fn parse(input: &[char]) -> Result<Statements, ParseErr> {
+pub fn parse(input: &[(usize, char)]) -> Result<Statements, ParseErr> {
     statements()
         .parse(input)
         .map_err(ParseErr::UnexpectedToken)
         .and_then(|ms| match ms {
-            MatchStatus::Match((_, en)) => Ok(en),
+            MatchStatus::Match {
+                span: _,
+                remainder: _,
+                inner,
+            } => Ok(inner),
             MatchStatus::NoMatch(_) => {
                 Err(ParseErr::Unspecified("not a valid expression".to_string()))
             }
         })
 }
 
-fn statements<'a>() -> impl parcel::Parser<'a, &'a [char], Statements> {
+fn statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Statements> {
     parcel::one_or_more(statement())
 }
 
-fn statement<'a>() -> impl parcel::Parser<'a, &'a [char], StmtNode> {
+fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     expression_statement()
 }
 
-fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [char], StmtNode> {
+fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     parcel::left(parcel::join(
         whitespace_wrapped(expression()),
         whitespace_wrapped(expect_character(';')),
@@ -41,7 +45,7 @@ fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [char], StmtNode> {
     .map(|expr| StmtNode::Expression(expr))
 }
 
-fn expression<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
+fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     addition()
 }
 
@@ -52,7 +56,7 @@ enum AdditionExprOp {
 }
 
 #[allow(clippy::redundant_closure)]
-fn addition<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
+fn addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         multiplication(),
         parcel::zero_or_more(parcel::join(
@@ -84,7 +88,7 @@ enum MultiplicationExprOp {
 }
 
 #[allow(clippy::redundant_closure)]
-fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
+fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         primary(),
         parcel::zero_or_more(parcel::join(
@@ -112,17 +116,17 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
 }
 
 #[allow(clippy::redundant_closure)]
-fn primary<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {
+fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     number().map(|num| ExprNode::Primary(Primary::Uint8(num)))
 }
 
 #[allow(clippy::redundant_closure)]
-fn number<'a>() -> impl parcel::Parser<'a, &'a [char], Uint8> {
+fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Uint8> {
     dec_u8().map(|num| Uint8(num))
 }
 
-fn dec_u8<'a>() -> impl Parser<'a, &'a [char], u8> {
-    move |input: &'a [char]| {
+fn dec_u8<'a>() -> impl Parser<'a, &'a [(usize, char)], u8> {
+    move |input: &'a [(usize, char)]| {
         let preparsed_input = input;
         let res = parcel::one_or_more(digit(10))
             .map(|digits| {
@@ -132,18 +136,32 @@ fn dec_u8<'a>() -> impl Parser<'a, &'a [char], u8> {
             .parse(input);
 
         match res {
-            Ok(MatchStatus::Match((rem, Ok(u)))) => Ok(MatchStatus::Match((rem, u))),
-            Ok(MatchStatus::Match((_, Err(_)))) => Ok(MatchStatus::NoMatch(preparsed_input)),
-            Ok(MatchStatus::NoMatch(rem)) => Ok(MatchStatus::NoMatch(rem)),
+            Ok(MatchStatus::Match {
+                span,
+                remainder,
+                inner: Ok(u),
+            }) => Ok(MatchStatus::Match {
+                span,
+                remainder,
+                inner: u,
+            }),
+
+            Ok(MatchStatus::Match {
+                span: _,
+                remainder: _,
+                inner: Err(_),
+            }) => Ok(MatchStatus::NoMatch(preparsed_input)),
+
+            Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
             Err(e) => Err(e),
         }
     }
 }
 
-fn whitespace_wrapped<'a, P, B>(parser: P) -> impl Parser<'a, &'a [char], B>
+fn whitespace_wrapped<'a, P, B>(parser: P) -> impl Parser<'a, &'a [(usize, char)], B>
 where
     B: 'a,
-    P: Parser<'a, &'a [char], B> + 'a,
+    P: Parser<'a, &'a [(usize, char)], B> + 'a,
 {
     parcel::right(parcel::join(
         parcel::zero_or_more(whitespace()),
@@ -182,7 +200,7 @@ mod tests {
     use crate::ast::*;
     #[test]
     fn should_parse_complex_expression() {
-        let input: Vec<char> = "13 - 6 + 4 * 5 + 8 / 3;".chars().collect();
+        let input: Vec<(usize, char)> = "13 - 6 + 4 * 5 + 8 / 3;".chars().enumerate().collect();
 
         assert_eq!(
             Ok(vec![StmtNode::Expression(term_expr!(
