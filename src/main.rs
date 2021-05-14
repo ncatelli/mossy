@@ -24,10 +24,7 @@ fn run_file(filename: &str) -> Result<(), String> {
 
     let mut contents = String::new();
     match f.read_to_string(&mut contents) {
-        Ok(_) => {
-            compile(contents).unwrap();
-            Ok(())
-        }
+        Ok(_) => compile(contents),
         Err(error) => Err(format!("error: {}", error)),
     }
 }
