@@ -30,7 +30,7 @@ fn statements<'a>() -> impl parcel::Parser<'a, &'a [char], Statements> {
 }
 
 fn statement<'a>() -> impl parcel::Parser<'a, &'a [char], StmtNode> {
-    parcel::or(print_statement(), || expression_statement())
+    expression_statement()
 }
 
 fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [char], StmtNode> {
@@ -39,17 +39,6 @@ fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [char], StmtNode> {
         whitespace_wrapped(expect_character(';')),
     ))
     .map(|expr| StmtNode::Expression(expr))
-}
-
-fn print_statement<'a>() -> impl parcel::Parser<'a, &'a [char], StmtNode> {
-    parcel::left(parcel::join(
-        parcel::right(parcel::join(
-            whitespace_wrapped(expect_str("print")),
-            whitespace_wrapped(expression()),
-        )),
-        whitespace_wrapped(expect_character(';')),
-    ))
-    .map(|expr| StmtNode::Print(expr))
 }
 
 fn expression<'a>() -> impl parcel::Parser<'a, &'a [char], ExprNode> {

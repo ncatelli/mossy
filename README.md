@@ -4,10 +4,10 @@ A C-frontend built around cranelift.
 ## Grammar
 ```
 
-statements: statement
-        | statement statements
+statements: statement*
+        ;
 
-statement: print" expression ";"
+statement: expression ";"
         ;
 
 expression: addition

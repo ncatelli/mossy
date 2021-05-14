@@ -116,14 +116,12 @@ struct FunctionTranslator<'a> {
 
 impl<'a> FunctionTranslator<'a> {
     fn translate_statement(&mut self, stmt: ast::StmtNode) -> Value {
-        use ast::StmtNode;
-
         match stmt {
-            StmtNode::Expression(expr) => self.translate_expr(expr),
-            StmtNode::Print(expr) => self.translate_expr(expr),
-        };
-
-        self.builder.ins().iconst(self.pointer_type, 0)
+            ast::StmtNode::Expression(expr) => {
+                self.translate_expr(expr);
+                self.builder.ins().iconst(self.pointer_type, 0)
+            }
+        }
     }
 
     fn translate_expr(&mut self, expr: ast::ExprNode) -> Value {

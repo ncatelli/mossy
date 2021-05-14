@@ -23,7 +23,6 @@ impl<'a> SpannedExprNode {
 #[derive(PartialEq, Debug, Clone)]
 pub enum StmtNode {
     Expression(ExprNode),
-    Print(ExprNode),
 }
 
 #[derive(PartialEq, Debug, Clone)]
