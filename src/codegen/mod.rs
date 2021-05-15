@@ -1,161 +1,188 @@
 use crate::ast;
-use cranelift::prelude::*;
-use cranelift_codegen::ir::{types, AbiParam, InstBuilder};
-use cranelift_codegen::isa;
-use cranelift_codegen::settings;
-use cranelift_module::{Linkage, Module};
-use cranelift_object::{ObjectBuilder, ObjectModule};
 
-use target_lexicon;
+pub mod machine;
+mod register_allocation;
+use register_allocation::RegisterAllocate;
 
+/// CodeGenerationErr represents an error stemming from the CodeGenerator's
+/// `generate` method, capturing any potential point of breakdown withing the
+/// code generation process.
 #[derive(Clone, PartialEq)]
-pub enum CompileErr {
+pub enum CodeGenerationErr {
     Unspecified(String),
 }
 
-impl std::fmt::Debug for CompileErr {
+impl std::fmt::Debug for CodeGenerationErr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CompileErr::Unspecified(e) => write!(f, "unspecified compilation err: {}", e),
-        }
-    }
-}
-
-pub trait Compile {
-    fn compile(self, input: ast::StmtNode) -> Result<Vec<u8>, CompileErr>;
-}
-
-pub struct Compiler {
-    builder_context: FunctionBuilderContext,
-    ctx: codegen::Context,
-    module: ObjectModule,
-}
-
-impl Default for Compiler {
-    fn default() -> Self {
-        let shared_builder = settings::builder();
-        let shared_flags = settings::Flags::new(shared_builder);
-        let triple = target_lexicon::DefaultToHost::default().0;
-        let target_isa = isa::lookup(triple).unwrap().finish(shared_flags);
-        let builder = ObjectBuilder::new(
-            target_isa,
-            "mossy-C",
-            cranelift_module::default_libcall_names(),
-        )
-        .unwrap();
-        let module = ObjectModule::new(builder);
-
-        Self {
-            builder_context: FunctionBuilderContext::new(),
-            ctx: module.make_context(),
-            module,
-        }
-    }
-}
-
-impl Compile for Compiler {
-    /// Compile a string in the toy language into machine code.
-    fn compile(mut self, input: ast::StmtNode) -> Result<Vec<u8>, CompileErr> {
-        // Then, translate the AST nodes into Cranelift IR.
-        self.translate(input).map_err(CompileErr::Unspecified)?;
-
-        let id = self
-            .module
-            .declare_function("main", Linkage::Export, &self.ctx.func.signature)
-            .map_err(|e| e.to_string())
-            .map_err(CompileErr::Unspecified)?;
-
-        self.module
-            .define_function(id, &mut self.ctx, &mut codegen::binemit::NullTrapSink {})
-            .map_err(|e| e.to_string())
-            .map_err(CompileErr::Unspecified)?;
-
-        self.module.clear_context(&mut self.ctx);
-
-        let op = self.module.finish();
-        op.emit()
-            .map_err(|e| CompileErr::Unspecified(e.to_string()))
-    }
-}
-
-impl Compiler {
-    fn translate(&mut self, input: ast::StmtNode) -> Result<(), String> {
-        let pointer_type = self.module.target_config().pointer_type();
-        self.ctx
-            .func
-            .signature
-            .returns
-            .push(AbiParam::new(pointer_type));
-
-        let mut builder = FunctionBuilder::new(&mut self.ctx.func, &mut self.builder_context);
-        let entry_block = builder.create_block();
-
-        builder.append_block_params_for_function_params(entry_block);
-        builder.switch_to_block(entry_block);
-        builder.seal_block(entry_block);
-
-        let mut translator = FunctionTranslator {
-            pointer_type,
-            builder,
-        };
-
-        let ret = translator.translate_statement(input);
-
-        // return and finalize
-        translator.builder.ins().return_(&[ret]);
-        translator.builder.finalize();
-
-        Ok(())
-    }
-}
-
-struct FunctionTranslator<'a> {
-    pointer_type: types::Type,
-    builder: FunctionBuilder<'a>,
-}
-
-impl<'a> FunctionTranslator<'a> {
-    fn translate_statement(&mut self, stmt: ast::StmtNode) -> Value {
-        match stmt {
-            ast::StmtNode::Expression(expr) => {
-                self.translate_expr(expr);
-                self.builder.ins().iconst(self.pointer_type, 0)
+            CodeGenerationErr::Unspecified(e) => {
+                write!(f, "unspecified code generation err: {}", e)
             }
         }
     }
+}
 
-    fn translate_expr(&mut self, expr: ast::ExprNode) -> Value {
+/// CodeGenerator defines the generate method, returning a string representation
+/// of all generated instructions or an error.
+pub trait CodeGenerator {
+    fn generate(self, input: ast::StmtNode) -> Result<Vec<String>, CodeGenerationErr>;
+}
+
+/// TargetCodeGenerator implmements CodeGenerator, storing code context,
+/// register allocator and other metadata for a specific architecture.
+pub struct TargetCodeGenerator<T, R>
+where
+    T: machine::arch::TargetArchitecture,
+    R: register_allocation::RegisterAllocate,
+{
+    target_architecture: std::marker::PhantomData<T>,
+    register_allocator: R,
+    context: Vec<String>,
+}
+
+impl<T, R> TargetCodeGenerator<T, R>
+where
+    T: machine::arch::TargetArchitecture,
+    R: RegisterAllocate + Default,
+{
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl<T, R> Default for TargetCodeGenerator<T, R>
+where
+    T: machine::arch::TargetArchitecture,
+    R: RegisterAllocate + Default,
+{
+    fn default() -> Self {
+        Self {
+            target_architecture: std::marker::PhantomData,
+            register_allocator: <R>::default(),
+            context: Vec::new(),
+        }
+    }
+}
+
+impl CodeGenerator
+    for TargetCodeGenerator<machine::arch::x86_64::X86_64, machine::arch::x86_64::RegisterAllocator>
+{
+    fn generate(mut self, input: ast::StmtNode) -> Result<Vec<String>, CodeGenerationErr> {
+        self.codegen_preamble();
+        match input {
+            ast::StmtNode::Expression(expr) => {
+                let reg_id = self.codegen_expr(expr);
+                self.codegen_printint(reg_id);
+            }
+        };
+
+        self.codegen_postamble();
+        Ok(self.context)
+    }
+}
+
+type RegisterId = usize;
+
+const X86_64_PREAMBLE: &str = "\t.text
+.LC0:
+    .string\t\"%d\\n\"
+printint:
+    pushq\t%rbp
+    movq\t%rsp, %rbp
+    subq\t$16, %rsp
+    movl\t%edi, -4(%rbp)
+    movl\t-4(%rbp), %eax
+    movl\t%eax, %esi
+    leaq	.LC0(%rip), %rdi
+    movl	$0, %eax
+    call	printf@PLT
+    nop
+    leave
+    ret
+	
+    .globl\tmain
+    .type\tmain, @function
+main:
+    pushq\t%rbp
+    movq	%rsp, %rbp\n";
+
+const X86_64_POSTAMBLE: &str = "\tmovl	$0, %eax
+    popq	%rbp
+    ret\n";
+
+impl TargetCodeGenerator<machine::arch::x86_64::X86_64, machine::arch::x86_64::RegisterAllocator> {
+    fn codegen_preamble(&mut self) {
+        self.context.push(String::from(X86_64_PREAMBLE));
+    }
+
+    fn codegen_postamble(&mut self) {
+        self.context.push(String::from(X86_64_POSTAMBLE));
+    }
+
+    fn codegen_printint(&mut self, reg_id: RegisterId) {
+        let reg = self.register_allocator.register(reg_id).unwrap();
+
+        self.context
+            .push(format!("\tmovq\t{}, %rdi\n\tcall\tprintint\n", reg));
+        self.register_allocator.free_mut(reg_id);
+    }
+
+    fn codegen_expr(&mut self, expr: ast::ExprNode) -> RegisterId {
         use ast::{ExprNode, Primary};
 
         match expr {
             ExprNode::Primary(Primary::Uint8(ast::Uint8(ic))) => {
-                use std::convert::TryFrom;
-                let v: i64 = i64::try_from(ic).unwrap();
-                self.builder.ins().iconst(self.pointer_type, v)
+                let reg_id = self.register_allocator.allocate_mut().unwrap();
+                let reg = self.register_allocator.register(reg_id).unwrap();
+                self.context.push(format!("\tmovq\t${}, {}\n", ic, reg));
+                reg_id
             }
 
             ExprNode::Addition(lhs, rhs) => {
-                let lhs = self.translate_expr(*lhs);
-                let rhs = self.translate_expr(*rhs);
-                self.builder.ins().iadd(lhs, rhs)
+                let r1_id = self.codegen_expr(*lhs);
+                let r2_id = self.codegen_expr(*rhs);
+                let r1 = self.register_allocator.register(r1_id).unwrap();
+                let r2 = self.register_allocator.register(r2_id).unwrap();
+
+                self.context.push(format!("\taddq\t{}, {}\n", r1, r2));
+                self.register_allocator.free_mut(r1_id);
+                r2_id
             }
 
             ExprNode::Subtraction(lhs, rhs) => {
-                let lhs = self.translate_expr(*lhs);
-                let rhs = self.translate_expr(*rhs);
-                self.builder.ins().isub(lhs, rhs)
+                let r1_id = self.codegen_expr(*lhs);
+                let r2_id = self.codegen_expr(*rhs);
+                let r1 = self.register_allocator.register(r1_id).unwrap();
+                let r2 = self.register_allocator.register(r2_id).unwrap();
+
+                self.context.push(format!("\tsubq\t{}, {}\n", r2, r1));
+                self.register_allocator.free_mut(r2_id);
+                r1_id
             }
 
             ExprNode::Multiplication(lhs, rhs) => {
-                let lhs = self.translate_expr(*lhs);
-                let rhs = self.translate_expr(*rhs);
-                self.builder.ins().imul(lhs, rhs)
+                let r1_id = self.codegen_expr(*lhs);
+                let r2_id = self.codegen_expr(*rhs);
+                let r1 = self.register_allocator.register(r1_id).unwrap();
+                let r2 = self.register_allocator.register(r2_id).unwrap();
+
+                self.context.push(format!("\timulq\t{}, {}\n", r1, r2));
+                self.register_allocator.free_mut(r1_id);
+                r2_id
             }
 
             ExprNode::Division(lhs, rhs) => {
-                let lhs = self.translate_expr(*lhs);
-                let rhs = self.translate_expr(*rhs);
-                self.builder.ins().udiv(lhs, rhs)
+                let r1_id = self.codegen_expr(*lhs);
+                let r2_id = self.codegen_expr(*rhs);
+                let r1 = self.register_allocator.register(r1_id).unwrap();
+                let r2 = self.register_allocator.register(r2_id).unwrap();
+
+                self.context.push(format!("\tmovq\t{},%%rax\n", r1));
+                self.context.push(String::from("\tcqo\n"));
+                self.context.push(format!("\tidivq\t{}\n", r2));
+                self.context.push(format!("\tmovq\t%%rax,{}\n", r1));
+                self.register_allocator.free_mut(r2_id);
+                r1_id
             }
         }
     }

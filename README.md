@@ -1,5 +1,5 @@
 # mossy
-A C-frontend built around cranelift.
+An (irresponsibly) experimental C compiler for the first-principles of computing project.
 
 ## Grammar
 ```
