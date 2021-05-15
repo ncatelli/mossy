@@ -1,3 +1,5 @@
+pub mod x86_64;
+
 /// TargetArchitecture is a bare trait used for signalling that a type
 /// represents an architecture that cant be supported as a compiler target.
 pub trait TargetArchitecture {}
@@ -12,12 +14,7 @@ pub enum AvailableArchitectures {
 impl From<AvailableArchitectures> for Box<dyn TargetArchitecture> {
     fn from(src: AvailableArchitectures) -> Self {
         match src {
-            AvailableArchitectures::X86_64 => Box::new(X86_64),
+            AvailableArchitectures::X86_64 => Box::new(x86_64::X86_64),
         }
     }
 }
-
-/// X86_64 represents the x86_64 bit machine target.
-pub struct X86_64;
-
-impl TargetArchitecture for X86_64 {}

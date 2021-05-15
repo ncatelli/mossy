@@ -42,7 +42,7 @@ fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], St
         whitespace_wrapped(expression()),
         whitespace_wrapped(expect_character(';')),
     ))
-    .map(|expr| StmtNode::Expression(expr))
+    .map(StmtNode::Expression)
 }
 
 fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {

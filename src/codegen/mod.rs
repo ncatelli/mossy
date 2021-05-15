@@ -1,6 +1,8 @@
 use crate::ast;
 
+pub mod machine;
 mod register_allocation;
+use register_allocation::RegisterAllocatable;
 
 #[derive(Clone, PartialEq)]
 pub enum CodeGenerationErr {
@@ -21,33 +23,43 @@ pub trait CodeGenerator {
     fn generate(self, input: ast::StmtNode) -> Result<Vec<String>, CodeGenerationErr>;
 }
 
-pub struct TargetCodeGenerator<T>
+pub struct TargetCodeGenerator<T, R>
 where
-    T: crate::machine::arch::TargetArchitecture
-        + crate::codegen::register_allocation::RegisterAllocatable,
+    T: machine::arch::TargetArchitecture,
+    R: register_allocation::RegisterAllocatable,
 {
     target_architecture: std::marker::PhantomData<T>,
-    register_allocator: crate::codegen::register_allocation::RegisterAllocator<T>,
+    register_allocator: R,
     context: Vec<String>,
 }
 
-impl<T> TargetCodeGenerator<T>
+impl<T, R> TargetCodeGenerator<T, R>
 where
-    T: crate::machine::arch::TargetArchitecture
-        + crate::codegen::register_allocation::RegisterAllocatable,
+    T: machine::arch::TargetArchitecture,
+    R: RegisterAllocatable + Default,
 {
     pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl<T, R> Default for TargetCodeGenerator<T, R>
+where
+    T: machine::arch::TargetArchitecture,
+    R: RegisterAllocatable + Default,
+{
+    fn default() -> Self {
         Self {
             target_architecture: std::marker::PhantomData,
-            register_allocator: crate::codegen::register_allocation::RegisterAllocator::new(),
+            register_allocator: <R>::default(),
             context: Vec::new(),
         }
     }
 }
 
-use crate::machine::arch;
-
-impl CodeGenerator for TargetCodeGenerator<arch::X86_64> {
+impl CodeGenerator
+    for TargetCodeGenerator<machine::arch::x86_64::X86_64, machine::arch::x86_64::RegisterAllocator>
+{
     fn generate(mut self, input: ast::StmtNode) -> Result<Vec<String>, CodeGenerationErr> {
         self.codegen_preamble();
         match input {
@@ -64,7 +76,7 @@ impl CodeGenerator for TargetCodeGenerator<arch::X86_64> {
 
 type RegisterId = usize;
 
-const X86_64_PREAMBLE: &'static str = "\t.text
+const X86_64_PREAMBLE: &str = "\t.text
 .LC0:
     .string\t\"%d\\n\"
 printint:
@@ -87,11 +99,11 @@ main:
     pushq\t%rbp
     movq	%rsp, %rbp\n";
 
-const X86_64_POSTAMBLE: &'static str = "\tmovl	$0, %eax
+const X86_64_POSTAMBLE: &str = "\tmovl	$0, %eax
     popq	%rbp
     ret\n";
 
-impl TargetCodeGenerator<arch::X86_64> {
+impl TargetCodeGenerator<machine::arch::x86_64::X86_64, machine::arch::x86_64::RegisterAllocator> {
     fn codegen_preamble(&mut self) {
         self.context.push(String::from(X86_64_PREAMBLE));
     }
