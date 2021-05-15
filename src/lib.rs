@@ -1,5 +1,6 @@
 pub mod ast;
 pub mod codegen;
+pub mod machine;
 pub mod parser;
 
 #[cfg(test)]

@@ -5,8 +5,9 @@ use cranelift_codegen::isa;
 use cranelift_codegen::settings;
 use cranelift_module::{Linkage, Module};
 use cranelift_object::{ObjectBuilder, ObjectModule};
-
 use target_lexicon;
+
+mod register_allocation;
 
 #[derive(Clone, PartialEq)]
 pub enum CompileErr {
@@ -160,3 +161,7 @@ impl<'a> FunctionTranslator<'a> {
         }
     }
 }
+
+pub struct CodeGen;
+
+impl CodeGen {}
