@@ -49,18 +49,65 @@ use crate::machine::arch;
 
 impl CodeGenerator for TargetCodeGenerator<arch::X86_64> {
     fn generate(mut self, input: ast::StmtNode) -> Result<Vec<String>, CodeGenerationErr> {
+        self.codegen_preamble();
         match input {
             ast::StmtNode::Expression(expr) => {
-                let _reg_id = self.codegen_expr(expr);
-                Ok(self.context)
+                let reg_id = self.codegen_expr(expr);
+                self.codegen_printint(reg_id);
             }
-        }
+        };
+
+        self.codegen_postamble();
+        Ok(self.context)
     }
 }
 
 type RegisterId = usize;
 
+const X86_64CodeGenPreamble: &'static str = "\t.text
+.LC0:
+    .string\t\"%d\\n\"
+printint:
+    pushq\t%rbp
+    movq\t%rsp, %rbp
+    subq\t$16, %rsp
+    movl\t%edi, -4(%rbp)
+    movl\t-4(%rbp), %eax
+    movl\t%eax, %esi
+    leaq	.LC0(%rip), %rdi
+    movl	$0, %eax
+    call	printf@PLT
+    nop
+    leave
+    ret
+	
+    .globl\tmain
+    .type\tmain, @function
+main:
+    pushq\t%rbp
+    movq	%rsp, %rbp\n";
+
+const X86_64CodeGenPostamble: &'static str = "\tmovl	$0, %eax
+    popq	%rbp
+    ret\n";
+
 impl TargetCodeGenerator<arch::X86_64> {
+    fn codegen_preamble(&mut self) {
+        self.context.push(String::from(X86_64CodeGenPreamble));
+    }
+
+    fn codegen_postamble(&mut self) {
+        self.context.push(String::from(X86_64CodeGenPostamble));
+    }
+
+    fn codegen_printint(&mut self, reg_id: RegisterId) {
+        let reg = self.register_allocator.register(reg_id).unwrap();
+
+        self.context
+            .push(format!("\tmovq\t{}, %rdi\n\tcall\tprintint\n", reg));
+        self.register_allocator.free_mut(reg_id);
+    }
+
     fn codegen_expr(&mut self, expr: ast::ExprNode) -> RegisterId {
         use ast::{ExprNode, Primary};
 
