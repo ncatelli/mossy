@@ -64,7 +64,7 @@ impl CodeGenerator for TargetCodeGenerator<arch::X86_64> {
 
 type RegisterId = usize;
 
-const X86_64CodeGenPreamble: &'static str = "\t.text
+const X86_64_PREAMBLE: &'static str = "\t.text
 .LC0:
     .string\t\"%d\\n\"
 printint:
@@ -87,17 +87,17 @@ main:
     pushq\t%rbp
     movq	%rsp, %rbp\n";
 
-const X86_64CodeGenPostamble: &'static str = "\tmovl	$0, %eax
+const X86_64_POSTAMBLE: &'static str = "\tmovl	$0, %eax
     popq	%rbp
     ret\n";
 
 impl TargetCodeGenerator<arch::X86_64> {
     fn codegen_preamble(&mut self) {
-        self.context.push(String::from(X86_64CodeGenPreamble));
+        self.context.push(String::from(X86_64_PREAMBLE));
     }
 
     fn codegen_postamble(&mut self) {
-        self.context.push(String::from(X86_64CodeGenPostamble));
+        self.context.push(String::from(X86_64_POSTAMBLE));
     }
 
     fn codegen_printint(&mut self, reg_id: RegisterId) {
