@@ -131,7 +131,7 @@ fn dec_u8<'a>() -> impl Parser<'a, &'a [(usize, char)], u8> {
         let res = parcel::one_or_more(digit(10))
             .map(|digits| {
                 let vd: String = digits.into_iter().collect();
-                u8::from_str_radix(&vd, 10)
+                vd.parse::<u8>()
             })
             .parse(input);
 
