@@ -12,18 +12,28 @@ impl RegisterAllocatable for X86_64 {
 
 #[derive(Debug, Clone, Copy)]
 pub struct Register {
-    id: &'static str,
+    repr: &'static str,
 }
 
 impl Register {
-    pub fn new(id: &'static str) -> Self {
-        Self { id }
+    pub fn new(repr: &'static str) -> Self {
+        Self { repr: repr }
+    }
+
+    pub fn id(&self) -> &'static str {
+        self.repr
     }
 }
 
 impl From<&'static str> for Register {
-    fn from(id: &'static str) -> Self {
-        Self { id }
+    fn from(repr: &'static str) -> Self {
+        Self { repr: repr }
+    }
+}
+
+impl std::fmt::Display for Register {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.repr)
     }
 }
 

@@ -48,12 +48,15 @@ fn compile(source: String) -> RuntimeResult<()> {
     parser::parse(&input)
         .map_err(|e| format!("{:?}", e))
         .map(|ast_node| {
-            use mossy::codegen::Compile;
-            mossy::codegen::Compiler::default().compile(ast_node[0].to_owned())
+            use mossy::codegen::{CodeGenerator, TargetCodeGenerator};
+            use mossy::machine::arch::X86_64;
+
+            TargetCodeGenerator::<X86_64>::new().generate(ast_node[0].to_owned())
         })
         .unwrap()
-        .map(|bin| {
-            write_dest_file("a.out", &bin).unwrap();
+        .map(|insts| {
+            //write_dest_file("a.out", &bin).unwrap();
+            println!("{}", insts.into_iter().collect::<String>())
         })
         .map_err(|e| format!("{:?}", e))?;
 
