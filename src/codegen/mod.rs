@@ -2,8 +2,11 @@ use crate::ast;
 
 pub mod machine;
 mod register_allocation;
-use register_allocation::RegisterAllocatable;
+use register_allocation::RegisterAllocate;
 
+/// CodeGenerationErr represents an error stemming from the CodeGenerator's
+/// `generate` method, capturing any potential point of breakdown withing the
+/// code generation process.
 #[derive(Clone, PartialEq)]
 pub enum CodeGenerationErr {
     Unspecified(String),
@@ -19,14 +22,18 @@ impl std::fmt::Debug for CodeGenerationErr {
     }
 }
 
+/// CodeGenerator defines the generate method, returning a string representation
+/// of all generated instructions or an error.
 pub trait CodeGenerator {
     fn generate(self, input: ast::StmtNode) -> Result<Vec<String>, CodeGenerationErr>;
 }
 
+/// TargetCodeGenerator implmements CodeGenerator, storing code context,
+/// register allocator and other metadata for a specific architecture.
 pub struct TargetCodeGenerator<T, R>
 where
     T: machine::arch::TargetArchitecture,
-    R: register_allocation::RegisterAllocatable,
+    R: register_allocation::RegisterAllocate,
 {
     target_architecture: std::marker::PhantomData<T>,
     register_allocator: R,
@@ -36,7 +43,7 @@ where
 impl<T, R> TargetCodeGenerator<T, R>
 where
     T: machine::arch::TargetArchitecture,
-    R: RegisterAllocatable + Default,
+    R: RegisterAllocate + Default,
 {
     pub fn new() -> Self {
         Self::default()
@@ -46,7 +53,7 @@ where
 impl<T, R> Default for TargetCodeGenerator<T, R>
 where
     T: machine::arch::TargetArchitecture,
-    R: RegisterAllocatable + Default,
+    R: RegisterAllocate + Default,
 {
     fn default() -> Self {
         Self {

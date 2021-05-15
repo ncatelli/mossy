@@ -1,5 +1,5 @@
 use crate::codegen::machine::arch::TargetArchitecture;
-use crate::codegen::register_allocation::{Register, RegisterAllocatable};
+use crate::codegen::register_allocation::{Register, RegisterAllocate};
 
 /// X86_64 represents the x86_64 bit machine target.
 pub struct X86_64;
@@ -33,7 +33,7 @@ impl RegisterAllocator {
     }
 }
 
-impl RegisterAllocatable for RegisterAllocator {
+impl RegisterAllocate for RegisterAllocator {
     fn register_ids() -> Vec<&'static str> {
         vec!["%r8", "%r9", "%r10", "%r11"]
     }
