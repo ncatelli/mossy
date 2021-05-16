@@ -2,7 +2,7 @@
 pub type AllocatorEntityId = usize;
 
 /// Allocator represents any allocator that can allocate
-pub trait Allocator<T>
+pub trait Allocator
 where
     Self: Sized,
 {

@@ -51,7 +51,7 @@ fn compile(source: String) -> RuntimeResult<()> {
             use mossy::codegen::machine::arch::x86_64;
             use mossy::codegen::{CodeGenerator, TargetCodeGenerator};
 
-            TargetCodeGenerator::<x86_64::X86_64, x86_64::RegisterAllocator>::new()
+            TargetCodeGenerator::<x86_64::X86_64, x86_64::GPRegisterAllocator>::new()
                 .generate(ast_node[0].to_owned())
         })
         .unwrap()
