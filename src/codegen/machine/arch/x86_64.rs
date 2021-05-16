@@ -1,6 +1,6 @@
-use crate::codegen::allocator::Allocator;
 use crate::codegen::machine::arch::TargetArchitecture;
 use crate::codegen::register::GeneralPurpose;
+use crate::{ast::ExprNode, codegen::allocator::Allocator};
 
 /// X86_64 represents the x86_64 bit machine target.
 pub struct X86_64;
@@ -120,3 +120,129 @@ main:
 pub const CG_POSTAMBLE: &str = "\tmovl	$0, %eax
     popq	%rbp
     ret\n";
+
+use crate::ast;
+use crate::codegen;
+use crate::codegen::machine;
+use crate::codegen::CodeGenerator;
+
+type RegisterId = usize;
+
+impl CodeGenerator
+    for codegen::TargetCodeGenerator<
+        machine::arch::x86_64::X86_64,
+        machine::arch::x86_64::GPRegisterAllocator,
+    >
+{
+    fn generate(mut self, input: ast::StmtNode) -> Result<Vec<String>, codegen::CodeGenerationErr> {
+        self.codegen_preamble();
+        match input {
+            ast::StmtNode::Expression(expr) => {
+                let reg_id = self.codegen_expr(expr);
+                self.codegen_printint(reg_id);
+            }
+        };
+
+        self.codegen_postamble();
+        Ok(self.context)
+    }
+}
+
+impl
+    codegen::TargetCodeGenerator<
+        machine::arch::x86_64::X86_64,
+        machine::arch::x86_64::GPRegisterAllocator,
+    >
+{
+    fn codegen_preamble(&mut self) {
+        self.context
+            .push(String::from(machine::arch::x86_64::CG_PREAMBLE));
+    }
+
+    fn codegen_postamble(&mut self) {
+        self.context
+            .push(String::from(machine::arch::x86_64::CG_POSTAMBLE));
+    }
+
+    fn codegen_printint(&mut self, reg_id: RegisterId) {
+        let reg = self.allocator.register(reg_id).unwrap();
+
+        self.context
+            .push(format!("\tmovq\t{}, %rdi\n\tcall\tprintint\n", reg));
+        self.allocator.free_mut(reg_id);
+    }
+
+    fn codegen_expr(&mut self, expr: crate::ast::ExprNode) -> RegisterId {
+        use crate::ast::Primary;
+
+        match expr {
+            ExprNode::Primary(Primary::Uint8(ast::Uint8(uc))) => self.codegen_constant_u8(uc),
+            ExprNode::Addition(lhs, rhs) => self.codegen_addition(lhs, rhs),
+            ExprNode::Subtraction(lhs, rhs) => self.codegen_subtraction(lhs, rhs),
+            ExprNode::Multiplication(lhs, rhs) => self.codegen_multiplication(lhs, rhs),
+            ExprNode::Division(lhs, rhs) => self.codegen_division(lhs, rhs),
+        }
+    }
+}
+
+impl
+    codegen::TargetCodeGenerator<
+        machine::arch::x86_64::X86_64,
+        machine::arch::x86_64::GPRegisterAllocator,
+    >
+{
+    fn codegen_constant_u8(&mut self, constant: u8) -> RegisterId {
+        let reg_id = self.allocator.allocate_mut().unwrap();
+        let reg = self.allocator.register(reg_id).unwrap();
+        self.context
+            .push(format!("\tmovq\t${}, {}\n", constant, reg));
+        reg_id
+    }
+
+    fn codegen_addition(&mut self, lhs: Box<ExprNode>, rhs: Box<ExprNode>) -> RegisterId {
+        let r1_id = self.codegen_expr(*lhs);
+        let r2_id = self.codegen_expr(*rhs);
+        let r1 = self.allocator.register(r1_id).unwrap();
+        let r2 = self.allocator.register(r2_id).unwrap();
+
+        self.context.push(format!("\taddq\t{}, {}\n", r1, r2));
+        self.allocator.free_mut(r1_id);
+        r2_id
+    }
+
+    fn codegen_subtraction(&mut self, lhs: Box<ExprNode>, rhs: Box<ExprNode>) -> RegisterId {
+        let r1_id = self.codegen_expr(*lhs);
+        let r2_id = self.codegen_expr(*rhs);
+        let r1 = self.allocator.register(r1_id).unwrap();
+        let r2 = self.allocator.register(r2_id).unwrap();
+
+        self.context.push(format!("\tsubq\t{}, {}\n", r2, r1));
+        self.allocator.free_mut(r2_id);
+        r1_id
+    }
+
+    fn codegen_multiplication(&mut self, lhs: Box<ExprNode>, rhs: Box<ExprNode>) -> RegisterId {
+        let r1_id = self.codegen_expr(*lhs);
+        let r2_id = self.codegen_expr(*rhs);
+        let r1 = self.allocator.register(r1_id).unwrap();
+        let r2 = self.allocator.register(r2_id).unwrap();
+
+        self.context.push(format!("\timulq\t{}, {}\n", r1, r2));
+        self.allocator.free_mut(r1_id);
+        r2_id
+    }
+
+    fn codegen_division(&mut self, lhs: Box<ExprNode>, rhs: Box<ExprNode>) -> RegisterId {
+        let r1_id = self.codegen_expr(*lhs);
+        let r2_id = self.codegen_expr(*rhs);
+        let r1 = self.allocator.register(r1_id).unwrap();
+        let r2 = self.allocator.register(r2_id).unwrap();
+
+        self.context.push(format!("\tmovq\t{},%%rax\n", r1));
+        self.context.push(String::from("\tcqo\n"));
+        self.context.push(format!("\tidivq\t{}\n", r2));
+        self.context.push(format!("\tmovq\t%%rax,{}\n", r1));
+        self.allocator.free_mut(r2_id);
+        r1_id
+    }
+}
