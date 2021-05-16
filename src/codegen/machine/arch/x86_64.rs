@@ -1,5 +1,6 @@
+use crate::codegen::allocator::Allocator;
 use crate::codegen::machine::arch::TargetArchitecture;
-use crate::codegen::register_allocation::{Register, RegisterAllocate};
+use crate::codegen::register::Register;
 
 /// X86_64 represents the x86_64 bit machine target.
 pub struct X86_64;
@@ -31,13 +32,13 @@ impl RegisterAllocator {
     pub fn register(&self, idx: usize) -> Option<Register> {
         self.registers.get(idx).copied()
     }
-}
 
-impl RegisterAllocate for RegisterAllocator {
-    fn register_ids() -> Vec<&'static str> {
+    pub fn register_ids() -> Vec<&'static str> {
         vec!["%r8", "%r9", "%r10", "%r11"]
     }
+}
 
+impl Allocator<Register> for RegisterAllocator {
     /// Finds the first unallocated register, if one is found it is returned
     /// as an option.
     fn allocate_mut(&mut self) -> Option<usize> {

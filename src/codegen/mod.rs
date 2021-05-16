@@ -1,8 +1,10 @@
 use crate::ast;
 
+pub mod allocator;
 pub mod machine;
-mod register_allocation;
-use register_allocation::RegisterAllocate;
+mod register;
+
+use allocator::Allocator;
 
 /// CodeGenerationErr represents an error stemming from the CodeGenerator's
 /// `generate` method, capturing any potential point of breakdown withing the
@@ -30,20 +32,20 @@ pub trait CodeGenerator {
 
 /// TargetCodeGenerator implmements CodeGenerator, storing code context,
 /// register allocator and other metadata for a specific architecture.
-pub struct TargetCodeGenerator<T, R>
+pub struct TargetCodeGenerator<T, A>
 where
     T: machine::arch::TargetArchitecture,
-    R: register_allocation::RegisterAllocate,
+    A: allocator::Allocator<register::Register>,
 {
     target_architecture: std::marker::PhantomData<T>,
-    register_allocator: R,
+    allocator: A,
     context: Vec<String>,
 }
 
 impl<T, R> TargetCodeGenerator<T, R>
 where
     T: machine::arch::TargetArchitecture,
-    R: RegisterAllocate + Default,
+    R: allocator::Allocator<register::Register> + Default,
 {
     pub fn new() -> Self {
         Self::default()
@@ -53,12 +55,12 @@ where
 impl<T, R> Default for TargetCodeGenerator<T, R>
 where
     T: machine::arch::TargetArchitecture,
-    R: RegisterAllocate + Default,
+    R: allocator::Allocator<register::Register> + Default,
 {
     fn default() -> Self {
         Self {
             target_architecture: std::marker::PhantomData,
-            register_allocator: <R>::default(),
+            allocator: <R>::default(),
             context: Vec::new(),
         }
     }
@@ -120,11 +122,11 @@ impl TargetCodeGenerator<machine::arch::x86_64::X86_64, machine::arch::x86_64::R
     }
 
     fn codegen_printint(&mut self, reg_id: RegisterId) {
-        let reg = self.register_allocator.register(reg_id).unwrap();
+        let reg = self.allocator.register(reg_id).unwrap();
 
         self.context
             .push(format!("\tmovq\t{}, %rdi\n\tcall\tprintint\n", reg));
-        self.register_allocator.free_mut(reg_id);
+        self.allocator.free_mut(reg_id);
     }
 
     fn codegen_expr(&mut self, expr: ast::ExprNode) -> RegisterId {
@@ -132,8 +134,8 @@ impl TargetCodeGenerator<machine::arch::x86_64::X86_64, machine::arch::x86_64::R
 
         match expr {
             ExprNode::Primary(Primary::Uint8(ast::Uint8(ic))) => {
-                let reg_id = self.register_allocator.allocate_mut().unwrap();
-                let reg = self.register_allocator.register(reg_id).unwrap();
+                let reg_id = self.allocator.allocate_mut().unwrap();
+                let reg = self.allocator.register(reg_id).unwrap();
                 self.context.push(format!("\tmovq\t${}, {}\n", ic, reg));
                 reg_id
             }
@@ -141,47 +143,47 @@ impl TargetCodeGenerator<machine::arch::x86_64::X86_64, machine::arch::x86_64::R
             ExprNode::Addition(lhs, rhs) => {
                 let r1_id = self.codegen_expr(*lhs);
                 let r2_id = self.codegen_expr(*rhs);
-                let r1 = self.register_allocator.register(r1_id).unwrap();
-                let r2 = self.register_allocator.register(r2_id).unwrap();
+                let r1 = self.allocator.register(r1_id).unwrap();
+                let r2 = self.allocator.register(r2_id).unwrap();
 
                 self.context.push(format!("\taddq\t{}, {}\n", r1, r2));
-                self.register_allocator.free_mut(r1_id);
+                self.allocator.free_mut(r1_id);
                 r2_id
             }
 
             ExprNode::Subtraction(lhs, rhs) => {
                 let r1_id = self.codegen_expr(*lhs);
                 let r2_id = self.codegen_expr(*rhs);
-                let r1 = self.register_allocator.register(r1_id).unwrap();
-                let r2 = self.register_allocator.register(r2_id).unwrap();
+                let r1 = self.allocator.register(r1_id).unwrap();
+                let r2 = self.allocator.register(r2_id).unwrap();
 
                 self.context.push(format!("\tsubq\t{}, {}\n", r2, r1));
-                self.register_allocator.free_mut(r2_id);
+                self.allocator.free_mut(r2_id);
                 r1_id
             }
 
             ExprNode::Multiplication(lhs, rhs) => {
                 let r1_id = self.codegen_expr(*lhs);
                 let r2_id = self.codegen_expr(*rhs);
-                let r1 = self.register_allocator.register(r1_id).unwrap();
-                let r2 = self.register_allocator.register(r2_id).unwrap();
+                let r1 = self.allocator.register(r1_id).unwrap();
+                let r2 = self.allocator.register(r2_id).unwrap();
 
                 self.context.push(format!("\timulq\t{}, {}\n", r1, r2));
-                self.register_allocator.free_mut(r1_id);
+                self.allocator.free_mut(r1_id);
                 r2_id
             }
 
             ExprNode::Division(lhs, rhs) => {
                 let r1_id = self.codegen_expr(*lhs);
                 let r2_id = self.codegen_expr(*rhs);
-                let r1 = self.register_allocator.register(r1_id).unwrap();
-                let r2 = self.register_allocator.register(r2_id).unwrap();
+                let r1 = self.allocator.register(r1_id).unwrap();
+                let r2 = self.allocator.register(r2_id).unwrap();
 
                 self.context.push(format!("\tmovq\t{},%%rax\n", r1));
                 self.context.push(String::from("\tcqo\n"));
                 self.context.push(format!("\tidivq\t{}\n", r2));
                 self.context.push(format!("\tmovq\t%%rax,{}\n", r1));
-                self.register_allocator.free_mut(r2_id);
+                self.allocator.free_mut(r2_id);
                 r1_id
             }
         }

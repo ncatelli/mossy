@@ -1,17 +1,3 @@
-/// Implements the methods for handling register allocation.
-pub trait RegisterAllocate
-where
-    Self: Sized,
-{
-    fn register_ids() -> Vec<&'static str>;
-    fn allocate(self) -> (Self, Option<usize>);
-    fn allocate_mut(&mut self) -> Option<usize>;
-    fn free(self, idx: usize) -> (Self, Option<usize>);
-    fn free_mut(&mut self, idx: usize) -> Option<usize>;
-    fn free_all(self) -> Self;
-    fn free_all_mut(&mut self);
-}
-
 /// Register represents a string representable register that can be used both by
 /// allocators and by code generation.
 #[derive(Debug, Clone, Copy)]
