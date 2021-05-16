@@ -1,6 +1,6 @@
 use crate::codegen::allocator::Allocator;
 use crate::codegen::machine::arch::TargetArchitecture;
-use crate::codegen::register::Register;
+use crate::codegen::register::GeneralPurpose;
 
 /// X86_64 represents the x86_64 bit machine target.
 pub struct X86_64;
@@ -8,42 +8,46 @@ pub struct X86_64;
 impl TargetArchitecture for X86_64 {}
 
 #[derive(Debug, Clone)]
-pub struct RegisterAllocator {
-    registers: Vec<Register>,
-    allocated: Vec<bool>,
+pub struct GPRegisterAllocator {
+    general_purpose: [GeneralPurpose<u64>; 8],
+    general_purpose_allocated: [bool; 8],
 }
 
-impl Default for RegisterAllocator {
+impl Default for GPRegisterAllocator {
     fn default() -> Self {
         Self {
-            registers: vec![
-                Register::from("%r8"),
-                Register::from("%r9"),
-                Register::from("%r10"),
-                Register::from("%rx11"),
+            general_purpose: [
+                GeneralPurpose::new("%r8"),
+                GeneralPurpose::new("%r9"),
+                GeneralPurpose::new("%r10"),
+                GeneralPurpose::new("%r11"),
+                GeneralPurpose::new("%r12"),
+                GeneralPurpose::new("%r13"),
+                GeneralPurpose::new("%r14"),
+                GeneralPurpose::new("%r15"),
             ],
-            allocated: [false].iter().cycle().take(4).copied().collect(),
+            general_purpose_allocated: [false, false, false, false, false, false, false, false],
         }
     }
 }
 
-impl RegisterAllocator {
+impl GPRegisterAllocator {
     /// Optionally returns a register, by Id, if it exists.
-    pub fn register(&self, idx: usize) -> Option<Register> {
-        self.registers.get(idx).copied()
+    pub fn register(&self, idx: usize) -> Option<GeneralPurpose<u64>> {
+        self.general_purpose.get(idx).copied()
     }
 
-    pub fn register_ids() -> Vec<&'static str> {
-        vec!["%r8", "%r9", "%r10", "%r11"]
+    pub fn register_ids(&self) -> Vec<&'static str> {
+        self.general_purpose.iter().map(|reg| reg.id()).collect()
     }
 }
 
-impl Allocator<Register> for RegisterAllocator {
+impl Allocator<GeneralPurpose<u64>> for GPRegisterAllocator {
     /// Finds the first unallocated register, if one is found it is returned
     /// as an option.
     fn allocate_mut(&mut self) -> Option<usize> {
         if let Some(idx) = get_unallocated_register(self) {
-            self.allocated[idx] = true;
+            self.general_purpose_allocated[idx] = true;
             Some(idx)
         } else {
             None
@@ -58,7 +62,7 @@ impl Allocator<Register> for RegisterAllocator {
     }
 
     fn free_mut(&mut self, idx: usize) -> Option<usize> {
-        if let Some(alloc) = self.allocated.get_mut(idx) {
+        if let Some(alloc) = self.general_purpose_allocated.get_mut(idx) {
             *alloc = false;
             Some(idx)
         } else {
@@ -72,7 +76,7 @@ impl Allocator<Register> for RegisterAllocator {
     }
 
     fn free_all_mut(&mut self) {
-        self.allocated = [false].iter().cycle().copied().take(4).collect();
+        self.general_purpose_allocated = [false, false, false, false, false, false, false, false]
     }
 
     fn free_all(mut self) -> Self {
@@ -82,8 +86,8 @@ impl Allocator<Register> for RegisterAllocator {
 }
 
 /// Finds the first unallocated register, if any, If any are available the offset is returned.
-fn get_unallocated_register(ra: &RegisterAllocator) -> Option<usize> {
-    ra.allocated
+fn get_unallocated_register(ra: &GPRegisterAllocator) -> Option<usize> {
+    ra.general_purpose_allocated
         .iter()
         .enumerate()
         .filter_map(|(idx, allocated)| if *allocated { None } else { Some(idx) })

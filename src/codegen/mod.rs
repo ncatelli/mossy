@@ -35,7 +35,7 @@ pub trait CodeGenerator {
 pub struct TargetCodeGenerator<T, A>
 where
     T: machine::arch::TargetArchitecture,
-    A: allocator::Allocator<register::Register>,
+    A: allocator::Allocator<register::GeneralPurpose<u64>>,
 {
     target_architecture: std::marker::PhantomData<T>,
     allocator: A,
@@ -45,7 +45,7 @@ where
 impl<T, R> TargetCodeGenerator<T, R>
 where
     T: machine::arch::TargetArchitecture,
-    R: allocator::Allocator<register::Register> + Default,
+    R: allocator::Allocator<register::GeneralPurpose<u64>> + Default,
 {
     pub fn new() -> Self {
         Self::default()
@@ -55,7 +55,7 @@ where
 impl<T, R> Default for TargetCodeGenerator<T, R>
 where
     T: machine::arch::TargetArchitecture,
-    R: allocator::Allocator<register::Register> + Default,
+    R: allocator::Allocator<register::GeneralPurpose<u64>> + Default,
 {
     fn default() -> Self {
         Self {
@@ -67,7 +67,10 @@ where
 }
 
 impl CodeGenerator
-    for TargetCodeGenerator<machine::arch::x86_64::X86_64, machine::arch::x86_64::RegisterAllocator>
+    for TargetCodeGenerator<
+        machine::arch::x86_64::X86_64,
+        machine::arch::x86_64::GPRegisterAllocator,
+    >
 {
     fn generate(mut self, input: ast::StmtNode) -> Result<Vec<String>, CodeGenerationErr> {
         self.codegen_preamble();
@@ -112,7 +115,9 @@ const X86_64_POSTAMBLE: &str = "\tmovl	$0, %eax
     popq	%rbp
     ret\n";
 
-impl TargetCodeGenerator<machine::arch::x86_64::X86_64, machine::arch::x86_64::RegisterAllocator> {
+impl
+    TargetCodeGenerator<machine::arch::x86_64::X86_64, machine::arch::x86_64::GPRegisterAllocator>
+{
     fn codegen_preamble(&mut self) {
         self.context.push(String::from(X86_64_PREAMBLE));
     }
