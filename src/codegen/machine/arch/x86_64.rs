@@ -42,7 +42,7 @@ impl GPRegisterAllocator {
     }
 }
 
-impl Allocator<GeneralPurpose<u64>> for GPRegisterAllocator {
+impl Allocator for GPRegisterAllocator {
     /// Finds the first unallocated register, if one is found it is returned
     /// as an option.
     fn allocate_mut(&mut self) -> Option<usize> {

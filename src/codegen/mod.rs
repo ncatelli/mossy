@@ -35,7 +35,7 @@ pub trait CodeGenerator {
 pub struct TargetCodeGenerator<T, A>
 where
     T: machine::arch::TargetArchitecture,
-    A: allocator::Allocator<register::GeneralPurpose<u64>>,
+    A: allocator::Allocator,
 {
     target_architecture: std::marker::PhantomData<T>,
     allocator: A,
@@ -45,7 +45,7 @@ where
 impl<T, R> TargetCodeGenerator<T, R>
 where
     T: machine::arch::TargetArchitecture,
-    R: allocator::Allocator<register::GeneralPurpose<u64>> + Default,
+    R: allocator::Allocator + Default,
 {
     pub fn new() -> Self {
         Self::default()
@@ -55,7 +55,7 @@ where
 impl<T, R> Default for TargetCodeGenerator<T, R>
 where
     T: machine::arch::TargetArchitecture,
-    R: allocator::Allocator<register::GeneralPurpose<u64>> + Default,
+    R: allocator::Allocator + Default,
 {
     fn default() -> Self {
         Self {
