@@ -93,3 +93,30 @@ fn get_unallocated_register(ra: &GPRegisterAllocator) -> Option<usize> {
         .filter_map(|(idx, allocated)| if *allocated { None } else { Some(idx) })
         .next()
 }
+
+pub const CG_PREAMBLE: &str = "\t.text
+.LC0:
+    .string \"%d\\n\"
+printint:
+    pushq   %rbp
+    movq    %rsp, %rbp
+    subq    $16, %rsp
+    movl    %edi, -4(%rbp)
+    movl    -4(%rbp), %eax
+    movl    %eax, %esi
+    leaq	.LC0(%rip), %rdi
+    movl	$0, %eax
+    call	printf@PLT
+    nop
+    leave
+    ret
+	
+    .globl  main
+    .type   main, @function
+main:
+    pushq   %rbp
+    movq	%rsp, %rbp\n";
+
+pub const CG_POSTAMBLE: &str = "\tmovl	$0, %eax
+    popq	%rbp
+    ret\n";

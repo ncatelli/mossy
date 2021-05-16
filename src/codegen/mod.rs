@@ -88,42 +88,17 @@ impl CodeGenerator
 
 type RegisterId = usize;
 
-const X86_64_PREAMBLE: &str = "\t.text
-.LC0:
-    .string\t\"%d\\n\"
-printint:
-    pushq\t%rbp
-    movq\t%rsp, %rbp
-    subq\t$16, %rsp
-    movl\t%edi, -4(%rbp)
-    movl\t-4(%rbp), %eax
-    movl\t%eax, %esi
-    leaq	.LC0(%rip), %rdi
-    movl	$0, %eax
-    call	printf@PLT
-    nop
-    leave
-    ret
-	
-    .globl\tmain
-    .type\tmain, @function
-main:
-    pushq\t%rbp
-    movq	%rsp, %rbp\n";
-
-const X86_64_POSTAMBLE: &str = "\tmovl	$0, %eax
-    popq	%rbp
-    ret\n";
-
 impl
     TargetCodeGenerator<machine::arch::x86_64::X86_64, machine::arch::x86_64::GPRegisterAllocator>
 {
     fn codegen_preamble(&mut self) {
-        self.context.push(String::from(X86_64_PREAMBLE));
+        self.context
+            .push(String::from(machine::arch::x86_64::CG_PREAMBLE));
     }
 
     fn codegen_postamble(&mut self) {
-        self.context.push(String::from(X86_64_POSTAMBLE));
+        self.context
+            .push(String::from(machine::arch::x86_64::CG_POSTAMBLE));
     }
 
     fn codegen_printint(&mut self, reg_id: RegisterId) {
