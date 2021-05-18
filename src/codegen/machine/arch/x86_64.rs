@@ -218,10 +218,10 @@ fn codegen_division(
             lhs_ctx,
             rhs_ctx,
             vec![
-                format!("\tmovq\t{},%%rax\n", ret_val),
+                format!("\tmovq\t{},%rax\n", ret_val),
                 String::from("\tcqo\n"),
                 format!("\tidivq\t{}\n", rhs_retval),
-                format!("\tmovq\t%%rax,{}\n", ret_val),
+                format!("\tmovq\t%rax,{}\n", ret_val),
             ],
         ]
         .into_iter()
