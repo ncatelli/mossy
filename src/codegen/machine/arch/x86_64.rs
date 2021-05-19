@@ -19,16 +19,7 @@ impl GPRegisterAllocator {
         }
     }
 
-    /// Optionally returns a register, by Id, if it exists.
-    pub fn register(&self, idx: usize) -> Option<GeneralPurpose<u64>> {
-        self.registers.get(idx).copied()
-    }
-
-    pub fn register_ids(&self) -> Vec<&'static str> {
-        self.registers.iter().map(|reg| reg.id()).collect()
-    }
-
-    pub fn allocate_then<F, R>(&mut self, f: F) -> R
+    fn allocate_then<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce(&mut Self, &mut GeneralPurpose<u64>) -> R,
     {
