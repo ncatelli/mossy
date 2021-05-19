@@ -9,13 +9,44 @@ impl TargetArchitecture for X86_64 {}
 
 #[derive(Debug, Clone)]
 pub struct GPRegisterAllocator {
-    general_purpose: Vec<GeneralPurpose<u64>>,
+    registers: Vec<GeneralPurpose<u64>>,
+}
+
+impl GPRegisterAllocator {
+    pub fn new(registers: Vec<GeneralPurpose<u64>>) -> Self {
+        Self {
+            registers: registers,
+        }
+    }
+
+    /// Optionally returns a register, by Id, if it exists.
+    pub fn register(&self, idx: usize) -> Option<GeneralPurpose<u64>> {
+        self.registers.get(idx).copied()
+    }
+
+    pub fn register_ids(&self) -> Vec<&'static str> {
+        self.registers.iter().map(|reg| reg.id()).collect()
+    }
+
+    pub fn allocate_then<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut Self, &mut GeneralPurpose<u64>) -> R,
+    {
+        self.registers
+            .pop()
+            .map(|mut reg| {
+                let ret_val = f(self, &mut reg);
+                self.registers.push(reg);
+                ret_val
+            })
+            .unwrap()
+    }
 }
 
 impl Default for GPRegisterAllocator {
     fn default() -> Self {
         Self {
-            general_purpose: vec![
+            registers: vec![
                 GeneralPurpose::new("%r8"),
                 GeneralPurpose::new("%r9"),
                 GeneralPurpose::new("%r10"),
@@ -26,33 +57,6 @@ impl Default for GPRegisterAllocator {
                 GeneralPurpose::new("%r15"),
             ],
         }
-    }
-}
-
-impl GPRegisterAllocator {
-    /// Optionally returns a register, by Id, if it exists.
-    pub fn register(&self, idx: usize) -> Option<GeneralPurpose<u64>> {
-        self.general_purpose.get(idx).copied()
-    }
-
-    pub fn register_ids(&self) -> Vec<&'static str> {
-        self.general_purpose.iter().map(|reg| reg.id()).collect()
-    }
-
-    pub fn allocate_then<F, R>(&mut self, f: F) -> R
-    where
-        F: FnOnce(&mut Self, &mut GeneralPurpose<u64>) -> R,
-    {
-        let ret_val = self
-            .general_purpose
-            .pop()
-            .map(|mut reg| {
-                let ret_val = f(self, &mut reg);
-                self.general_purpose.push(reg);
-                ret_val
-            })
-            .unwrap();
-        ret_val
     }
 }
 
@@ -232,4 +236,19 @@ fn codegen_division(
 
 fn codegen_printint(reg: &mut GeneralPurpose<u64>) -> Vec<String> {
     vec![format!("\tmovq\t{}, %rdi\n\tcall\tprintint\n", reg)]
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::codegen::machine::arch::x86_64;
+
+    #[test]
+    fn should_allocate_a_register_from_an_unutilized_pool() {
+        assert_eq!(
+            ["%r14", "%r15"],
+            x86_64::GPRegisterAllocator::default().allocate_then(|allocator, reg| {
+                [allocator.allocate_then(|_, reg| reg.id()), reg.id()]
+            })
+        )
+    }
 }
