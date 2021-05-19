@@ -19,6 +19,7 @@ impl GPRegisterAllocator {
         }
     }
 
+    /// Allocates a register for the duration of the life of closure.
     fn allocate_then<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce(&mut Self, &mut GeneralPurpose<u64>) -> R,
