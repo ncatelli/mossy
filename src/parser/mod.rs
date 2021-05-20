@@ -52,13 +52,16 @@ fn declaration_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], S
 
 fn assignment_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     parcel::left(parcel::join(
-        parcel::right(parcel::join(
-            whitespace_wrapped(expect_str("int")),
+        parcel::join(
             whitespace_wrapped(identifier()),
-        )),
+            parcel::right(parcel::join(
+                whitespace_wrapped(expect_character('=')),
+                whitespace_wrapped(expression()),
+            )),
+        ),
         whitespace_wrapped(expect_character(';')),
     ))
-    .map(StmtNode::Declaration)
+    .map(|(ident, expr)| StmtNode::Assignment(ident, expr))
 }
 
 fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
