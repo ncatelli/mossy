@@ -14,9 +14,7 @@ pub struct GPRegisterAllocator {
 
 impl GPRegisterAllocator {
     pub fn new(registers: Vec<GeneralPurpose<u64>>) -> Self {
-        Self {
-            registers: registers,
-        }
+        Self { registers }
     }
 
     /// Allocates a register for the duration of the life of closure.
