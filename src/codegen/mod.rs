@@ -5,21 +5,20 @@ mod register;
 
 #[derive(Default, Debug, Clone)]
 pub struct SymbolTable {
-    globals: std::collections::HashMap<String, Option<u8>>,
+    globals: std::collections::HashMap<String, usize>,
 }
 
 impl SymbolTable {
     pub fn declare_global(&mut self, identifier: &str) {
-        self.globals.insert(identifier.to_string(), None);
+        let pos = self.globals.len();
+        self.globals.insert(identifier.to_string(), pos);
     }
 
-    pub fn assign_global(&mut self, identifier: &str, value: u8) -> Result<u8, String> {
-        if self.globals.contains_key(identifier) {
-            self.globals.insert(identifier.to_string(), Some(value));
-            Ok(value)
-        } else {
-            Err(format!("undeclared variable: {}", identifier))
-        }
+    pub fn assign_global(&mut self, identifier: &str) -> Result<usize, String> {
+        self.globals
+            .get(identifier)
+            .copied()
+            .ok_or(format!("undeclared variable: {}", identifier))
     }
 }
 

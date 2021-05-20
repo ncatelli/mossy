@@ -1,6 +1,6 @@
-use crate::ast::ExprNode;
 use crate::codegen::machine::arch::TargetArchitecture;
 use crate::codegen::register::GeneralPurpose;
+use crate::{ast::ExprNode, codegen::CodeGenerationErr};
 
 /// X86_64 represents the x86_64 bit machine target.
 pub struct X86_64;
@@ -100,9 +100,17 @@ impl CodeGenerator for X86_64 {
                 symboltable.declare_global(&identifier);
                 Ok(vec![codegen_global_symbol(&identifier)])
             }
-            ast::StmtNode::Assignment(_, _) => Err(codegen::CodeGenerationErr::Unspecified(
-                "unimplemented".to_string(),
-            )),
+            ast::StmtNode::Assignment(identifier, expr) => symboltable
+                .assign_global(&identifier)
+                .map(|_| {
+                    allocator.allocate_then(|allocator, ret_val| {
+                        vec![
+                            codegen_expr(allocator, ret_val, expr),
+                            codegen_store_global(ret_val, &identifier),
+                        ]
+                    })
+                })
+                .map_err(CodeGenerationErr::Unspecified),
         }
         .map_err(|e| e)
         .map(|insts| insts.into_iter().flatten().collect())
@@ -122,11 +130,11 @@ fn codegen_global_symbol(identifier: &str) -> Vec<String> {
 }
 
 fn codegen_store_global(ret: &mut GeneralPurpose<u64>, identifier: &str) -> Vec<String> {
-    vec![format!("\tmovq\t{}, {}(%%rip)\n", ret.id(), identifier)]
+    vec![format!("\tmov\t{}, {}(%rip)\n", ret.id(), identifier)]
 }
 
 fn codegen_load_global(ret: &mut GeneralPurpose<u64>, identifier: &str) -> Vec<String> {
-    vec![format!("\tmovq\t{}(%%rip), {}\n", identifier, ret.id())]
+    vec![format!("\tmov\t{}(%rip), {}\n", identifier, ret.id())]
 }
 
 fn codegen_expr(
@@ -138,6 +146,9 @@ fn codegen_expr(
 
     match expr {
         ExprNode::Primary(Primary::Uint8(ast::Uint8(uc))) => codegen_constant_u8(ret_val, uc),
+        ExprNode::Primary(Primary::Identifier(identifier)) => {
+            codegen_load_global(ret_val, &identifier)
+        }
         ExprNode::Addition(lhs, rhs) => codegen_addition(allocator, ret_val, lhs, rhs),
         ExprNode::Subtraction(lhs, rhs) => codegen_subtraction(allocator, ret_val, lhs, rhs),
         ExprNode::Multiplication(lhs, rhs) => codegen_multiplication(allocator, ret_val, lhs, rhs),
@@ -146,7 +157,7 @@ fn codegen_expr(
 }
 
 fn codegen_constant_u8(ret_val: &mut GeneralPurpose<u64>, constant: u8) -> Vec<String> {
-    vec![format!("\tmovq\t${}, {}\n", constant, ret_val)]
+    vec![format!("\tmov\t${}, {}\n", constant, ret_val)]
 }
 
 fn codegen_addition(
@@ -162,7 +173,7 @@ fn codegen_addition(
         vec![
             lhs_ctx,
             rhs_ctx,
-            vec![format!("\taddq\t{}, {}\n", lhs_retval, ret_val)],
+            vec![format!("\tadd\t{}, {}\n", lhs_retval, ret_val)],
         ]
         .into_iter()
         .flatten()
@@ -183,7 +194,7 @@ fn codegen_subtraction(
         vec![
             lhs_ctx,
             rhs_ctx,
-            vec![format!("\tsubq\t{}, {}\n", ret_val, rhs_retval)],
+            vec![format!("\tsub\t{}, {}\n", ret_val, rhs_retval)],
         ]
         .into_iter()
         .flatten()
@@ -204,7 +215,7 @@ fn codegen_multiplication(
         vec![
             lhs_ctx,
             rhs_ctx,
-            vec![format!("\timulq\t{}, {}\n", lhs_retval, ret_val)],
+            vec![format!("\timul\t{}, {}\n", lhs_retval, ret_val)],
         ]
         .into_iter()
         .flatten()
@@ -226,10 +237,10 @@ fn codegen_division(
             lhs_ctx,
             rhs_ctx,
             vec![
-                format!("\tmovq\t{},%rax\n", ret_val),
+                format!("\tmov\t{},%rax\n", ret_val),
                 String::from("\tcqo\n"),
-                format!("\tidivq\t{}\n", rhs_retval),
-                format!("\tmovq\t%rax,{}\n", ret_val),
+                format!("\tidiv\t{}\n", rhs_retval),
+                format!("\tmov\t%rax,{}\n", ret_val),
             ],
         ]
         .into_iter()
@@ -239,7 +250,7 @@ fn codegen_division(
 }
 
 fn codegen_printint(reg: &mut GeneralPurpose<u64>) -> Vec<String> {
-    vec![format!("\tmovq\t{}, %rdi\n\tcall\tprintint\n", reg)]
+    vec![format!("\tmov\t{}, %rdi\n\tcall\tprintint\n", reg)]
 }
 
 #[cfg(test)]
@@ -254,5 +265,18 @@ mod tests {
                 [allocator.allocate_then(|_, reg| reg.id()), reg.id()]
             })
         )
+    }
+
+    #[test]
+    fn should_free_allocations_on_scope_exit() {
+        let mut allocator = x86_64::GPRegisterAllocator::default();
+        let initial_len = allocator.registers.len();
+
+        // allocator pool should decrease by 1 while allocated in scope.
+        allocator
+            .allocate_then(|allocator, _| assert_eq!(initial_len - 1, allocator.registers.len()));
+
+        // register should be freed on scope exit.
+        assert_eq!(initial_len, allocator.registers.len());
     }
 }

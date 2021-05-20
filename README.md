@@ -21,14 +21,15 @@ addition: multiplication ( ( "-" | "+" ) multiplication )*
 multiplication: primary ( ( "/" | "*" ) primary )* 
         ;
 
-primary: uint8
+primary: identifier
+        | uint8
         ;
 
 uint8:  [0-255]
         ;
 
-identifier: alphanumeric+
+identifier: alphabetic+
         ;
 
-alphanumeric: [a-zA-Z0-9]+
+alphabetic: [a-zA-Z]+
 ```

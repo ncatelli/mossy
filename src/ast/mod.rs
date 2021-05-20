@@ -1,5 +1,3 @@
-pub mod interpret;
-
 pub type Span = std::ops::Range<usize>;
 
 #[derive(PartialEq, Debug, Clone)]
@@ -39,6 +37,7 @@ pub enum ExprNode {
 #[derive(PartialEq, Debug, Clone)]
 pub enum Primary {
     Uint8(Uint8),
+    Identifier(String),
 }
 
 #[derive(PartialEq, Debug, Clone)]

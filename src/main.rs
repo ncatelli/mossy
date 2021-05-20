@@ -45,15 +45,16 @@ fn write_dest_file(filename: &str, data: &[u8]) -> RuntimeResult<()> {
 
 fn compile(source: String) -> RuntimeResult<()> {
     let input: Vec<(usize, char)> = source.chars().enumerate().collect();
+    let mut symbol_table = mossy::codegen::SymbolTable::default();
+
     parser::parse(&input)
         .map_err(|e| format!("{:?}", e))?
         .into_iter()
         .map(|ast_node| {
-            use mossy::codegen;
             use mossy::codegen::machine::arch::x86_64;
             use mossy::codegen::CodeGenerator;
 
-            x86_64::X86_64.generate(&mut codegen::SymbolTable::default(), ast_node.to_owned())
+            x86_64::X86_64.generate(&mut symbol_table, ast_node.to_owned())
         })
         .collect::<Result<Vec<Vec<String>>, CodeGenerationErr>>()
         .map(|insts| {
