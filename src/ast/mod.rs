@@ -22,6 +22,8 @@ impl<'a> SpannedExprNode {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum StmtNode {
+    Declaration(String),
+    Assignment(String, ExprNode),
     Expression(ExprNode),
 }
 

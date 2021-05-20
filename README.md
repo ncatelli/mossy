@@ -5,6 +5,8 @@ An (irresponsibly) experimental C compiler for the first-principles of computing
 ```
 
 statements: statement*
+        |   'int' identifier ';'
+        |   identifier '=' expression ';'`
         ;
 
 statement: expression ";"
@@ -24,4 +26,9 @@ primary: uint8
 
 uint8:  [0-255]
         ;
+
+identifier: alphanumeric+
+        ;
+
+alphanumeric: [a-zA-Z0-9]+
 ```

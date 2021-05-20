@@ -87,25 +87,29 @@ use crate::codegen::CodeGenerator;
 impl CodeGenerator for X86_64 {
     fn generate(self, input: ast::StmtNode) -> Result<Vec<String>, codegen::CodeGenerationErr> {
         let mut allocator = GPRegisterAllocator::default();
-        let inst = match input {
+        match input {
             ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
-                vec![
+                Ok(vec![
                     codegen_expr(allocator, ret_val, expr),
                     codegen_printint(ret_val),
-                ]
+                ])
             }),
-        };
-
-        let ctx = vec![
-            codegen_preamble(),
-            inst.into_iter().flatten().collect(),
-            codegen_postamble(),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-
-        Ok(ctx)
+            ast::StmtNode::Declaration(_) => Err(codegen::CodeGenerationErr::Unspecified(
+                "unimplemented".to_string(),
+            )),
+            ast::StmtNode::Assignment(_, _) => Err(codegen::CodeGenerationErr::Unspecified(
+                "unimplemented".to_string(),
+            )),
+        }
+        .map_err(|e| e)
+        .map(|insts| {
+            vec![codegen_preamble()]
+                .into_iter()
+                .chain(insts.into_iter())
+                .chain(vec![codegen_postamble()].into_iter())
+                .flatten()
+                .collect()
+        })
     }
 }
 
