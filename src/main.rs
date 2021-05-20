@@ -1,4 +1,4 @@
-use mossy::parser;
+use mossy::{codegen::CodeGenerationErr, parser};
 use std::env;
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
@@ -46,15 +46,29 @@ fn write_dest_file(filename: &str, data: &[u8]) -> RuntimeResult<()> {
 fn compile(source: String) -> RuntimeResult<()> {
     let input: Vec<(usize, char)> = source.chars().enumerate().collect();
     parser::parse(&input)
-        .map_err(|e| format!("{:?}", e))
+        .map_err(|e| format!("{:?}", e))?
+        .into_iter()
         .map(|ast_node| {
+            use mossy::codegen;
             use mossy::codegen::machine::arch::x86_64;
             use mossy::codegen::CodeGenerator;
 
-            x86_64::X86_64.generate(ast_node[0].to_owned())
+            x86_64::X86_64.generate(&mut codegen::SymbolTable::default(), ast_node.to_owned())
         })
-        .unwrap()
+        .collect::<Result<Vec<Vec<String>>, CodeGenerationErr>>()
         .map(|insts| {
+            use mossy::codegen::machine::arch::x86_64;
+            vec![
+                vec![x86_64::codegen_preamble()],
+                insts,
+                vec![x86_64::codegen_postamble()],
+            ]
+            .into_iter()
+            .flatten()
+            .flatten()
+            .collect()
+        })
+        .map(|insts: Vec<String>| {
             let contents = insts.into_iter().collect::<String>();
             write_dest_file("a.s", contents.as_bytes()).unwrap();
         })

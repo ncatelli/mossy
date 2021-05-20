@@ -83,7 +83,11 @@ use crate::codegen::machine;
 use crate::codegen::CodeGenerator;
 
 impl CodeGenerator for X86_64 {
-    fn generate(self, input: ast::StmtNode) -> Result<Vec<String>, codegen::CodeGenerationErr> {
+    fn generate(
+        self,
+        symboltable: &mut codegen::SymbolTable,
+        input: ast::StmtNode,
+    ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
         let mut allocator = GPRegisterAllocator::default();
         match input {
             ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
@@ -92,31 +96,37 @@ impl CodeGenerator for X86_64 {
                     codegen_printint(ret_val),
                 ])
             }),
-            ast::StmtNode::Declaration(_) => Err(codegen::CodeGenerationErr::Unspecified(
-                "unimplemented".to_string(),
-            )),
+            ast::StmtNode::Declaration(identifier) => {
+                symboltable.declare_global(&identifier);
+                Ok(vec![codegen_global_symbol(&identifier)])
+            }
             ast::StmtNode::Assignment(_, _) => Err(codegen::CodeGenerationErr::Unspecified(
                 "unimplemented".to_string(),
             )),
         }
         .map_err(|e| e)
-        .map(|insts| {
-            vec![codegen_preamble()]
-                .into_iter()
-                .chain(insts.into_iter())
-                .chain(vec![codegen_postamble()].into_iter())
-                .flatten()
-                .collect()
-        })
+        .map(|insts| insts.into_iter().flatten().collect())
     }
 }
 
-fn codegen_preamble() -> Vec<String> {
+pub fn codegen_preamble() -> Vec<String> {
     vec![String::from(machine::arch::x86_64::CG_PREAMBLE)]
 }
 
-fn codegen_postamble() -> Vec<String> {
+pub fn codegen_postamble() -> Vec<String> {
     vec![String::from(machine::arch::x86_64::CG_POSTAMBLE)]
+}
+
+fn codegen_global_symbol(identifier: &str) -> Vec<String> {
+    vec![format!("\t.comm\t{},1,8\n", identifier)]
+}
+
+fn codegen_store_global(ret: &mut GeneralPurpose<u64>, identifier: &str) -> Vec<String> {
+    vec![format!("\tmovq\t{}, {}(%%rip)\n", ret.id(), identifier)]
+}
+
+fn codegen_load_global(ret: &mut GeneralPurpose<u64>, identifier: &str) -> Vec<String> {
+    vec![format!("\tmovq\t{}(%%rip), {}\n", identifier, ret.id())]
 }
 
 fn codegen_expr(
