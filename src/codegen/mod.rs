@@ -1,6 +1,5 @@
 use crate::ast;
 
-pub mod allocator;
 pub mod machine;
 mod register;
 
