@@ -167,6 +167,14 @@ fn codegen_expr(
         ExprNode::Primary(Primary::Identifier(identifier)) => {
             codegen_load_global(ret_val, &identifier)
         }
+
+        ExprNode::Equal(_, _) => vec![],
+        ExprNode::NotEqual(_, _) => vec![],
+        ExprNode::LessThan(_, _) => vec![],
+        ExprNode::GreaterThan(_, _) => vec![],
+        ExprNode::LessEqual(_, _) => vec![],
+        ExprNode::GreaterEqual(_, _) => vec![],
+
         ExprNode::Addition(lhs, rhs) => codegen_addition(allocator, ret_val, lhs, rhs),
         ExprNode::Subtraction(lhs, rhs) => codegen_subtraction(allocator, ret_val, lhs, rhs),
         ExprNode::Multiplication(lhs, rhs) => codegen_multiplication(allocator, ret_val, lhs, rhs),
