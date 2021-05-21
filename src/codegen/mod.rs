@@ -3,30 +3,12 @@ use crate::ast;
 pub mod machine;
 mod register;
 
-#[derive(Default, Debug, Clone)]
-pub struct SymbolTable {
-    globals: std::collections::HashSet<String>,
-}
-
-impl SymbolTable {
-    pub fn declare_global(&mut self, identifier: &str) {
-        self.globals.insert(identifier.to_string());
-    }
-
-    pub fn assign_global(&mut self, identifier: &str) -> Result<(), String> {
-        if self.globals.contains(identifier) {
-            Ok(())
-        } else {
-            Err(format!("undeclared variable: {}", identifier))
-        }
-    }
-}
-
 /// CodeGenerationErr represents an error stemming from the CodeGenerator's
 /// `generate` method, capturing any potential point of breakdown withing the
 /// code generation process.
 #[derive(Clone, PartialEq)]
 pub enum CodeGenerationErr {
+    UndefinedReference(String),
     Unspecified(String),
 }
 
@@ -36,16 +18,19 @@ impl std::fmt::Debug for CodeGenerationErr {
             CodeGenerationErr::Unspecified(e) => {
                 write!(f, "unspecified code generation err: {}", e)
             }
+            CodeGenerationErr::UndefinedReference(identifier) => {
+                write!(f, "undefined reference: {}", identifier)
+            }
         }
     }
 }
 
 /// CodeGenerator defines the generate method, returning a string representation
 /// of all generated instructions or an error.
-pub trait CodeGenerator {
+pub trait CodeGenerator<S> {
     fn generate(
         self,
-        symboltable: &mut SymbolTable,
+        symboltable: &mut S,
         input: ast::StmtNode,
     ) -> Result<Vec<String>, CodeGenerationErr>;
 }

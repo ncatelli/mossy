@@ -7,6 +7,25 @@ pub struct X86_64;
 
 impl TargetArchitecture for X86_64 {}
 
+#[derive(Default, Debug, Clone)]
+pub struct SymbolTable {
+    globals: std::collections::HashSet<String>,
+}
+
+impl SymbolTable {
+    pub fn declare_global(&mut self, identifier: &str) {
+        self.globals.insert(identifier.to_string());
+    }
+
+    pub fn assign_global(&mut self, identifier: &str) -> Option<()> {
+        if self.globals.contains(identifier) {
+            Some(())
+        } else {
+            None
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct GPRegisterAllocator {
     registers: Vec<GeneralPurpose<u64>>,
@@ -82,10 +101,10 @@ use crate::codegen;
 use crate::codegen::machine;
 use crate::codegen::CodeGenerator;
 
-impl CodeGenerator for X86_64 {
+impl CodeGenerator<SymbolTable> for X86_64 {
     fn generate(
         self,
-        symboltable: &mut codegen::SymbolTable,
+        symboltable: &mut SymbolTable,
         input: ast::StmtNode,
     ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
         let mut allocator = GPRegisterAllocator::default();
@@ -110,7 +129,7 @@ impl CodeGenerator for X86_64 {
                         ]
                     })
                 })
-                .map_err(CodeGenerationErr::Unspecified),
+                .ok_or(CodeGenerationErr::UndefinedReference(identifier)),
         }
         .map_err(|e| e)
         .map(|insts| insts.into_iter().flatten().collect())
