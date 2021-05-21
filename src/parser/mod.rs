@@ -35,6 +35,33 @@ fn statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Statements> 
 
 fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     expression_statement()
+        .or(|| declaration_statement())
+        .or(|| assignment_statement())
+}
+
+fn declaration_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    parcel::left(parcel::join(
+        parcel::right(parcel::join(
+            whitespace_wrapped(expect_str("int")),
+            whitespace_wrapped(identifier()),
+        )),
+        whitespace_wrapped(expect_character(';')),
+    ))
+    .map(StmtNode::Declaration)
+}
+
+fn assignment_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    parcel::left(parcel::join(
+        parcel::join(
+            whitespace_wrapped(identifier()),
+            parcel::right(parcel::join(
+                whitespace_wrapped(expect_character('=')),
+                whitespace_wrapped(expression()),
+            )),
+        ),
+        whitespace_wrapped(expect_character(';')),
+    ))
+    .map(|(ident, expr)| StmtNode::Assignment(ident, expr))
 }
 
 fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -117,12 +144,19 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
 
 #[allow(clippy::redundant_closure)]
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
-    number().map(|num| ExprNode::Primary(Primary::Uint8(num)))
+    identifier()
+        .map(|id| ExprNode::Primary(Primary::Identifier(id)))
+        .or(|| number().map(|num| ExprNode::Primary(Primary::Uint8(num))))
 }
 
 #[allow(clippy::redundant_closure)]
 fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Uint8> {
     dec_u8().map(|num| Uint8(num))
+}
+
+#[allow(clippy::redundant_closure)]
+fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
+    parcel::one_or_more(alphabetic()).map(|chars| chars.into_iter().collect())
 }
 
 fn dec_u8<'a>() -> impl Parser<'a, &'a [(usize, char)], u8> {

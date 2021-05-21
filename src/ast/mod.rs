@@ -1,5 +1,3 @@
-pub mod interpret;
-
 pub type Span = std::ops::Range<usize>;
 
 #[derive(PartialEq, Debug, Clone)]
@@ -22,6 +20,8 @@ impl<'a> SpannedExprNode {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum StmtNode {
+    Declaration(String),
+    Assignment(String, ExprNode),
     Expression(ExprNode),
 }
 
@@ -37,6 +37,7 @@ pub enum ExprNode {
 #[derive(PartialEq, Debug, Clone)]
 pub enum Primary {
     Uint8(Uint8),
+    Identifier(String),
 }
 
 #[derive(PartialEq, Debug, Clone)]
