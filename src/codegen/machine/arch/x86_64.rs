@@ -44,7 +44,7 @@ impl SizedGeneralPurpose {
         }
     }
 
-    fn operand_suffix(&self) -> &'static str {
+    fn operator_suffix(&self) -> &'static str {
         match self {
             SizedGeneralPurpose::QuadWord(_) => "q",
             SizedGeneralPurpose::DoubleWord(_) => "l",
@@ -57,8 +57,14 @@ impl SizedGeneralPurpose {
 impl std::fmt::Display for SizedGeneralPurpose {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let repr = self.id();
+        let register_suffix = match self {
+            SizedGeneralPurpose::QuadWord(_) => "",
+            SizedGeneralPurpose::DoubleWord(_) => "d",
+            SizedGeneralPurpose::Word(_) => "w",
+            SizedGeneralPurpose::Byte(_) => "b",
+        };
 
-        write!(f, "%{}", repr,)
+        write!(f, "%{}{}", repr, register_suffix)
     }
 }
 
@@ -186,7 +192,7 @@ fn codegen_global_symbol(identifier: &str) -> Vec<String> {
 fn codegen_store_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
     vec![format!(
         "\tmov{}\t{}, {}(%rip)\n",
-        ret.operand_suffix(),
+        ret.operator_suffix(),
         ret.id(),
         identifier
     )]
@@ -195,7 +201,7 @@ fn codegen_store_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<
 fn codegen_load_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
     vec![format!(
         "\tmov{}\t{}(%rip), {}\n",
-        ret.operand_suffix(),
+        ret.operator_suffix(),
         identifier,
         ret.id()
     )]
@@ -214,12 +220,32 @@ fn codegen_expr(
             codegen_load_global(ret_val, &identifier)
         }
 
-        ExprNode::Equal(_, _) => vec![],
-        ExprNode::NotEqual(_, _) => vec![],
-        ExprNode::LessThan(_, _) => vec![],
-        ExprNode::GreaterThan(_, _) => vec![],
-        ExprNode::LessEqual(_, _) => vec![],
-        ExprNode::GreaterEqual(_, _) => vec![],
+        ExprNode::Equal(lhs, rhs) => {
+            codegen_compare(allocator, ret_val, ComparisonOperation::Equal, lhs, rhs)
+        }
+        ExprNode::NotEqual(lhs, rhs) => {
+            codegen_compare(allocator, ret_val, ComparisonOperation::NotEqual, lhs, rhs)
+        }
+        ExprNode::LessThan(lhs, rhs) => {
+            codegen_compare(allocator, ret_val, ComparisonOperation::LessThan, lhs, rhs)
+        }
+        ExprNode::GreaterThan(lhs, rhs) => codegen_compare(
+            allocator,
+            ret_val,
+            ComparisonOperation::GreaterThan,
+            lhs,
+            rhs,
+        ),
+        ExprNode::LessEqual(lhs, rhs) => {
+            codegen_compare(allocator, ret_val, ComparisonOperation::LessEqual, lhs, rhs)
+        }
+        ExprNode::GreaterEqual(lhs, rhs) => codegen_compare(
+            allocator,
+            ret_val,
+            ComparisonOperation::GreaterEqual,
+            lhs,
+            rhs,
+        ),
 
         ExprNode::Addition(lhs, rhs) => codegen_addition(allocator, ret_val, lhs, rhs),
         ExprNode::Subtraction(lhs, rhs) => codegen_subtraction(allocator, ret_val, lhs, rhs),
@@ -231,7 +257,7 @@ fn codegen_expr(
 fn codegen_constant_u8(ret_val: &mut SizedGeneralPurpose, constant: u8) -> Vec<String> {
     vec![format!(
         "\tmov{}\t${}, {}\n",
-        ret_val.operand_suffix(),
+        ret_val.operator_suffix(),
         constant,
         ret_val
     )]
@@ -252,7 +278,7 @@ fn codegen_addition(
             rhs_ctx,
             vec![format!(
                 "\tadd{}\t{}, {}\n",
-                ret_val.operand_suffix(),
+                ret_val.operator_suffix(),
                 lhs_retval,
                 ret_val
             )],
@@ -278,7 +304,7 @@ fn codegen_subtraction(
             rhs_ctx,
             vec![format!(
                 "\tsub{}\t{}, {}\n",
-                ret_val.operand_suffix(),
+                ret_val.operator_suffix(),
                 ret_val,
                 rhs_retval
             )],
@@ -304,7 +330,7 @@ fn codegen_multiplication(
             rhs_ctx,
             vec![format!(
                 "\timul{}\t{}, {}\n",
-                ret_val.operand_suffix(),
+                ret_val.operator_suffix(),
                 lhs_retval,
                 ret_val
             )],
@@ -324,7 +350,7 @@ fn codegen_division(
     allocator.allocate_then(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
         let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
-        let operand_suffix = ret_val.operand_suffix();
+        let operand_suffix = ret_val.operator_suffix();
         vec![
             lhs_ctx,
             rhs_ctx,
@@ -341,10 +367,61 @@ fn codegen_division(
     })
 }
 
+#[derive(Debug, Clone, Copy)]
+enum ComparisonOperation {
+    LessThan,
+    LessEqual,
+    GreaterThan,
+    GreaterEqual,
+    Equal,
+    NotEqual,
+}
+
+fn codegen_compare(
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut SizedGeneralPurpose,
+    comparison_op: ComparisonOperation,
+    lhs: Box<ExprNode>,
+    rhs: Box<ExprNode>,
+) -> Vec<String> {
+    allocator.allocate_then(|allocator, lhs_retval| {
+        let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
+        let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
+
+        let set_operator = match comparison_op {
+            ComparisonOperation::LessThan => "setl",
+            ComparisonOperation::LessEqual => "setle",
+            ComparisonOperation::GreaterThan => "setg",
+            ComparisonOperation::GreaterEqual => "setge",
+            ComparisonOperation::Equal => "sete",
+            ComparisonOperation::NotEqual => "setne",
+        };
+
+        let operand_suffix = ret_val.operator_suffix();
+
+        vec![
+            lhs_ctx,
+            rhs_ctx,
+            vec![
+                format!("\tcmp{}\t{}, {}\n", operand_suffix, ret_val, lhs_retval),
+                format!(
+                    "\t{}\t{}\n",
+                    set_operator,
+                    SizedGeneralPurpose::Byte(ret_val.id())
+                ),
+                format!("\tandq\t$255,{}\n", ret_val),
+            ],
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    })
+}
+
 fn codegen_printint(reg: &mut SizedGeneralPurpose) -> Vec<String> {
     vec![format!(
         "\tmov{}\t{}, %rdi\n\tcall\tprintint\n",
-        reg.operand_suffix(),
+        reg.operator_suffix(),
         reg
     )]
 }
