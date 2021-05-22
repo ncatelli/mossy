@@ -18,7 +18,13 @@ expression: addition
 addition: multiplication ( ( "-" | "+" ) multiplication )* 
         ;
 
-multiplication: primary ( ( "/" | "*" ) primary )* 
+multiplication: relational ( ( "/" | "*" ) relational )* 
+        ;
+
+relational: equality ( ( "<" | "<=" | ">" | ">=" ) equality )*
+        ;
+
+equality: primary ( ( "==" | "!=" ) primary )*
         ;
 
 primary: identifier
