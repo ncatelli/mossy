@@ -433,7 +433,7 @@ mod tests {
     #[test]
     fn should_allocate_a_register_from_an_unutilized_pool() {
         assert_eq!(
-            ["%r14", "%r15"],
+            ["r14", "r15"],
             x86_64::GPRegisterAllocator::default().allocate_then(|allocator, reg| {
                 [allocator.allocate_then(|_, reg| reg.id()), reg.id()]
             })
