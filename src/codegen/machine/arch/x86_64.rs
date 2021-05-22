@@ -1,5 +1,4 @@
 use crate::codegen::machine::arch::TargetArchitecture;
-use crate::codegen::register::GeneralPurpose;
 use crate::{ast::ExprNode, codegen::CodeGenerationErr};
 
 /// X86_64 represents the x86_64 bit machine target.
@@ -26,20 +25,57 @@ impl SymbolTable {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum SizedGeneralPurpose {
+    QuadWord(&'static str),
+    DoubleWord(&'static str),
+    Word(&'static str),
+    Byte(&'static str),
+}
+
+impl SizedGeneralPurpose {
+    /// returns the string representation of the register.
+    fn id(&self) -> &'static str {
+        match self {
+            SizedGeneralPurpose::QuadWord(id) => id,
+            SizedGeneralPurpose::DoubleWord(id) => id,
+            SizedGeneralPurpose::Word(id) => id,
+            SizedGeneralPurpose::Byte(id) => id,
+        }
+    }
+
+    fn operand_suffix(&self) -> &'static str {
+        match self {
+            SizedGeneralPurpose::QuadWord(_) => "q",
+            SizedGeneralPurpose::DoubleWord(_) => "l",
+            SizedGeneralPurpose::Word(_) => "w",
+            SizedGeneralPurpose::Byte(_) => "b",
+        }
+    }
+}
+
+impl std::fmt::Display for SizedGeneralPurpose {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let repr = self.id();
+
+        write!(f, "%{}", repr,)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct GPRegisterAllocator {
-    registers: Vec<GeneralPurpose<u64>>,
+    registers: Vec<SizedGeneralPurpose>,
 }
 
 impl GPRegisterAllocator {
-    pub fn new(registers: Vec<GeneralPurpose<u64>>) -> Self {
+    pub fn new(registers: Vec<SizedGeneralPurpose>) -> Self {
         Self { registers }
     }
 
     /// Allocates a register for the duration of the life of closure.
     fn allocate_then<F, R>(&mut self, f: F) -> R
     where
-        F: FnOnce(&mut Self, &mut GeneralPurpose<u64>) -> R,
+        F: FnOnce(&mut Self, &mut SizedGeneralPurpose) -> R,
     {
         self.registers
             .pop()
@@ -56,14 +92,14 @@ impl Default for GPRegisterAllocator {
     fn default() -> Self {
         Self {
             registers: vec![
-                GeneralPurpose::new("%r8"),
-                GeneralPurpose::new("%r9"),
-                GeneralPurpose::new("%r10"),
-                GeneralPurpose::new("%r11"),
-                GeneralPurpose::new("%r12"),
-                GeneralPurpose::new("%r13"),
-                GeneralPurpose::new("%r14"),
-                GeneralPurpose::new("%r15"),
+                SizedGeneralPurpose::QuadWord("r8"),
+                SizedGeneralPurpose::QuadWord("r9"),
+                SizedGeneralPurpose::QuadWord("r10"),
+                SizedGeneralPurpose::QuadWord("r11"),
+                SizedGeneralPurpose::QuadWord("r12"),
+                SizedGeneralPurpose::QuadWord("r13"),
+                SizedGeneralPurpose::QuadWord("r14"),
+                SizedGeneralPurpose::QuadWord("r15"),
             ],
         }
     }
@@ -147,17 +183,27 @@ fn codegen_global_symbol(identifier: &str) -> Vec<String> {
     vec![format!("\t.comm\t{},1,8\n", identifier)]
 }
 
-fn codegen_store_global(ret: &mut GeneralPurpose<u64>, identifier: &str) -> Vec<String> {
-    vec![format!("\tmov\t{}, {}(%rip)\n", ret.id(), identifier)]
+fn codegen_store_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
+    vec![format!(
+        "\tmov{}\t{}, {}(%rip)\n",
+        ret.operand_suffix(),
+        ret.id(),
+        identifier
+    )]
 }
 
-fn codegen_load_global(ret: &mut GeneralPurpose<u64>, identifier: &str) -> Vec<String> {
-    vec![format!("\tmov\t{}(%rip), {}\n", identifier, ret.id())]
+fn codegen_load_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
+    vec![format!(
+        "\tmov{}\t{}(%rip), {}\n",
+        ret.operand_suffix(),
+        identifier,
+        ret.id()
+    )]
 }
 
 fn codegen_expr(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurpose<u64>,
+    ret_val: &mut SizedGeneralPurpose,
     expr: crate::ast::ExprNode,
 ) -> Vec<String> {
     use crate::ast::Primary;
@@ -182,13 +228,18 @@ fn codegen_expr(
     }
 }
 
-fn codegen_constant_u8(ret_val: &mut GeneralPurpose<u64>, constant: u8) -> Vec<String> {
-    vec![format!("\tmov\t${}, {}\n", constant, ret_val)]
+fn codegen_constant_u8(ret_val: &mut SizedGeneralPurpose, constant: u8) -> Vec<String> {
+    vec![format!(
+        "\tmov{}\t${}, {}\n",
+        ret_val.operand_suffix(),
+        constant,
+        ret_val
+    )]
 }
 
 fn codegen_addition(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurpose<u64>,
+    ret_val: &mut SizedGeneralPurpose,
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
 ) -> Vec<String> {
@@ -199,7 +250,12 @@ fn codegen_addition(
         vec![
             lhs_ctx,
             rhs_ctx,
-            vec![format!("\tadd\t{}, {}\n", lhs_retval, ret_val)],
+            vec![format!(
+                "\tadd{}\t{}, {}\n",
+                ret_val.operand_suffix(),
+                lhs_retval,
+                ret_val
+            )],
         ]
         .into_iter()
         .flatten()
@@ -209,7 +265,7 @@ fn codegen_addition(
 
 fn codegen_subtraction(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurpose<u64>,
+    ret_val: &mut SizedGeneralPurpose,
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
 ) -> Vec<String> {
@@ -220,7 +276,12 @@ fn codegen_subtraction(
         vec![
             lhs_ctx,
             rhs_ctx,
-            vec![format!("\tsub\t{}, {}\n", ret_val, rhs_retval)],
+            vec![format!(
+                "\tsub{}\t{}, {}\n",
+                ret_val.operand_suffix(),
+                ret_val,
+                rhs_retval
+            )],
         ]
         .into_iter()
         .flatten()
@@ -230,7 +291,7 @@ fn codegen_subtraction(
 
 fn codegen_multiplication(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurpose<u64>,
+    ret_val: &mut SizedGeneralPurpose,
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
 ) -> Vec<String> {
@@ -241,7 +302,12 @@ fn codegen_multiplication(
         vec![
             lhs_ctx,
             rhs_ctx,
-            vec![format!("\timul\t{}, {}\n", lhs_retval, ret_val)],
+            vec![format!(
+                "\timul{}\t{}, {}\n",
+                ret_val.operand_suffix(),
+                lhs_retval,
+                ret_val
+            )],
         ]
         .into_iter()
         .flatten()
@@ -251,22 +317,22 @@ fn codegen_multiplication(
 
 fn codegen_division(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurpose<u64>,
+    ret_val: &mut SizedGeneralPurpose,
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
 ) -> Vec<String> {
     allocator.allocate_then(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
         let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
-
+        let operand_suffix = ret_val.operand_suffix();
         vec![
             lhs_ctx,
             rhs_ctx,
             vec![
-                format!("\tmov\t{},%rax\n", ret_val),
+                format!("\tmov{}\t{},%rax\n", operand_suffix, ret_val),
                 String::from("\tcqo\n"),
-                format!("\tidiv\t{}\n", rhs_retval),
-                format!("\tmov\t%rax,{}\n", ret_val),
+                format!("\tidiv{}\t{}\n", operand_suffix, rhs_retval),
+                format!("\tmov{}\t%rax,{}\n", operand_suffix, ret_val),
             ],
         ]
         .into_iter()
@@ -275,8 +341,12 @@ fn codegen_division(
     })
 }
 
-fn codegen_printint(reg: &mut GeneralPurpose<u64>) -> Vec<String> {
-    vec![format!("\tmov\t{}, %rdi\n\tcall\tprintint\n", reg)]
+fn codegen_printint(reg: &mut SizedGeneralPurpose) -> Vec<String> {
+    vec![format!(
+        "\tmov{}\t{}, %rdi\n\tcall\tprintint\n",
+        reg.operand_suffix(),
+        reg
+    )]
 }
 
 #[cfg(test)]
