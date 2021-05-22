@@ -73,7 +73,81 @@ fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], St
 }
 
 fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
-    addition()
+    equality()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum EqualityExprOp {
+    Equal,
+    NotEqual,
+}
+
+#[allow(clippy::redundant_closure)]
+fn equality<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+    parcel::join(
+        relational(),
+        parcel::zero_or_more(parcel::join(
+            whitespace_wrapped(
+                expect_str("==")
+                    .map(|_| EqualityExprOp::Equal)
+                    .or(|| expect_str("!=").map(|_| EqualityExprOp::NotEqual)),
+            ),
+            whitespace_wrapped(relational()),
+        ))
+        .map(unzip),
+    )
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
+                EqualityExprOp::Equal => ExprNode::Equal(Box::new(lhs), Box::new(rhs)),
+                EqualityExprOp::NotEqual => ExprNode::NotEqual(Box::new(lhs), Box::new(rhs)),
+            })
+    })
+    .or(|| relational())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum RelationalExprOp {
+    LessThan,
+    LessEqual,
+    GreaterThan,
+    GreaterEqual,
+}
+
+#[allow(clippy::redundant_closure)]
+fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+    parcel::join(
+        addition(),
+        parcel::zero_or_more(parcel::join(
+            whitespace_wrapped(
+                expect_str("<=")
+                    .map(|_| RelationalExprOp::LessEqual)
+                    .or(|| expect_str(">=").map(|_| RelationalExprOp::GreaterEqual))
+                    .or(|| expect_str("<").map(|_| RelationalExprOp::LessThan))
+                    .or(|| expect_str(">").map(|_| RelationalExprOp::GreaterThan)),
+            ),
+            whitespace_wrapped(addition()),
+        ))
+        .map(unzip),
+    )
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
+                RelationalExprOp::LessThan => ExprNode::LessThan(Box::new(lhs), Box::new(rhs)),
+                RelationalExprOp::LessEqual => ExprNode::LessEqual(Box::new(lhs), Box::new(rhs)),
+                RelationalExprOp::GreaterThan => {
+                    ExprNode::GreaterThan(Box::new(lhs), Box::new(rhs))
+                }
+                RelationalExprOp::GreaterEqual => {
+                    ExprNode::GreaterEqual(Box::new(lhs), Box::new(rhs))
+                }
+            })
+    })
+    .or(|| addition())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -231,6 +305,7 @@ mod tests {
             $crate::ast::ExprNode::Primary(Primary::Uint8(Uint8($value)))
         };
     }
+
     use crate::ast::*;
     #[test]
     fn should_parse_complex_expression() {

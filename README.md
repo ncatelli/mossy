@@ -12,7 +12,13 @@ statements: statement*
 statement: expression ";"
         ;
 
-expression: addition
+expression: equality
+        ;
+
+equality: relational ( ( "==" | "!=" ) relational )*
+        ;
+
+relational: addition ( ( "<" | "<=" | ">" | ">=" ) addition )*
         ;
 
 addition: multiplication ( ( "-" | "+" ) multiplication )* 

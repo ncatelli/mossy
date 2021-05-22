@@ -28,6 +28,16 @@ pub enum StmtNode {
 #[derive(PartialEq, Debug, Clone)]
 pub enum ExprNode {
     Primary(Primary),
+
+    // comparative
+    Equal(Box<ExprNode>, Box<ExprNode>),
+    NotEqual(Box<ExprNode>, Box<ExprNode>),
+    LessThan(Box<ExprNode>, Box<ExprNode>),
+    GreaterThan(Box<ExprNode>, Box<ExprNode>),
+    LessEqual(Box<ExprNode>, Box<ExprNode>),
+    GreaterEqual(Box<ExprNode>, Box<ExprNode>),
+
+    // Arithmetic
     Subtraction(Box<ExprNode>, Box<ExprNode>),
     Division(Box<ExprNode>, Box<ExprNode>),
     Addition(Box<ExprNode>, Box<ExprNode>),
