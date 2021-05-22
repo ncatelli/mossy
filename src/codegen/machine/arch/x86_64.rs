@@ -191,7 +191,7 @@ fn codegen_global_symbol(identifier: &str) -> Vec<String> {
 
 fn codegen_store_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
     vec![format!(
-        "\tmov{}\t{}, {}(%rip)\n",
+        "\tmov{}\t%{}, {}(%rip)\n",
         ret.operator_suffix(),
         ret.id(),
         identifier
@@ -200,7 +200,7 @@ fn codegen_store_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<
 
 fn codegen_load_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
     vec![format!(
-        "\tmov{}\t{}(%rip), {}\n",
+        "\tmov{}\t{}(%rip), %{}\n",
         ret.operator_suffix(),
         identifier,
         ret.id()
