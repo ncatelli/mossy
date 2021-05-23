@@ -59,7 +59,7 @@ impl std::fmt::Display for SizedGeneralPurpose {
 
 #[derive(Debug, Clone)]
 pub struct GPRegisterAllocator {
-    pub registers: Vec<SizedGeneralPurpose>,
+    registers: Vec<SizedGeneralPurpose>,
 }
 
 impl GPRegisterAllocator {
