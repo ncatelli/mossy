@@ -1,57 +1,55 @@
 use crate::codegen::register::{AddressWidth, Register};
 
-#[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
-pub enum SizedGeneralPurpose {
-    QuadWord(&'static str),
-    DoubleWord(&'static str),
-    Word(&'static str),
-    Byte(&'static str),
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u64)]
+pub enum GPRegisterMask {
+    QuadWord = u64::MAX,
+    DoubleWord = u32::MAX as u64,
+    Word = u16::MAX as u64,
+    Byte = u8::MAX as u64,
 }
 
-impl AddressWidth for SizedGeneralPurpose {
-    fn bits(&self) -> usize {
-        match self {
-            SizedGeneralPurpose::QuadWord(_) => 64,
-            SizedGeneralPurpose::DoubleWord(_) => 32,
-            SizedGeneralPurpose::Word(_) => 16,
-            SizedGeneralPurpose::Byte(_) => 8,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GPRegister {
+    id: &'static str,
+    allocation_mask: u64,
+}
+
+impl GPRegister {
+    pub fn new(id: &'static str, allocation_mask: GPRegisterMask) -> Self {
+        Self {
+            id,
+            allocation_mask: allocation_mask as u64,
+        }
+    }
+
+    pub fn operator_suffix(&self) -> &'static str {
+        match self.allocation_mask {
+            am if am > (GPRegisterMask::DoubleWord as u64) => "q",
+            am if am > (GPRegisterMask::Word as u64) => "l",
+            am if am > (GPRegisterMask::Byte as u64) => "w",
+            _ => "b",
         }
     }
 }
 
-impl crate::codegen::register::Register<u64> for SizedGeneralPurpose {
+impl Register<u64> for GPRegister {
     /// returns the string representation of the register.
     fn id(&self) -> &'static str {
-        match self {
-            SizedGeneralPurpose::QuadWord(id) => id,
-            SizedGeneralPurpose::DoubleWord(id) => id,
-            SizedGeneralPurpose::Word(id) => id,
-            SizedGeneralPurpose::Byte(id) => id,
-        }
+        self.id
     }
 }
 
-impl SizedGeneralPurpose {
-    pub fn operator_suffix(&self) -> &'static str {
-        match self {
-            SizedGeneralPurpose::QuadWord(_) => "q",
-            SizedGeneralPurpose::DoubleWord(_) => "l",
-            SizedGeneralPurpose::Word(_) => "w",
-            SizedGeneralPurpose::Byte(_) => "b",
-        }
+impl AddressWidth for GPRegister {
+    fn bits(&self) -> usize {
+        64
     }
 }
 
-impl std::fmt::Display for SizedGeneralPurpose {
+impl std::fmt::Display for GPRegister {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let repr = self.id();
-        let register_suffix = match self {
-            SizedGeneralPurpose::QuadWord(_) => "",
-            SizedGeneralPurpose::DoubleWord(_) => "d",
-            SizedGeneralPurpose::Word(_) => "w",
-            SizedGeneralPurpose::Byte(_) => "b",
-        };
+        let register_suffix = self.operator_suffix();
 
         write!(f, "%{}{}", repr, register_suffix)
     }
@@ -59,19 +57,19 @@ impl std::fmt::Display for SizedGeneralPurpose {
 
 #[derive(Debug, Clone)]
 pub struct GPRegisterAllocator {
-    registers: Vec<SizedGeneralPurpose>,
+    registers: Vec<GPRegister>,
 }
 
 impl GPRegisterAllocator {
     #[allow(dead_code)]
-    pub fn new(registers: Vec<SizedGeneralPurpose>) -> Self {
+    pub fn new(registers: Vec<GPRegister>) -> Self {
         Self { registers }
     }
 
     /// Allocates a register for the duration of the life of closure.
     pub fn allocate_then<F, R>(&mut self, f: F) -> R
     where
-        F: FnOnce(&mut Self, &mut SizedGeneralPurpose) -> R,
+        F: FnOnce(&mut Self, &mut GPRegister) -> R,
     {
         self.registers
             .pop()
@@ -88,14 +86,14 @@ impl Default for GPRegisterAllocator {
     fn default() -> Self {
         Self {
             registers: vec![
-                SizedGeneralPurpose::QuadWord("r8"),
-                SizedGeneralPurpose::QuadWord("r9"),
-                SizedGeneralPurpose::QuadWord("r10"),
-                SizedGeneralPurpose::QuadWord("r11"),
-                SizedGeneralPurpose::QuadWord("r12"),
-                SizedGeneralPurpose::QuadWord("r13"),
-                SizedGeneralPurpose::QuadWord("r14"),
-                SizedGeneralPurpose::QuadWord("r15"),
+                GPRegister::new("r8", GPRegisterMask::QuadWord),
+                GPRegister::new("r9", GPRegisterMask::QuadWord),
+                GPRegister::new("r10", GPRegisterMask::QuadWord),
+                GPRegister::new("r11", GPRegisterMask::QuadWord),
+                GPRegister::new("r12", GPRegisterMask::QuadWord),
+                GPRegister::new("r13", GPRegisterMask::QuadWord),
+                GPRegister::new("r14", GPRegisterMask::QuadWord),
+                GPRegister::new("r15", GPRegisterMask::QuadWord),
             ],
         }
     }
