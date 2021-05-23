@@ -1,13 +1,13 @@
 /// Represents a bit sized type
 pub trait AddressWidth {
-    fn bits() -> usize;
+    fn bits(&self) -> usize;
 }
 
 macro_rules! impl_address_width_with_bits {
     ($($t:ty => $width:literal,)*) => {
         $(
             impl AddressWidth for $t {
-                fn bits() -> usize {
+                fn bits(&self) -> usize {
                     $width
                 }
             }
@@ -27,4 +27,5 @@ where
     Self: Copy,
     A: AddressWidth,
 {
+    fn id(&self) -> &'static str;
 }
