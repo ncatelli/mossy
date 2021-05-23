@@ -6,7 +6,7 @@ use crate::{ast::ExprNode, codegen::CodeGenerationErr};
 pub struct X86_64;
 
 mod register;
-use register::{GPRegister, GPRegisterAllocator};
+use register::{GPRegisterAllocator, SizedGeneralPurpose};
 
 impl TargetArchitecture for X86_64 {}
 
@@ -107,7 +107,7 @@ fn codegen_global_symbol(identifier: &str) -> Vec<String> {
     vec![format!("\t.comm\t{},1,8\n", identifier)]
 }
 
-fn codegen_store_global(ret: &mut GPRegister, identifier: &str) -> Vec<String> {
+fn codegen_store_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
     vec![format!(
         "\tmov{}\t%{}, {}(%rip)\n",
         ret.operator_suffix(),
@@ -116,7 +116,7 @@ fn codegen_store_global(ret: &mut GPRegister, identifier: &str) -> Vec<String> {
     )]
 }
 
-fn codegen_load_global(ret: &mut GPRegister, identifier: &str) -> Vec<String> {
+fn codegen_load_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
     vec![format!(
         "\tmov{}\t{}(%rip), %{}\n",
         ret.operator_suffix(),
@@ -127,7 +127,7 @@ fn codegen_load_global(ret: &mut GPRegister, identifier: &str) -> Vec<String> {
 
 fn codegen_expr(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GPRegister,
+    ret_val: &mut SizedGeneralPurpose,
     expr: crate::ast::ExprNode,
 ) -> Vec<String> {
     use crate::ast::Primary;
@@ -172,7 +172,7 @@ fn codegen_expr(
     }
 }
 
-fn codegen_constant_u8(ret_val: &mut GPRegister, constant: u8) -> Vec<String> {
+fn codegen_constant_u8(ret_val: &mut SizedGeneralPurpose, constant: u8) -> Vec<String> {
     vec![format!(
         "\tmov{}\t${}, {}\n",
         ret_val.operator_suffix(),
@@ -183,7 +183,7 @@ fn codegen_constant_u8(ret_val: &mut GPRegister, constant: u8) -> Vec<String> {
 
 fn codegen_addition(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GPRegister,
+    ret_val: &mut SizedGeneralPurpose,
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
 ) -> Vec<String> {
@@ -209,7 +209,7 @@ fn codegen_addition(
 
 fn codegen_subtraction(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GPRegister,
+    ret_val: &mut SizedGeneralPurpose,
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
 ) -> Vec<String> {
@@ -235,7 +235,7 @@ fn codegen_subtraction(
 
 fn codegen_multiplication(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GPRegister,
+    ret_val: &mut SizedGeneralPurpose,
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
 ) -> Vec<String> {
@@ -261,7 +261,7 @@ fn codegen_multiplication(
 
 fn codegen_division(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GPRegister,
+    ret_val: &mut SizedGeneralPurpose,
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
 ) -> Vec<String> {
@@ -297,7 +297,7 @@ enum ComparisonOperation {
 
 fn codegen_compare(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GPRegister,
+    ret_val: &mut SizedGeneralPurpose,
     comparison_op: ComparisonOperation,
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
@@ -325,7 +325,7 @@ fn codegen_compare(
                 format!(
                     "\t{}\t{}\n",
                     set_operator,
-                    GPRegister::new(ret_val.id(), register::GPRegisterMask::Byte)
+                    SizedGeneralPurpose::Byte(ret_val.id())
                 ),
                 format!("\tandq\t$255,{}\n", ret_val),
             ],
@@ -336,7 +336,7 @@ fn codegen_compare(
     })
 }
 
-fn codegen_printint(reg: &mut GPRegister) -> Vec<String> {
+fn codegen_printint(reg: &mut SizedGeneralPurpose) -> Vec<String> {
     vec![format!(
         "\tmov{}\t{}, %rdi\n\tcall\tprintint\n",
         reg.operator_suffix(),
