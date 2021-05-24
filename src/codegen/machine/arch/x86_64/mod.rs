@@ -1,116 +1,36 @@
 use crate::codegen::machine::arch::TargetArchitecture;
+use crate::codegen::register::Register;
 use crate::{ast::ExprNode, codegen::CodeGenerationErr};
 
 /// X86_64 represents the x86_64 bit machine target.
 pub struct X86_64;
 
+mod register;
+use register::{GPRegisterAllocator, SizedGeneralPurpose};
+
 impl TargetArchitecture for X86_64 {}
 
+/// SymbolTable functions as a tracker for symbols that have been previously
+/// declared. For the time being, this only tracks global symbols.
 #[derive(Default, Debug, Clone)]
 pub struct SymbolTable {
     globals: std::collections::HashSet<String>,
 }
 
 impl SymbolTable {
+    /// Marks a global variable as having been declared.
     pub fn declare_global(&mut self, identifier: &str) {
         self.globals.insert(identifier.to_string());
     }
 
-    pub fn assign_global(&mut self, identifier: &str) -> Option<()> {
-        if self.globals.contains(identifier) {
-            Some(())
-        } else {
-            None
-        }
+    /// Returns a boolian representing if a global variable has already been
+    /// declared.
+    pub fn has_global(&mut self, identifier: &str) -> bool {
+        self.globals.contains(identifier)
     }
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum SizedGeneralPurpose {
-    QuadWord(&'static str),
-    DoubleWord(&'static str),
-    Word(&'static str),
-    Byte(&'static str),
-}
-
-impl SizedGeneralPurpose {
-    /// returns the string representation of the register.
-    fn id(&self) -> &'static str {
-        match self {
-            SizedGeneralPurpose::QuadWord(id) => id,
-            SizedGeneralPurpose::DoubleWord(id) => id,
-            SizedGeneralPurpose::Word(id) => id,
-            SizedGeneralPurpose::Byte(id) => id,
-        }
-    }
-
-    fn operator_suffix(&self) -> &'static str {
-        match self {
-            SizedGeneralPurpose::QuadWord(_) => "q",
-            SizedGeneralPurpose::DoubleWord(_) => "l",
-            SizedGeneralPurpose::Word(_) => "w",
-            SizedGeneralPurpose::Byte(_) => "b",
-        }
-    }
-}
-
-impl std::fmt::Display for SizedGeneralPurpose {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let repr = self.id();
-        let register_suffix = match self {
-            SizedGeneralPurpose::QuadWord(_) => "",
-            SizedGeneralPurpose::DoubleWord(_) => "d",
-            SizedGeneralPurpose::Word(_) => "w",
-            SizedGeneralPurpose::Byte(_) => "b",
-        };
-
-        write!(f, "%{}{}", repr, register_suffix)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct GPRegisterAllocator {
-    registers: Vec<SizedGeneralPurpose>,
-}
-
-impl GPRegisterAllocator {
-    pub fn new(registers: Vec<SizedGeneralPurpose>) -> Self {
-        Self { registers }
-    }
-
-    /// Allocates a register for the duration of the life of closure.
-    fn allocate_then<F, R>(&mut self, f: F) -> R
-    where
-        F: FnOnce(&mut Self, &mut SizedGeneralPurpose) -> R,
-    {
-        self.registers
-            .pop()
-            .map(|mut reg| {
-                let ret_val = f(self, &mut reg);
-                self.registers.push(reg);
-                ret_val
-            })
-            .unwrap()
-    }
-}
-
-impl Default for GPRegisterAllocator {
-    fn default() -> Self {
-        Self {
-            registers: vec![
-                SizedGeneralPurpose::QuadWord("r8"),
-                SizedGeneralPurpose::QuadWord("r9"),
-                SizedGeneralPurpose::QuadWord("r10"),
-                SizedGeneralPurpose::QuadWord("r11"),
-                SizedGeneralPurpose::QuadWord("r12"),
-                SizedGeneralPurpose::QuadWord("r13"),
-                SizedGeneralPurpose::QuadWord("r14"),
-                SizedGeneralPurpose::QuadWord("r15"),
-            ],
-        }
-    }
-}
-
+/// Defines a constant preamble to be prepended to any compiled binaries.
 pub const CG_PREAMBLE: &str = "\t.text
 .LC0:
     .string \"%d\\n\"
@@ -134,6 +54,7 @@ main:
     pushq   %rbp
     movq	%rsp, %rbp\n";
 
+/// Defines a constant postamble to be appended to any compiled binaries.
 pub const CG_POSTAMBLE: &str = "\tmovl	$0, %eax
     popq	%rbp
     ret\n";
@@ -162,7 +83,8 @@ impl CodeGenerator<SymbolTable> for X86_64 {
                 Ok(vec![codegen_global_symbol(&identifier)])
             }
             ast::StmtNode::Assignment(identifier, expr) => symboltable
-                .assign_global(&identifier)
+                .has_global(&identifier)
+                .then(|| ())
                 .map(|_| {
                     allocator.allocate_then(|allocator, ret_val| {
                         vec![
@@ -177,10 +99,12 @@ impl CodeGenerator<SymbolTable> for X86_64 {
     }
 }
 
+/// Returns a vector-wrapped preamble.
 pub fn codegen_preamble() -> Vec<String> {
     vec![String::from(machine::arch::x86_64::CG_PREAMBLE)]
 }
 
+/// Returns a vector-wrapped binary postamble
 pub fn codegen_postamble() -> Vec<String> {
     vec![String::from(machine::arch::x86_64::CG_POSTAMBLE)]
 }
@@ -424,32 +348,4 @@ fn codegen_printint(reg: &mut SizedGeneralPurpose) -> Vec<String> {
         reg.operator_suffix(),
         reg
     )]
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::codegen::machine::arch::x86_64;
-
-    #[test]
-    fn should_allocate_a_register_from_an_unutilized_pool() {
-        assert_eq!(
-            ["r14", "r15"],
-            x86_64::GPRegisterAllocator::default().allocate_then(|allocator, reg| {
-                [allocator.allocate_then(|_, reg| reg.id()), reg.id()]
-            })
-        )
-    }
-
-    #[test]
-    fn should_free_allocations_on_scope_exit() {
-        let mut allocator = x86_64::GPRegisterAllocator::default();
-        let initial_len = allocator.registers.len();
-
-        // allocator pool should decrease by 1 while allocated in scope.
-        allocator
-            .allocate_then(|allocator, _| assert_eq!(initial_len - 1, allocator.registers.len()));
-
-        // register should be freed on scope exit.
-        assert_eq!(initial_len, allocator.registers.len());
-    }
 }
