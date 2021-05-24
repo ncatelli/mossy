@@ -10,25 +10,27 @@ use register::{GPRegisterAllocator, SizedGeneralPurpose};
 
 impl TargetArchitecture for X86_64 {}
 
+/// SymbolTable functions as a tracker for symbols that have been previously
+/// declared. For the time being, this only tracks global symbols.
 #[derive(Default, Debug, Clone)]
 pub struct SymbolTable {
     globals: std::collections::HashSet<String>,
 }
 
 impl SymbolTable {
+    /// Marks a global variable as having been declared.
     pub fn declare_global(&mut self, identifier: &str) {
         self.globals.insert(identifier.to_string());
     }
 
-    pub fn assign_global(&mut self, identifier: &str) -> Option<()> {
-        if self.globals.contains(identifier) {
-            Some(())
-        } else {
-            None
-        }
+    /// Returns a boolian representing if a global variable has already been
+    /// declared.
+    pub fn has_global(&mut self, identifier: &str) -> bool {
+        self.globals.contains(identifier)
     }
 }
 
+/// Defines a constant preamble to be prepended to any compiled binaries.
 pub const CG_PREAMBLE: &str = "\t.text
 .LC0:
     .string \"%d\\n\"
@@ -52,6 +54,7 @@ main:
     pushq   %rbp
     movq	%rsp, %rbp\n";
 
+/// Defines a constant postamble to be appended to any compiled binaries.
 pub const CG_POSTAMBLE: &str = "\tmovl	$0, %eax
     popq	%rbp
     ret\n";
@@ -80,7 +83,8 @@ impl CodeGenerator<SymbolTable> for X86_64 {
                 Ok(vec![codegen_global_symbol(&identifier)])
             }
             ast::StmtNode::Assignment(identifier, expr) => symboltable
-                .assign_global(&identifier)
+                .has_global(&identifier)
+                .then(|| ())
                 .map(|_| {
                     allocator.allocate_then(|allocator, ret_val| {
                         vec![
@@ -95,10 +99,12 @@ impl CodeGenerator<SymbolTable> for X86_64 {
     }
 }
 
+/// Returns a vector-wrapped preamble.
 pub fn codegen_preamble() -> Vec<String> {
     vec![String::from(machine::arch::x86_64::CG_PREAMBLE)]
 }
 
+/// Returns a vector-wrapped binary postamble
 pub fn codegen_postamble() -> Vec<String> {
     vec![String::from(machine::arch::x86_64::CG_POSTAMBLE)]
 }
