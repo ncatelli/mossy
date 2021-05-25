@@ -2,6 +2,42 @@ use crate::codegen::machine::arch::TargetArchitecture;
 use crate::codegen::register::Register;
 use crate::{ast::ExprNode, codegen::CodeGenerationErr};
 
+type BlockId = usize;
+
+#[derive(Debug, Clone)]
+struct Block<T> {
+    entry: Option<BlockId>,
+    inner: Vec<T>,
+    exit_cond_true: Option<BlockId>,
+    exit_cond_false: Option<BlockId>,
+}
+
+impl<T> Default for Block<T> {
+    fn default() -> Self {
+        Self {
+            entry: None,
+            inner: Vec::new(),
+            exit_cond_true: None,
+            exit_cond_false: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct BuildContext<BT> {
+    active_block: BlockId,
+    blocks: Vec<Block<BT>>,
+}
+
+impl<BT> Default for BuildContext<BT> {
+    fn default() -> Self {
+        Self {
+            active_block: 0,
+            blocks: vec![<Block<BT>>::default()],
+        }
+    }
+}
+
 /// X86_64 represents the x86_64 bit machine target.
 pub struct X86_64;
 
