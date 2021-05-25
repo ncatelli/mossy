@@ -106,7 +106,9 @@ impl CodeGenerator<SymbolTable> for X86_64 {
         symboltable: &mut SymbolTable,
         input: ast::StmtNode,
     ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
+        let _build_ctx = BuildContext::<Vec<String>>::default();
         let mut allocator = GPRegisterAllocator::default();
+
         match input {
             ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
                 Ok(vec![
@@ -115,17 +117,26 @@ impl CodeGenerator<SymbolTable> for X86_64 {
                 ])
             }),
             ast::StmtNode::Declaration(identifier) => {
+                let build_ctx = BuildContext::<Vec<String>>::default();
                 symboltable.declare_global(&identifier);
-                Ok(vec![codegen_global_symbol(&identifier)])
+                let ctx = codegen_global_symbol(build_ctx, &identifier);
+                Ok(ctx.blocks.into_iter().flat_map(|b| b.inner).collect())
             }
             ast::StmtNode::Assignment(identifier, expr) => symboltable
                 .has_global(&identifier)
                 .then(|| ())
                 .map(|_| {
+                    let ctx = BuildContext::<Vec<String>>::default();
+
                     allocator.allocate_then(|allocator, ret_val| {
                         vec![
                             codegen_expr(allocator, ret_val, expr),
-                            codegen_store_global(ret_val, &identifier),
+                            codegen_store_global(ctx, ret_val, &identifier)
+                                .blocks
+                                .into_iter()
+                                .flat_map(|b| b.inner)
+                                .flatten()
+                                .collect::<Vec<String>>(),
                         ]
                     })
                 })
@@ -145,26 +156,48 @@ pub fn codegen_postamble() -> Vec<String> {
     vec![String::from(machine::arch::x86_64::CG_POSTAMBLE)]
 }
 
-fn codegen_global_symbol(identifier: &str) -> Vec<String> {
-    vec![format!("\t.comm\t{},1,8\n", identifier)]
+fn codegen_global_symbol(
+    mut ctx: BuildContext<Vec<String>>,
+    identifier: &str,
+) -> BuildContext<Vec<String>> {
+    ctx.blocks.get_mut(ctx.active_block).map(|block| {
+        block
+            .inner
+            .push(vec![format!("\t.comm\t{},1,8\n", identifier)])
+    });
+    ctx
 }
 
-fn codegen_store_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
-    vec![format!(
-        "\tmov{}\t%{}, {}(%rip)\n",
-        ret.operator_suffix(),
-        ret.id(),
-        identifier
-    )]
+fn codegen_store_global(
+    mut ctx: BuildContext<Vec<String>>,
+    ret: &mut SizedGeneralPurpose,
+    identifier: &str,
+) -> BuildContext<Vec<String>> {
+    ctx.blocks.get_mut(ctx.active_block).map(|block| {
+        block.inner.push(vec![format!(
+            "\tmov{}\t%{}, {}(%rip)\n",
+            ret.operator_suffix(),
+            ret.id(),
+            identifier
+        )])
+    });
+    ctx
 }
 
-fn codegen_load_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
-    vec![format!(
-        "\tmov{}\t{}(%rip), %{}\n",
-        ret.operator_suffix(),
-        identifier,
-        ret.id()
-    )]
+fn codegen_load_global(
+    mut ctx: BuildContext<Vec<String>>,
+    ret: &mut SizedGeneralPurpose,
+    identifier: &str,
+) -> BuildContext<Vec<String>> {
+    ctx.blocks.get_mut(ctx.active_block).map(|block| {
+        block.inner.push(vec![format!(
+            "\tmov{}\t{}(%rip), %{}\n",
+            ret.operator_suffix(),
+            identifier,
+            ret.id()
+        )])
+    });
+    ctx
 }
 
 fn codegen_expr(
@@ -177,7 +210,13 @@ fn codegen_expr(
     match expr {
         ExprNode::Primary(Primary::Uint8(ast::Uint8(uc))) => codegen_constant_u8(ret_val, uc),
         ExprNode::Primary(Primary::Identifier(identifier)) => {
-            codegen_load_global(ret_val, &identifier)
+            let ctx = BuildContext::default();
+            codegen_load_global(ctx, ret_val, &identifier)
+                .blocks
+                .into_iter()
+                .flat_map(|block| block.inner)
+                .flatten()
+                .collect()
         }
 
         ExprNode::Equal(lhs, rhs) => {
