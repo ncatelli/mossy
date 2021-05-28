@@ -134,7 +134,7 @@ fn compile(source: &str) -> RuntimeResult<String> {
     parser::parse(&input)
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
         .into_iter()
-        .map(|ast_node| x86_64::X86_64.generate(&mut symbol_table, ast_node.to_owned()))
+        .map(|ast_node| x86_64::X86_64.generate(&mut symbol_table, ast_node))
         .collect::<Result<Vec<Vec<String>>, CodeGenerationErr>>()
         .map(|insts| {
             vec![
@@ -147,9 +147,6 @@ fn compile(source: &str) -> RuntimeResult<String> {
             .flatten()
             .collect()
         })
-        .map(|insts: Vec<String>| {
-            let contents = insts.into_iter().collect::<String>();
-            contents
-        })
+        .map(|insts: Vec<String>| insts.into_iter().collect::<String>())
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))
 }
