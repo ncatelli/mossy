@@ -9,3 +9,4 @@ lto = true
 
 [dependencies]
 parcel = { git = "https://github.com/ncatelli/parcel", tag = "v2.0.0" }
+scrap = { git = "https://github.com/ncatelli/scrap", tag = "v0.1.2" }
