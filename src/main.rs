@@ -44,60 +44,39 @@ impl fmt::Display for RuntimeError {
 }
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    let raw_args: Vec<String> = env::args().into_iter().collect::<Vec<String>>();
+    let args = raw_args.iter().map(|a| a.as_str()).collect::<Vec<&str>>();
 
-    let res = Cmd::new()
-        .name("mossy")
+    let cmd = scrap::Cmd::new("mossy")
         .description("An (irresponsibly) experimental C compiler.")
         .author("Nate Catelli <ncatelli@packetfire.org>")
         .version("0.1.0")
-        .flag(
-            Flag::new()
-                .name("version")
-                .short_code("v")
-                .action(Action::StoreTrue)
-                .value_type(ValueType::Bool),
+        .with_flag(scrap::Flag::expect_string(
+            "in-file",
+            "i",
+            "an input path for a source file.",
+        ))
+        .with_flag(
+            scrap::Flag::expect_string("out-file", "o", "an output path assembly.")
+                .optional()
+                .with_default("a.s".to_string()),
         )
-        .flag(
-            Flag::new()
-                .name("in-file")
-                .short_code("i")
-                .help_string("an input source file.")
-                .value_type(ValueType::Str),
-        )
-        .flag(
-            Flag::new()
-                .name("out-file")
-                .short_code("o")
-                .help_string("an output path assembly")
-                .value_type(ValueType::Str)
-                .default_value(Value::Str("a.s".to_string())),
-        )
-        .handler(Box::new(|c| {
-            let inf = c.get("in-file");
-            let ouf = c.get("out-file");
-            match (inf, ouf) {
-                (Some(Value::Str(in_f)), Some(Value::Str(out_f))) => Ok((in_f, out_f)),
-                _ => Err(RuntimeError::InvalidArguments(ROOT_HELP_STRING.to_string())),
-            }
-            .map(|(in_f, out_f)| {
-                read_src_file(&in_f)
-                    .map(|input| compile(&input))?
-                    .map(|asm| write_dest_file(&out_f, &asm.as_bytes()).map(|_| EXIT_SUCCESS))?
-            })
-            .and_then(std::convert::identity)
-            .map_err(|e| format!("{}", e))
-        }))
-        .run(args)
-        .unwrap()
-        .dispatch();
+        .with_handler(|(inf, ouf)| {
+            read_src_file(&inf)
+                .map(|input| compile(&input))
+                .unwrap()
+                .map(|asm| write_dest_file(&ouf, &asm.as_bytes()).map(|_| EXIT_SUCCESS))
+                .map_err(|e| format!("{}", e))
+                .unwrap()
+                .unwrap();
+        });
 
-    match res {
+    let help_string = cmd.help();
+    let eval_res = cmd.evaluate(&args[..]).map(|flags| cmd.dispatch(flags));
+
+    match eval_res {
         Ok(_) => (),
-        Err(e) => {
-            println!("{}", e);
-            std::process::exit(1)
-        }
+        Err(_) => println!("{}", &help_string),
     }
 }
 
