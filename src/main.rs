@@ -52,8 +52,7 @@ fn main() {
                 .map(|input| compile(&input))
                 .unwrap()
                 .map(|asm| write_dest_file(&ouf, &asm.as_bytes()).map(|_| EXIT_SUCCESS))
-                .map_err(|e| format!("{}", e))
-                .unwrap()
+                .and_then(std::convert::identity)
                 .unwrap();
         });
 
