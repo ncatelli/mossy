@@ -50,10 +50,8 @@ fn main() {
         .with_handler(|(inf, ouf)| {
             read_src_file(&inf)
                 .map(|input| compile(&input))
-                .unwrap()
-                .map(|asm| write_dest_file(&ouf, &asm.as_bytes()).map(|_| EXIT_SUCCESS))
                 .and_then(std::convert::identity)
-                .unwrap();
+                .map(|asm| write_dest_file(&ouf, &asm.as_bytes()).map(|_| EXIT_SUCCESS))
         });
 
     let help_string = cmd.help();
