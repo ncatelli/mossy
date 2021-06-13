@@ -7,22 +7,9 @@ use std::io::prelude::*;
 
 const EXIT_SUCCESS: i32 = 0;
 
-const ROOT_HELP_STRING: &str = "Usage: mossy [OPTIONS]
-An (irresponsibly) experimental C compiler.
-
-Flags:
-    --help, -h          print help string
-    --version, -v       
-    --in-file, -i       an input source file.
-    --out-file, -o      an output path assembly
-
-Subcommands:   
-";
-
 type RuntimeResult<T> = Result<T, RuntimeError>;
 
 enum RuntimeError {
-    InvalidArguments(String),
     FileUnreadable,
     Undefined(String),
 }
@@ -30,7 +17,6 @@ enum RuntimeError {
 impl fmt::Debug for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::InvalidArguments(hs) => write!(f, "{}", hs),
             Self::FileUnreadable => write!(f, "source file unreadable"),
             Self::Undefined(s) => write!(f, "{}", s),
         }
