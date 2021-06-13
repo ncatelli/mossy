@@ -52,6 +52,7 @@ fn main() {
                 .map(|input| compile(&input))
                 .and_then(std::convert::identity)
                 .map(|asm| write_dest_file(&ouf, &asm.as_bytes()).map(|_| EXIT_SUCCESS))
+                .and_then(std::convert::identity)
         });
 
     let help_string = cmd.help();
