@@ -106,18 +106,21 @@ impl CodeGenerator<SymbolTable> for X86_64 {
         symboltable: &mut SymbolTable,
         input: ast::StmtNode,
     ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
-        let _build_ctx = BuildContext::<Vec<String>>::default();
+        let mut build_ctx = BuildContext::<Vec<String>>::default();
         let mut allocator = GPRegisterAllocator::default();
 
         match input {
             ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
-                Ok(vec![
-                    codegen_expr(allocator, ret_val, expr),
-                    codegen_printint(ret_val),
-                ])
+                build_ctx
+                    .blocks
+                    .get_mut(build_ctx.active_block)
+                    .map(|block| {
+                        block.inner.push(codegen_expr(allocator, ret_val, expr));
+                        block.inner.push(codegen_printint(ret_val));
+                    });
+                Ok(build_ctx.blocks.into_iter().flat_map(|b| b.inner).collect())
             }),
             ast::StmtNode::Declaration(identifier) => {
-                let build_ctx = BuildContext::<Vec<String>>::default();
                 symboltable.declare_global(&identifier);
                 let ctx = codegen_global_symbol(build_ctx, &identifier);
                 Ok(ctx.blocks.into_iter().flat_map(|b| b.inner).collect())
@@ -126,12 +129,10 @@ impl CodeGenerator<SymbolTable> for X86_64 {
                 .has_global(&identifier)
                 .then(|| ())
                 .map(|_| {
-                    let ctx = BuildContext::<Vec<String>>::default();
-
                     allocator.allocate_then(|allocator, ret_val| {
                         vec![
                             codegen_expr(allocator, ret_val, expr),
-                            codegen_store_global(ctx, ret_val, &identifier)
+                            codegen_store_global(build_ctx, ret_val, &identifier)
                                 .blocks
                                 .into_iter()
                                 .flat_map(|b| b.inner)
@@ -245,7 +246,6 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
-
         ExprNode::Addition(lhs, rhs) => codegen_addition(allocator, ret_val, lhs, rhs),
         ExprNode::Subtraction(lhs, rhs) => codegen_subtraction(allocator, ret_val, lhs, rhs),
         ExprNode::Multiplication(lhs, rhs) => codegen_multiplication(allocator, ret_val, lhs, rhs),
