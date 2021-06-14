@@ -41,7 +41,7 @@ fn main() {
             "an input path for a source file.",
         ))
         .with_flag(
-            scrap::Flag::expect_string("out-file", "o", "an output path assembly.")
+            scrap::Flag::expect_string("out-file", "o", "an assembly output path.")
                 .optional()
                 .with_default("a.s".to_string()),
         )
