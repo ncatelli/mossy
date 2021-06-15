@@ -111,39 +111,39 @@ impl CodeGenerator<SymbolTable> for X86_64 {
 
         match input {
             ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
+                build_ctx = codegen_expr(build_ctx, allocator, ret_val, expr);
                 build_ctx
                     .blocks
                     .get_mut(build_ctx.active_block)
                     .map(|block| {
-                        block.inner.push(codegen_expr(allocator, ret_val, expr));
                         block.inner.push(codegen_printint(ret_val));
                     });
-                Ok(build_ctx.blocks.into_iter().flat_map(|b| b.inner).collect())
+                Ok(build_ctx)
             }),
             ast::StmtNode::Declaration(identifier) => {
                 symboltable.declare_global(&identifier);
                 let ctx = codegen_global_symbol(build_ctx, &identifier);
-                Ok(ctx.blocks.into_iter().flat_map(|b| b.inner).collect())
+                Ok(ctx)
             }
             ast::StmtNode::Assignment(identifier, expr) => symboltable
                 .has_global(&identifier)
                 .then(|| ())
                 .map(|_| {
                     allocator.allocate_then(|allocator, ret_val| {
-                        vec![
-                            codegen_expr(allocator, ret_val, expr),
-                            codegen_store_global(build_ctx, ret_val, &identifier)
-                                .blocks
-                                .into_iter()
-                                .flat_map(|b| b.inner)
-                                .flatten()
-                                .collect::<Vec<String>>(),
-                        ]
+                        let expr_ctx = codegen_expr(build_ctx, allocator, ret_val, expr);
+                        codegen_store_global(expr_ctx, ret_val, &identifier)
                     })
                 })
                 .ok_or(CodeGenerationErr::UndefinedReference(identifier)),
         }
-        .map(|insts| insts.into_iter().flatten().collect())
+        .map(|insts| {
+            insts
+                .blocks
+                .into_iter()
+                .flat_map(|block| block.inner)
+                .flatten()
+                .collect()
+        })
     }
 }
 
@@ -202,167 +202,191 @@ fn codegen_load_global(
 }
 
 fn codegen_expr(
+    ctx: BuildContext<Vec<String>>,
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
     expr: crate::ast::ExprNode,
-) -> Vec<String> {
+) -> BuildContext<Vec<String>> {
     use crate::ast::Primary;
 
     match expr {
-        ExprNode::Primary(Primary::Uint8(ast::Uint8(uc))) => codegen_constant_u8(ret_val, uc),
+        ExprNode::Primary(Primary::Uint8(ast::Uint8(uc))) => codegen_constant_u8(ctx, ret_val, uc),
         ExprNode::Primary(Primary::Identifier(identifier)) => {
-            let ctx = BuildContext::default();
             codegen_load_global(ctx, ret_val, &identifier)
-                .blocks
-                .into_iter()
-                .flat_map(|block| block.inner)
-                .flatten()
-                .collect()
         }
 
-        ExprNode::Equal(lhs, rhs) => {
-            codegen_compare(allocator, ret_val, ComparisonOperation::Equal, lhs, rhs)
-        }
-        ExprNode::NotEqual(lhs, rhs) => {
-            codegen_compare(allocator, ret_val, ComparisonOperation::NotEqual, lhs, rhs)
-        }
-        ExprNode::LessThan(lhs, rhs) => {
-            codegen_compare(allocator, ret_val, ComparisonOperation::LessThan, lhs, rhs)
-        }
+        ExprNode::Equal(lhs, rhs) => codegen_compare(
+            ctx,
+            allocator,
+            ret_val,
+            ComparisonOperation::Equal,
+            lhs,
+            rhs,
+        ),
+        ExprNode::NotEqual(lhs, rhs) => codegen_compare(
+            ctx,
+            allocator,
+            ret_val,
+            ComparisonOperation::NotEqual,
+            lhs,
+            rhs,
+        ),
+        ExprNode::LessThan(lhs, rhs) => codegen_compare(
+            ctx,
+            allocator,
+            ret_val,
+            ComparisonOperation::LessThan,
+            lhs,
+            rhs,
+        ),
         ExprNode::GreaterThan(lhs, rhs) => codegen_compare(
+            ctx,
             allocator,
             ret_val,
             ComparisonOperation::GreaterThan,
             lhs,
             rhs,
         ),
-        ExprNode::LessEqual(lhs, rhs) => {
-            codegen_compare(allocator, ret_val, ComparisonOperation::LessEqual, lhs, rhs)
-        }
+        ExprNode::LessEqual(lhs, rhs) => codegen_compare(
+            ctx,
+            allocator,
+            ret_val,
+            ComparisonOperation::LessEqual,
+            lhs,
+            rhs,
+        ),
         ExprNode::GreaterEqual(lhs, rhs) => codegen_compare(
+            ctx,
             allocator,
             ret_val,
             ComparisonOperation::GreaterEqual,
             lhs,
             rhs,
         ),
-        ExprNode::Addition(lhs, rhs) => codegen_addition(allocator, ret_val, lhs, rhs),
-        ExprNode::Subtraction(lhs, rhs) => codegen_subtraction(allocator, ret_val, lhs, rhs),
-        ExprNode::Multiplication(lhs, rhs) => codegen_multiplication(allocator, ret_val, lhs, rhs),
-        ExprNode::Division(lhs, rhs) => codegen_division(allocator, ret_val, lhs, rhs),
+        ExprNode::Addition(lhs, rhs) => codegen_addition(ctx, allocator, ret_val, lhs, rhs),
+        ExprNode::Subtraction(lhs, rhs) => codegen_subtraction(ctx, allocator, ret_val, lhs, rhs),
+        ExprNode::Multiplication(lhs, rhs) => {
+            codegen_multiplication(ctx, allocator, ret_val, lhs, rhs)
+        }
+        ExprNode::Division(lhs, rhs) => codegen_division(ctx, allocator, ret_val, lhs, rhs),
     }
 }
 
-fn codegen_constant_u8(ret_val: &mut SizedGeneralPurpose, constant: u8) -> Vec<String> {
-    vec![format!(
-        "\tmov{}\t${}, {}\n",
-        ret_val.operator_suffix(),
-        constant,
-        ret_val
-    )]
+fn codegen_constant_u8(
+    mut ctx: BuildContext<Vec<String>>,
+    ret_val: &mut SizedGeneralPurpose,
+    constant: u8,
+) -> BuildContext<Vec<String>> {
+    ctx.blocks.get_mut(ctx.active_block).map(|block| {
+        block.inner.push(
+            vec![format!(
+                "\tmov{}\t${}, {}\n",
+                ret_val.operator_suffix(),
+                constant,
+                ret_val
+            )]
+            .into_iter()
+            .collect(),
+        )
+    });
+    ctx
 }
 
 fn codegen_addition(
+    ctx: BuildContext<Vec<String>>,
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
-) -> Vec<String> {
+) -> BuildContext<Vec<String>> {
     allocator.allocate_then(|allocator, lhs_retval| {
-        let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
-        let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
+        let lhs_ctx = codegen_expr(ctx, allocator, lhs_retval, *lhs);
+        let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, ret_val, *rhs);
+        let active_block = rhs_ctx.active_block;
 
-        vec![
-            lhs_ctx,
-            rhs_ctx,
-            vec![format!(
+        rhs_ctx.blocks.get_mut(active_block).map(|block| {
+            block.inner.push(vec![format!(
                 "\tadd{}\t{}, {}\n",
                 ret_val.operator_suffix(),
                 lhs_retval,
                 ret_val
-            )],
-        ]
-        .into_iter()
-        .flatten()
-        .collect()
+            )])
+        });
+        rhs_ctx
     })
 }
 
 fn codegen_subtraction(
+    ctx: BuildContext<Vec<String>>,
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
-) -> Vec<String> {
+) -> BuildContext<Vec<String>> {
     allocator.allocate_then(|allocator, rhs_retval| {
-        let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
-        let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
+        let lhs_ctx = codegen_expr(ctx, allocator, ret_val, *lhs);
+        let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, rhs_retval, *rhs);
+        let active_block = rhs_ctx.active_block;
 
-        vec![
-            lhs_ctx,
-            rhs_ctx,
-            vec![format!(
+        rhs_ctx.blocks.get_mut(active_block).map(|block| {
+            block.inner.push(vec![format!(
                 "\tsub{}\t{}, {}\n",
                 ret_val.operator_suffix(),
                 ret_val,
                 rhs_retval
-            )],
-        ]
-        .into_iter()
-        .flatten()
-        .collect()
+            )])
+        });
+        rhs_ctx
     })
 }
 
 fn codegen_multiplication(
+    ctx: BuildContext<Vec<String>>,
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
-) -> Vec<String> {
+) -> BuildContext<Vec<String>> {
     allocator.allocate_then(|allocator, lhs_retval| {
-        let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
-        let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
+        let lhs_ctx = codegen_expr(ctx, allocator, lhs_retval, *lhs);
+        let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, ret_val, *rhs);
+        let active_block = rhs_ctx.active_block;
 
-        vec![
-            lhs_ctx,
-            rhs_ctx,
-            vec![format!(
+        rhs_ctx.blocks.get_mut(active_block).map(|block| {
+            block.inner.push(vec![format!(
                 "\timul{}\t{}, {}\n",
                 ret_val.operator_suffix(),
                 lhs_retval,
                 ret_val
-            )],
-        ]
-        .into_iter()
-        .flatten()
-        .collect()
+            )])
+        });
+        rhs_ctx
     })
 }
 
 fn codegen_division(
+    ctx: BuildContext<Vec<String>>,
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
-) -> Vec<String> {
+) -> BuildContext<Vec<String>> {
     allocator.allocate_then(|allocator, rhs_retval| {
-        let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
-        let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
+        let lhs_ctx = codegen_expr(ctx, allocator, ret_val, *lhs);
+        let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, rhs_retval, *rhs);
+        let active_block = rhs_ctx.active_block;
+
         let operand_suffix = ret_val.operator_suffix();
-        vec![
-            lhs_ctx,
-            rhs_ctx,
-            vec![
+
+        rhs_ctx.blocks.get_mut(active_block).map(|block| {
+            block.inner.push(vec![
                 format!("\tmov{}\t{},%rax\n", operand_suffix, ret_val),
                 String::from("\tcqo\n"),
                 format!("\tidiv{}\t{}\n", operand_suffix, rhs_retval),
                 format!("\tmov{}\t%rax,{}\n", operand_suffix, ret_val),
-            ],
-        ]
-        .into_iter()
-        .flatten()
-        .collect()
+            ])
+        });
+        rhs_ctx
     })
 }
 
@@ -377,15 +401,17 @@ enum ComparisonOperation {
 }
 
 fn codegen_compare(
+    ctx: BuildContext<Vec<String>>,
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
     comparison_op: ComparisonOperation,
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
-) -> Vec<String> {
+) -> BuildContext<Vec<String>> {
     allocator.allocate_then(|allocator, lhs_retval| {
-        let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
-        let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
+        let lhs_ctx = codegen_expr(ctx, allocator, lhs_retval, *lhs);
+        let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, ret_val, *rhs);
+        let active_block = rhs_ctx.active_block;
 
         let set_operator = match comparison_op {
             ComparisonOperation::LessThan => "setl",
@@ -398,10 +424,8 @@ fn codegen_compare(
 
         let operand_suffix = ret_val.operator_suffix();
 
-        vec![
-            lhs_ctx,
-            rhs_ctx,
-            vec![
+        rhs_ctx.blocks.get_mut(active_block).map(|block| {
+            block.inner.push(vec![
                 format!("\tcmp{}\t{}, {}\n", operand_suffix, ret_val, lhs_retval),
                 format!(
                     "\t{}\t{}\n",
@@ -409,11 +433,9 @@ fn codegen_compare(
                     SizedGeneralPurpose::Byte(ret_val.id())
                 ),
                 format!("\tandq\t$255,{}\n", ret_val),
-            ],
-        ]
-        .into_iter()
-        .flatten()
-        .collect()
+            ])
+        });
+        rhs_ctx
     })
 }
 
