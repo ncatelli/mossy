@@ -138,6 +138,7 @@ impl CodeGenerator<SymbolTable> for X86_64 {
                     })
                 })
                 .ok_or(CodeGenerationErr::UndefinedReference(identifier)),
+            ast::StmtNode::If(_, _, _) => todo!(),
         }
         .map(|insts| {
             insts

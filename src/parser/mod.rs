@@ -43,6 +43,7 @@ fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     expression_statement()
         .or(|| declaration_statement())
         .or(|| assignment_statement())
+        .or(|| if_statement())
 }
 
 fn declaration_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -68,6 +69,21 @@ fn assignment_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], St
         whitespace_wrapped(expect_character(';')),
     ))
     .map(|(ident, expr)| StmtNode::Assignment(ident, expr))
+}
+
+fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    parcel::join(
+        if_head(),
+        parcel::optional(
+            whitespace_wrapped(expect_str("else")).and_then(|_| compound_statements()),
+        ),
+    )
+    .map(|((cond, cond_true), cond_false)| StmtNode::If(cond, cond_true, cond_false))
+}
+
+fn if_head<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], (ExprNode, Vec<StmtNode>)> {
+    whitespace_wrapped(expect_str("if"))
+        .and_then(|_| parcel::join(parens_wrapped(expression()), compound_statements()))
 }
 
 fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -283,6 +299,20 @@ where
     ))
 }
 
+fn parens_wrapped<'a, P, B>(parser: P) -> impl Parser<'a, &'a [(usize, char)], B>
+where
+    B: 'a,
+    P: Parser<'a, &'a [(usize, char)], B> + 'a,
+{
+    parcel::right(parcel::join(
+        whitespace_wrapped(expect_character('(')),
+        parcel::left(parcel::join(
+            parser,
+            whitespace_wrapped(expect_character(')')),
+        )),
+    ))
+}
+
 fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
     pair.into_iter().unzip()
 }
@@ -315,7 +345,7 @@ mod tests {
     use crate::ast::*;
     #[test]
     fn should_parse_complex_expression() {
-        let input: Vec<(usize, char)> = "13 - 6 + 4 * 5 + 8 / 3;".chars().enumerate().collect();
+        let input: Vec<(usize, char)> = "{ 13 - 6 + 4 * 5 + 8 / 3; }".chars().enumerate().collect();
 
         assert_eq!(
             Ok(vec![StmtNode::Expression(term_expr!(

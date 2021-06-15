@@ -1,23 +1,5 @@
 pub type Span = std::ops::Range<usize>;
 
-#[derive(PartialEq, Debug, Clone)]
-pub struct SpannedExprNode {
-    pub span: Span,
-    pub node: ExprNode,
-}
-
-impl<'a> SpannedExprNode {
-    #[allow(dead_code)]
-    pub fn new(span: Span, node: ExprNode) -> Self {
-        Self { span, node }
-    }
-
-    #[allow(dead_code)]
-    pub fn unwrap(self) -> ExprNode {
-        self.node
-    }
-}
-
 /// AstNode representing any allowable statement in the ast.
 #[derive(PartialEq, Debug, Clone)]
 pub enum StmtNode {
@@ -29,6 +11,7 @@ pub enum StmtNode {
     Assignment(String, ExprNode),
     /// Represents a statement containing only a single expression.
     Expression(ExprNode),
+    If(ExprNode, Vec<Self>, Option<Vec<Self>>),
 }
 
 /// Represents a single expression in the ast.
