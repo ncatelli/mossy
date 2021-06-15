@@ -5,14 +5,14 @@ An (irresponsibly) experimental C compiler for the first-principles of computing
 ```
 
 compound_statement: '{' '}'
-        |    '{' statement '}'
-        |    '{' statements '}'
+        |    '{' statement* '}'
         ;
 
-statements: statement*
-        |   declaration
-        |   assignment
-        |   if_statement 
+statement: 
+        | expression ";"
+        | declaration
+        | assignment
+        | if_statement 
         ;
 
 declaration:   'int' identifier ';'
@@ -24,8 +24,7 @@ if_statement: if_head
 
 if_head: 'if' '(' expression ')' compund_statement
 
-statement: expression ";"
-        ;
+
 
 expression: equality
         ;

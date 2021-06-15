@@ -33,14 +33,10 @@ fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Sta
     parcel::right(parcel::join(
         whitespace_wrapped(expect_character('{')),
         parcel::left(parcel::join(
-            statements(),
+            parcel::zero_or_more(statement()),
             whitespace_wrapped(expect_character('}')),
         )),
     ))
-}
-
-fn statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Statements> {
-    parcel::zero_or_more(statement())
 }
 
 fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
