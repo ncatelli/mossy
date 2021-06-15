@@ -29,6 +29,12 @@ struct BuildContext<BT> {
     blocks: Vec<Block<BT>>,
 }
 
+impl<BT> BuildContext<BT> {
+    pub fn get_active_block_mut(&mut self) -> Option<&mut Block<BT>> {
+        self.blocks.get_mut(self.active_block)
+    }
+}
+
 impl<BT> Default for BuildContext<BT> {
     fn default() -> Self {
         Self {
@@ -112,12 +118,9 @@ impl CodeGenerator<SymbolTable> for X86_64 {
         match input {
             ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
                 build_ctx = codegen_expr(build_ctx, allocator, ret_val, expr);
-                build_ctx
-                    .blocks
-                    .get_mut(build_ctx.active_block)
-                    .map(|block| {
-                        block.inner.push(codegen_printint(ret_val));
-                    });
+                build_ctx.get_active_block_mut().map(|block| {
+                    block.inner.push(codegen_printint(ret_val));
+                });
                 Ok(build_ctx)
             }),
             ast::StmtNode::Declaration(identifier) => {
@@ -161,7 +164,7 @@ fn codegen_global_symbol(
     mut ctx: BuildContext<Vec<String>>,
     identifier: &str,
 ) -> BuildContext<Vec<String>> {
-    ctx.blocks.get_mut(ctx.active_block).map(|block| {
+    ctx.get_active_block_mut().map(|block| {
         block
             .inner
             .push(vec![format!("\t.comm\t{},1,8\n", identifier)])
@@ -174,7 +177,7 @@ fn codegen_store_global(
     ret: &mut SizedGeneralPurpose,
     identifier: &str,
 ) -> BuildContext<Vec<String>> {
-    ctx.blocks.get_mut(ctx.active_block).map(|block| {
+    ctx.get_active_block_mut().map(|block| {
         block.inner.push(vec![format!(
             "\tmov{}\t%{}, {}(%rip)\n",
             ret.operator_suffix(),
@@ -190,7 +193,7 @@ fn codegen_load_global(
     ret: &mut SizedGeneralPurpose,
     identifier: &str,
 ) -> BuildContext<Vec<String>> {
-    ctx.blocks.get_mut(ctx.active_block).map(|block| {
+    ctx.get_active_block_mut().map(|block| {
         block.inner.push(vec![format!(
             "\tmov{}\t{}(%rip), %{}\n",
             ret.operator_suffix(),
@@ -277,7 +280,7 @@ fn codegen_constant_u8(
     ret_val: &mut SizedGeneralPurpose,
     constant: u8,
 ) -> BuildContext<Vec<String>> {
-    ctx.blocks.get_mut(ctx.active_block).map(|block| {
+    ctx.get_active_block_mut().map(|block| {
         block.inner.push(
             vec![format!(
                 "\tmov{}\t${}, {}\n",
@@ -302,9 +305,8 @@ fn codegen_addition(
     allocator.allocate_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(ctx, allocator, lhs_retval, *lhs);
         let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, ret_val, *rhs);
-        let active_block = rhs_ctx.active_block;
 
-        rhs_ctx.blocks.get_mut(active_block).map(|block| {
+        rhs_ctx.get_active_block_mut().map(|block| {
             block.inner.push(vec![format!(
                 "\tadd{}\t{}, {}\n",
                 ret_val.operator_suffix(),
@@ -326,9 +328,8 @@ fn codegen_subtraction(
     allocator.allocate_then(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(ctx, allocator, ret_val, *lhs);
         let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, rhs_retval, *rhs);
-        let active_block = rhs_ctx.active_block;
 
-        rhs_ctx.blocks.get_mut(active_block).map(|block| {
+        rhs_ctx.get_active_block_mut().map(|block| {
             block.inner.push(vec![format!(
                 "\tsub{}\t{}, {}\n",
                 ret_val.operator_suffix(),
@@ -350,9 +351,8 @@ fn codegen_multiplication(
     allocator.allocate_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(ctx, allocator, lhs_retval, *lhs);
         let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, ret_val, *rhs);
-        let active_block = rhs_ctx.active_block;
 
-        rhs_ctx.blocks.get_mut(active_block).map(|block| {
+        rhs_ctx.get_active_block_mut().map(|block| {
             block.inner.push(vec![format!(
                 "\timul{}\t{}, {}\n",
                 ret_val.operator_suffix(),
@@ -374,11 +374,9 @@ fn codegen_division(
     allocator.allocate_then(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(ctx, allocator, ret_val, *lhs);
         let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, rhs_retval, *rhs);
-        let active_block = rhs_ctx.active_block;
-
         let operand_suffix = ret_val.operator_suffix();
 
-        rhs_ctx.blocks.get_mut(active_block).map(|block| {
+        rhs_ctx.get_active_block_mut().map(|block| {
             block.inner.push(vec![
                 format!("\tmov{}\t{},%rax\n", operand_suffix, ret_val),
                 String::from("\tcqo\n"),
@@ -411,7 +409,6 @@ fn codegen_compare(
     allocator.allocate_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(ctx, allocator, lhs_retval, *lhs);
         let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, ret_val, *rhs);
-        let active_block = rhs_ctx.active_block;
 
         let set_operator = match comparison_op {
             ComparisonOperation::LessThan => "setl",
@@ -424,7 +421,7 @@ fn codegen_compare(
 
         let operand_suffix = ret_val.operator_suffix();
 
-        rhs_ctx.blocks.get_mut(active_block).map(|block| {
+        rhs_ctx.get_active_block_mut().map(|block| {
             block.inner.push(vec![
                 format!("\tcmp{}\t{}, {}\n", operand_suffix, ret_val, lhs_retval),
                 format!(
