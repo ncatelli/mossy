@@ -4,7 +4,7 @@ An (irresponsibly) experimental C compiler for the first-principles of computing
 ## Grammar
 ```
 
-compound_statement: '{' '}';
+compound_statement: '{' '}'
         |    '{' statement '}'
         |    '{' statements '}'
         ;

@@ -14,7 +14,7 @@ pub type Statements = Vec<StmtNode>;
 /// parse expects a character slice as input and attempts to parse a valid
 /// expression, returning a parse error if it is invalid.
 pub fn parse(input: &[(usize, char)]) -> Result<Statements, ParseErr> {
-    statements()
+    compound_statements()
         .parse(input)
         .map_err(ParseErr::UnexpectedToken)
         .and_then(|ms| match ms {
@@ -29,8 +29,18 @@ pub fn parse(input: &[(usize, char)]) -> Result<Statements, ParseErr> {
         })
 }
 
+fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Statements> {
+    parcel::right(parcel::join(
+        whitespace_wrapped(expect_character('{')),
+        parcel::left(parcel::join(
+            statements(),
+            whitespace_wrapped(expect_character('}')),
+        )),
+    ))
+}
+
 fn statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Statements> {
-    parcel::one_or_more(statement())
+    parcel::zero_or_more(statement())
 }
 
 fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
