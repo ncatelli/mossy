@@ -12,6 +12,22 @@ struct Block<T> {
     exit_cond_false: Option<BlockId>,
 }
 
+impl<T> Block<T> {
+    fn new(
+        entry: Option<BlockId>,
+        inner: Vec<T>,
+        exit_cond_true: Option<BlockId>,
+        exit_cond_false: Option<BlockId>,
+    ) -> Self {
+        Self {
+            entry,
+            inner,
+            exit_cond_true,
+            exit_cond_false,
+        }
+    }
+}
+
 impl<T> Default for Block<T> {
     fn default() -> Self {
         Self {
@@ -33,6 +49,17 @@ impl<BT> BuildContext<BT> {
     pub fn get_active_block_mut(&mut self) -> Option<&mut Block<BT>> {
         self.blocks.get_mut(self.active_block)
     }
+
+    pub fn get_mut(&mut self, block_id: BlockId) -> Option<&mut Block<BT>> {
+        self.blocks.get_mut(block_id)
+    }
+
+    pub fn derive_child_from_parent(&mut self, parent: BlockId) -> BlockId {
+        let child = <Block<BT>>::new(Some(parent), vec![], None, None);
+        self.blocks.push(child);
+
+        self.blocks.len() + 1
+    }
 }
 
 impl<BT> Default for BuildContext<BT> {
@@ -45,6 +72,7 @@ impl<BT> Default for BuildContext<BT> {
 }
 
 /// X86_64 represents the x86_64 bit machine target.
+#[derive(Clone, Copy)]
 pub struct X86_64;
 
 mod register;
@@ -112,42 +140,22 @@ impl CodeGenerator<SymbolTable> for X86_64 {
         symboltable: &mut SymbolTable,
         input: ast::StmtNode,
     ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
-        let mut build_ctx = BuildContext::<Vec<String>>::default();
         let mut allocator = GPRegisterAllocator::default();
+        let build_ctx = BuildContext::<Vec<String>>::default();
 
-        match input {
-            ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
-                build_ctx = codegen_expr(build_ctx, allocator, ret_val, expr);
-                build_ctx.get_active_block_mut().map(|block| {
-                    block.inner.push(codegen_printint(ret_val));
-                });
-                Ok(build_ctx)
-            }),
-            ast::StmtNode::Declaration(identifier) => {
-                symboltable.declare_global(&identifier);
-                let ctx = codegen_global_symbol(build_ctx, &identifier);
-                Ok(ctx)
-            }
-            ast::StmtNode::Assignment(identifier, expr) => symboltable
-                .has_global(&identifier)
-                .then(|| ())
-                .map(|_| {
-                    allocator.allocate_then(|allocator, ret_val| {
-                        let expr_ctx = codegen_expr(build_ctx, allocator, ret_val, expr);
-                        codegen_store_global(expr_ctx, ret_val, &identifier)
-                    })
-                })
-                .ok_or(CodeGenerationErr::UndefinedReference(identifier)),
-            ast::StmtNode::If(_, _, _) => todo!(),
-        }
-        .map(|insts| {
-            insts
-                .blocks
-                .into_iter()
-                .flat_map(|block| block.inner)
-                .flatten()
-                .collect()
-        })
+        let blocks =
+            codegen_statement(build_ctx, &mut allocator, symboltable, input).map(|insts| {
+                insts
+                    .blocks
+                    .into_iter()
+                    .flat_map(|block| block.inner)
+                    .flatten()
+                    .collect()
+            });
+
+        println!("{:#?}", &blocks);
+
+        blocks
     }
 }
 
@@ -159,6 +167,40 @@ pub fn codegen_preamble() -> Vec<String> {
 /// Returns a vector-wrapped binary postamble
 pub fn codegen_postamble() -> Vec<String> {
     vec![String::from(machine::arch::x86_64::CG_POSTAMBLE)]
+}
+
+/// Returns a vector-wrapped preamble.
+fn codegen_statement(
+    mut ctx: BuildContext<Vec<String>>,
+    allocator: &mut GPRegisterAllocator,
+    symboltable: &mut SymbolTable,
+    input: ast::StmtNode,
+) -> Result<BuildContext<Vec<String>>, CodeGenerationErr> {
+    match input {
+        ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
+            ctx = codegen_expr(ctx, allocator, ret_val, expr);
+            ctx.get_active_block_mut().map(|block| {
+                block.inner.push(codegen_printint(ret_val));
+            });
+            Ok(ctx)
+        }),
+        ast::StmtNode::Declaration(identifier) => {
+            symboltable.declare_global(&identifier);
+            let ctx = codegen_global_symbol(ctx, &identifier);
+            Ok(ctx)
+        }
+        ast::StmtNode::Assignment(identifier, expr) => symboltable
+            .has_global(&identifier)
+            .then(|| ())
+            .map(|_| {
+                allocator.allocate_then(|allocator, ret_val| {
+                    let expr_ctx = codegen_expr(ctx, allocator, ret_val, expr);
+                    codegen_store_global(expr_ctx, ret_val, &identifier)
+                })
+            })
+            .ok_or(CodeGenerationErr::UndefinedReference(identifier)),
+        ast::StmtNode::If(_cond, _true_case, _false_case) => Ok(ctx),
+    }
 }
 
 fn codegen_global_symbol(
@@ -203,6 +245,42 @@ fn codegen_load_global(
         )])
     });
     ctx
+}
+
+fn codegen_if_statement(
+    mut ctx: BuildContext<Vec<String>>,
+    allocator: &mut GPRegisterAllocator,
+    cond: crate::ast::ExprNode,
+    true_case: Vec<String>,
+    false_case: Option<Vec<String>>,
+) -> BuildContext<Vec<String>> {
+    let mut cond_ctx = allocator.allocate_then(|allocator, ret_val| {
+        ctx = codegen_expr(ctx, allocator, ret_val, cond);
+        ctx.get_active_block_mut().map(|block| {
+            block.inner.push(codegen_printint(ret_val));
+        });
+        ctx
+    });
+
+    let cond_id = cond_ctx.active_block;
+    let true_block_id = cond_ctx.derive_child_from_parent(cond_id);
+    cond_ctx
+        .get_mut(true_block_id)
+        .map(|block| block.inner.push(true_case));
+
+    // Set exit blocks on parent
+    cond_ctx
+        .get_mut(cond_id)
+        .map(|block| block.exit_cond_true = Some(true_block_id));
+
+    let false_block_id = cond_ctx.derive_child_from_parent(cond_id);
+    false_case.map(|fc| {
+        cond_ctx
+            .get_mut(false_block_id)
+            .map(|block| block.inner.push(fc))
+    });
+
+    cond_ctx
 }
 
 fn codegen_expr(

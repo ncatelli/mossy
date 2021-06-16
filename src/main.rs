@@ -59,7 +59,7 @@ fn main() {
 
     match eval_res {
         Ok(_) => (),
-        Err(_) => println!("{}", &help_string),
+        Err(e) => println!("{}\n\n{}", &e.to_string(), &help_string),
     }
 }
 
