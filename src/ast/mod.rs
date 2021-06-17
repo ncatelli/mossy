@@ -36,7 +36,7 @@ pub enum StmtNode {
 pub enum ExprNode {
     Primary(Primary),
 
-    // comparative
+    // Comparative
     Equal(Box<ExprNode>, Box<ExprNode>),
     NotEqual(Box<ExprNode>, Box<ExprNode>),
     LessThan(Box<ExprNode>, Box<ExprNode>),
