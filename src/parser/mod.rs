@@ -9,12 +9,10 @@ pub enum ParseErr {
     Unspecified(String),
 }
 
-pub type Statements = Vec<StmtNode>;
-
 /// parse expects a character slice as input and attempts to parse a valid
 /// expression, returning a parse error if it is invalid.
-pub fn parse(input: &[(usize, char)]) -> Result<Statements, ParseErr> {
-    statements()
+pub fn parse(input: &[(usize, char)]) -> Result<CompoundStmts, ParseErr> {
+    compound_statements()
         .parse(input)
         .map_err(ParseErr::UnexpectedToken)
         .and_then(|ms| match ms {
@@ -29,14 +27,22 @@ pub fn parse(input: &[(usize, char)]) -> Result<Statements, ParseErr> {
         })
 }
 
-fn statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Statements> {
-    parcel::one_or_more(statement())
+fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], CompoundStmts> {
+    parcel::right(parcel::join(
+        whitespace_wrapped(expect_character('{')),
+        parcel::left(parcel::join(
+            parcel::zero_or_more(statement()),
+            whitespace_wrapped(expect_character('}')),
+        )),
+    ))
+    .map(|stmts| CompoundStmts::new(stmts))
 }
 
 fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     expression_statement()
         .or(|| declaration_statement())
         .or(|| assignment_statement())
+        .or(|| if_statement())
 }
 
 fn declaration_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -62,6 +68,23 @@ fn assignment_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], St
         whitespace_wrapped(expect_character(';')),
     ))
     .map(|(ident, expr)| StmtNode::Assignment(ident, expr))
+}
+
+fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    parcel::join(
+        if_head(),
+        parcel::optional(
+            whitespace_wrapped(expect_str("else")).and_then(|_| compound_statements()),
+        ),
+    )
+    .map(|((cond, cond_true), cond_false)| {
+        StmtNode::If(cond, cond_true, cond_false.map(|stmts| stmts))
+    })
+}
+
+fn if_head<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], (ExprNode, CompoundStmts)> {
+    whitespace_wrapped(expect_str("if"))
+        .and_then(|_| parcel::join(parens_wrapped(expression()), compound_statements()))
 }
 
 fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -277,6 +300,20 @@ where
     ))
 }
 
+fn parens_wrapped<'a, P, B>(parser: P) -> impl Parser<'a, &'a [(usize, char)], B>
+where
+    B: 'a,
+    P: Parser<'a, &'a [(usize, char)], B> + 'a,
+{
+    parcel::right(parcel::join(
+        whitespace_wrapped(expect_character('(')),
+        parcel::left(parcel::join(
+            parser,
+            whitespace_wrapped(expect_character(')')),
+        )),
+    ))
+}
+
 fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
     pair.into_iter().unzip()
 }
@@ -309,10 +346,10 @@ mod tests {
     use crate::ast::*;
     #[test]
     fn should_parse_complex_expression() {
-        let input: Vec<(usize, char)> = "13 - 6 + 4 * 5 + 8 / 3;".chars().enumerate().collect();
+        let input: Vec<(usize, char)> = "{ 13 - 6 + 4 * 5 + 8 / 3; }".chars().enumerate().collect();
 
         assert_eq!(
-            Ok(vec![StmtNode::Expression(term_expr!(
+            Ok(CompoundStmts::new(vec![StmtNode::Expression(term_expr!(
                 term_expr!(
                     term_expr!(primary_expr!(13), '-', primary_expr!(6)),
                     '+',
@@ -320,7 +357,7 @@ mod tests {
                 ),
                 '+',
                 factor_expr!(primary_expr!(8), '/', primary_expr!(3))
-            ))]),
+            ))])),
             crate::parser::parse(&input)
         )
     }

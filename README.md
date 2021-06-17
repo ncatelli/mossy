@@ -4,13 +4,27 @@ An (irresponsibly) experimental C compiler for the first-principles of computing
 ## Grammar
 ```
 
-statements: statement*
-        |   'int' identifier ';'
-        |   identifier '=' expression ';'`
+compound_statement: '{' '}'
+        |    '{' statement* '}'
         ;
 
-statement: expression ";"
+statement: 
+        | expression ";"
+        | declaration
+        | assignment
+        | if_statement 
         ;
+
+declaration:   'int' identifier ';'
+
+assignent:   identifier '=' expression ';'`
+
+if_statement: if_head
+        | if_head 'else' compound_statement  ;
+
+if_head: 'if' '(' expression ')' compund_statement
+
+
 
 expression: equality
         ;

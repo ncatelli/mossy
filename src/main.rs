@@ -1,4 +1,4 @@
-use mossy::{codegen::CodeGenerationErr, parser};
+use mossy::parser;
 use scrap::prelude::v1::*;
 use std::env;
 use std::fmt;
@@ -59,7 +59,7 @@ fn main() {
 
     match eval_res {
         Ok(_) => (),
-        Err(_) => println!("{}", &help_string),
+        Err(e) => println!("{}\n\n{}", &e.to_string(), &help_string),
     }
 }
 
@@ -94,18 +94,15 @@ fn compile(source: &str) -> RuntimeResult<String> {
     let mut symbol_table = x86_64::SymbolTable::default();
 
     parser::parse(&input)
-        .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
-        .into_iter()
         .map(|ast_node| x86_64::X86_64.generate(&mut symbol_table, ast_node))
-        .collect::<Result<Vec<Vec<String>>, CodeGenerationErr>>()
+        .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
         .map(|insts| {
             vec![
-                vec![x86_64::codegen_preamble()],
+                x86_64::codegen_preamble(),
                 insts,
-                vec![x86_64::codegen_postamble()],
+                x86_64::codegen_postamble(),
             ]
             .into_iter()
-            .flatten()
             .flatten()
             .collect()
         })

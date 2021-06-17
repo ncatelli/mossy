@@ -1,5 +1,3 @@
-use crate::ast;
-
 pub mod machine;
 mod register;
 
@@ -27,10 +25,6 @@ impl std::fmt::Debug for CodeGenerationErr {
 
 /// CodeGenerator defines the generate method, returning a string representation
 /// of all generated instructions or an error.
-pub trait CodeGenerator<S> {
-    fn generate(
-        self,
-        symboltable: &mut S,
-        input: ast::StmtNode,
-    ) -> Result<Vec<String>, CodeGenerationErr>;
+pub trait CodeGenerator<S, I> {
+    fn generate(&self, symboltable: &mut S, input: I) -> Result<Vec<String>, CodeGenerationErr>;
 }
