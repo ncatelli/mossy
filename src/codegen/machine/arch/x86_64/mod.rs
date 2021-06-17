@@ -486,8 +486,8 @@ fn codegen_subtraction(
             block.inner.push(format!(
                 "\tsub{}\t{}, {}\n",
                 ret_val.operator_suffix(),
+                rhs_retval,
                 ret_val,
-                rhs_retval
             ))
         });
         rhs_ctx
