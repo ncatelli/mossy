@@ -131,10 +131,13 @@ printint:
     .type   main, @function
 main:
     pushq   %rbp
-    movq	%rsp, %rbp\n";
+    movq	%rsp, %rbp
+    jmp     L0\n";
 
 /// Defines a constant postamble to be appended to any compiled binaries.
-pub const CG_POSTAMBLE: &str = "\tmovl	$0, %eax
+pub const CG_POSTAMBLE: &str = "\tjmp     postamble
+postamble:
+    movl	$0, %eax
     popq	%rbp
     ret\n";
 
@@ -160,19 +163,21 @@ impl CodeGenerator<SymbolTable, ast::CompoundStmts> for X86_64 {
             .blocks
             .into_iter()
             .enumerate()
-            .flat_map(|(_block_id, block)| {
+            .map(|(block_id, block)| (codegen_label(block_id), block))
+            .map(|(label, block)| {
                 let inner = block.inner;
                 let (ec_true, ec_false) = (block.exit_cond_true, block.exit_cond_false);
-                match (ec_true, ec_false) {
-                    (None, None) => inner,
-                    (None, Some(_)) => inner,
+                let inner_and_exit = match (ec_true, ec_false) {
                     (Some(next), None) => inner
                         .into_iter()
                         .chain(codegen_jump(next).into_iter())
                         .collect(),
-                    (Some(_), Some(_)) => inner,
-                }
+                    _ => inner,
+                };
+
+                (label, inner_and_exit)
             })
+            .map(|(label, insts)| label.into_iter().chain(insts.into_iter()).collect())
             .collect())
     }
 }
@@ -185,14 +190,6 @@ pub fn codegen_preamble() -> Vec<String> {
 /// Returns a vector-wrapped binary postamble
 pub fn codegen_postamble() -> Vec<String> {
     vec![String::from(machine::arch::x86_64::CG_POSTAMBLE)]
-}
-
-pub fn codegen_label(block_id: usize) -> Vec<String> {
-    vec![format!("L{}:\n", block_id)]
-}
-
-pub fn codegen_jump(block_id: usize) -> Vec<String> {
-    vec![format!("\tjmp\tL{}:\n", block_id)]
 }
 
 /// Returns a vector-wrapped preamble.
@@ -276,6 +273,14 @@ fn codegen_load_global(
         ))
     });
     ctx
+}
+
+pub fn codegen_label(block_id: usize) -> Vec<String> {
+    vec![format!("L{}:\n", block_id)]
+}
+
+pub fn codegen_jump(block_id: usize) -> Vec<String> {
+    vec![format!("\tjmp\tL{}:\n", block_id)]
 }
 
 fn codegen_if_statement(
