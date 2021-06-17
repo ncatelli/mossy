@@ -180,7 +180,6 @@ impl CodeGenerator<SymbolTable, ast::CompoundStmts> for X86_64 {
                         .into_iter()
                         .chain(codegen_jump(next).into_iter())
                         .collect(),
-                    (Some(_), Some(_)) => todo!(),
                     _ => inner
                         .into_iter()
                         .chain(vec!["\tjmp\tpostamble\n".to_string()].into_iter())
