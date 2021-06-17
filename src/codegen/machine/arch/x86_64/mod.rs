@@ -7,7 +7,7 @@ type BlockId = usize;
 #[derive(Debug, Clone)]
 struct Block<T> {
     entry: Option<BlockId>,
-    inner: Vec<T>,
+    inner: T,
     exit_cond_true: Option<BlockId>,
     exit_cond_false: Option<BlockId>,
 }
@@ -15,7 +15,7 @@ struct Block<T> {
 impl<T> Block<T> {
     fn new(
         entry: Option<BlockId>,
-        inner: Vec<T>,
+        inner: T,
         exit_cond_true: Option<BlockId>,
         exit_cond_false: Option<BlockId>,
     ) -> Self {
@@ -28,11 +28,14 @@ impl<T> Block<T> {
     }
 }
 
-impl<T> Default for Block<T> {
+impl<T> Default for Block<T>
+where
+    T: Default,
+{
     fn default() -> Self {
         Self {
             entry: None,
-            inner: Vec::new(),
+            inner: T::default(),
             exit_cond_true: None,
             exit_cond_false: None,
         }
@@ -45,7 +48,10 @@ struct BuildContext<BT> {
     blocks: Vec<Block<BT>>,
 }
 
-impl<BT> BuildContext<BT> {
+impl<BT> BuildContext<BT>
+where
+    BT: Default,
+{
     pub fn get_active_block_mut(&mut self) -> Option<&mut Block<BT>> {
         self.blocks.get_mut(self.active_block)
     }
@@ -55,14 +61,17 @@ impl<BT> BuildContext<BT> {
     }
 
     pub fn derive_child_from_parent(&mut self, parent: BlockId) -> BlockId {
-        let child = <Block<BT>>::new(Some(parent), vec![], None, None);
+        let child = <Block<BT>>::new(Some(parent), BT::default(), None, None);
         self.blocks.push(child);
 
         self.blocks.len() + 1
     }
 }
 
-impl<BT> Default for BuildContext<BT> {
+impl<BT> Default for BuildContext<BT>
+where
+    BT: Default,
+{
     fn default() -> Self {
         Self {
             active_block: 0,
@@ -134,28 +143,37 @@ use crate::codegen;
 use crate::codegen::machine;
 use crate::codegen::CodeGenerator;
 
-impl CodeGenerator<SymbolTable> for X86_64 {
+impl CodeGenerator<SymbolTable, ast::CompoundStmts> for X86_64 {
     fn generate(
-        self,
+        &self,
         symboltable: &mut SymbolTable,
-        input: ast::StmtNode,
+        input: ast::CompoundStmts,
     ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
         let mut allocator = GPRegisterAllocator::default();
-        let build_ctx = BuildContext::<Vec<String>>::default();
+        let stmts = Vec::<ast::StmtNode>::from(input);
+        let mut ctx = BuildContext::<Vec<String>>::default();
+        for stmt in stmts.into_iter() {
+            ctx = codegen_statement(ctx, &mut allocator, symboltable, stmt)?
+        }
 
-        let blocks =
-            codegen_statement(build_ctx, &mut allocator, symboltable, input).map(|insts| {
-                insts
-                    .blocks
-                    .into_iter()
-                    .flat_map(|block| block.inner)
-                    .flatten()
-                    .collect()
-            });
-
-        println!("{:#?}", &blocks);
-
-        blocks
+        Ok(ctx
+            .blocks
+            .into_iter()
+            .enumerate()
+            .flat_map(|(_block_id, block)| {
+                let inner = block.inner;
+                let (ec_true, ec_false) = (block.exit_cond_true, block.exit_cond_false);
+                match (ec_true, ec_false) {
+                    (None, None) => inner,
+                    (None, Some(_)) => inner,
+                    (Some(next), None) => inner
+                        .into_iter()
+                        .chain(codegen_jump(next).into_iter())
+                        .collect(),
+                    (Some(_), Some(_)) => inner,
+                }
+            })
+            .collect())
     }
 }
 
@@ -169,6 +187,14 @@ pub fn codegen_postamble() -> Vec<String> {
     vec![String::from(machine::arch::x86_64::CG_POSTAMBLE)]
 }
 
+pub fn codegen_label(block_id: usize) -> Vec<String> {
+    vec![format!("L{}:\n", block_id)]
+}
+
+pub fn codegen_jump(block_id: usize) -> Vec<String> {
+    vec![format!("\tjmp\tL{}:\n", block_id)]
+}
+
 /// Returns a vector-wrapped preamble.
 fn codegen_statement(
     mut ctx: BuildContext<Vec<String>>,
@@ -180,7 +206,9 @@ fn codegen_statement(
         ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
             ctx = codegen_expr(ctx, allocator, ret_val, expr);
             ctx.get_active_block_mut().map(|block| {
-                block.inner.push(codegen_printint(ret_val));
+                for inst in codegen_printint(ret_val).into_iter() {
+                    block.inner.push(inst);
+                }
             });
             Ok(ctx)
         }),
@@ -199,7 +227,13 @@ fn codegen_statement(
                 })
             })
             .ok_or(CodeGenerationErr::UndefinedReference(identifier)),
-        ast::StmtNode::If(_cond, _true_case, _false_case) => Ok(ctx),
+        ast::StmtNode::If(cond, true_case, false_case) => Ok(codegen_if_statement(
+            ctx,
+            allocator,
+            cond,
+            true_case,
+            false_case.map(|stmts| stmts),
+        )),
     }
 }
 
@@ -207,11 +241,8 @@ fn codegen_global_symbol(
     mut ctx: BuildContext<Vec<String>>,
     identifier: &str,
 ) -> BuildContext<Vec<String>> {
-    ctx.get_active_block_mut().map(|block| {
-        block
-            .inner
-            .push(vec![format!("\t.comm\t{},1,8\n", identifier)])
-    });
+    ctx.get_active_block_mut()
+        .map(|block| block.inner.push(format!("\t.comm\t{},1,8\n", identifier)));
     ctx
 }
 
@@ -221,12 +252,12 @@ fn codegen_store_global(
     identifier: &str,
 ) -> BuildContext<Vec<String>> {
     ctx.get_active_block_mut().map(|block| {
-        block.inner.push(vec![format!(
+        block.inner.push(format!(
             "\tmov{}\t%{}, {}(%rip)\n",
             ret.operator_suffix(),
             ret.id(),
             identifier
-        )])
+        ))
     });
     ctx
 }
@@ -237,12 +268,12 @@ fn codegen_load_global(
     identifier: &str,
 ) -> BuildContext<Vec<String>> {
     ctx.get_active_block_mut().map(|block| {
-        block.inner.push(vec![format!(
+        block.inner.push(format!(
             "\tmov{}\t{}(%rip), %{}\n",
             ret.operator_suffix(),
             identifier,
             ret.id()
-        )])
+        ))
     });
     ctx
 }
@@ -251,34 +282,16 @@ fn codegen_if_statement(
     mut ctx: BuildContext<Vec<String>>,
     allocator: &mut GPRegisterAllocator,
     cond: crate::ast::ExprNode,
-    true_case: Vec<String>,
-    false_case: Option<Vec<String>>,
+    _true_case: crate::ast::CompoundStmts,
+    _false_case: Option<crate::ast::CompoundStmts>,
 ) -> BuildContext<Vec<String>> {
-    let mut cond_ctx = allocator.allocate_then(|allocator, ret_val| {
+    let cond_ctx = allocator.allocate_then(|allocator, ret_val| {
         ctx = codegen_expr(ctx, allocator, ret_val, cond);
-        ctx.get_active_block_mut().map(|block| {
-            block.inner.push(codegen_printint(ret_val));
-        });
+        ctx.get_active_block_mut().map(|block| {});
         ctx
     });
 
-    let cond_id = cond_ctx.active_block;
-    let true_block_id = cond_ctx.derive_child_from_parent(cond_id);
-    cond_ctx
-        .get_mut(true_block_id)
-        .map(|block| block.inner.push(true_case));
-
-    // Set exit blocks on parent
-    cond_ctx
-        .get_mut(cond_id)
-        .map(|block| block.exit_cond_true = Some(true_block_id));
-
-    let false_block_id = cond_ctx.derive_child_from_parent(cond_id);
-    false_case.map(|fc| {
-        cond_ctx
-            .get_mut(false_block_id)
-            .map(|block| block.inner.push(fc))
-    });
+    //    let cond_id = cond_ctx.active_block;
 
     cond_ctx
 }
@@ -386,12 +399,12 @@ fn codegen_addition(
         let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, ret_val, *rhs);
 
         rhs_ctx.get_active_block_mut().map(|block| {
-            block.inner.push(vec![format!(
+            block.inner.push(format!(
                 "\tadd{}\t{}, {}\n",
                 ret_val.operator_suffix(),
                 lhs_retval,
                 ret_val
-            )])
+            ))
         });
         rhs_ctx
     })
@@ -409,12 +422,12 @@ fn codegen_subtraction(
         let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, rhs_retval, *rhs);
 
         rhs_ctx.get_active_block_mut().map(|block| {
-            block.inner.push(vec![format!(
+            block.inner.push(format!(
                 "\tsub{}\t{}, {}\n",
                 ret_val.operator_suffix(),
                 ret_val,
                 rhs_retval
-            )])
+            ))
         });
         rhs_ctx
     })
@@ -432,12 +445,12 @@ fn codegen_multiplication(
         let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, ret_val, *rhs);
 
         rhs_ctx.get_active_block_mut().map(|block| {
-            block.inner.push(vec![format!(
+            block.inner.push(format!(
                 "\timul{}\t{}, {}\n",
                 ret_val.operator_suffix(),
                 lhs_retval,
                 ret_val
-            )])
+            ))
         });
         rhs_ctx
     })
@@ -456,12 +469,15 @@ fn codegen_division(
         let operand_suffix = ret_val.operator_suffix();
 
         rhs_ctx.get_active_block_mut().map(|block| {
-            block.inner.push(vec![
-                format!("\tmov{}\t{},%rax\n", operand_suffix, ret_val),
-                String::from("\tcqo\n"),
-                format!("\tidiv{}\t{}\n", operand_suffix, rhs_retval),
-                format!("\tmov{}\t%rax,{}\n", operand_suffix, ret_val),
-            ])
+            block.inner.push(
+                vec![
+                    format!("\tmov{}\t{},%rax\n", operand_suffix, ret_val),
+                    String::from("\tcqo\n"),
+                    format!("\tidiv{}\t{}\n", operand_suffix, rhs_retval),
+                    format!("\tmov{}\t%rax,{}\n", operand_suffix, ret_val),
+                ]
+                .join(""),
+            )
         });
         rhs_ctx
     })
@@ -501,15 +517,18 @@ fn codegen_compare(
         let operand_suffix = ret_val.operator_suffix();
 
         rhs_ctx.get_active_block_mut().map(|block| {
-            block.inner.push(vec![
-                format!("\tcmp{}\t{}, {}\n", operand_suffix, ret_val, lhs_retval),
-                format!(
-                    "\t{}\t{}\n",
-                    set_operator,
-                    SizedGeneralPurpose::Byte(ret_val.id())
-                ),
-                format!("\tandq\t$255,{}\n", ret_val),
-            ])
+            block.inner.push(
+                vec![
+                    format!("\tcmp{}\t{}, {}\n", operand_suffix, ret_val, lhs_retval),
+                    format!(
+                        "\t{}\t{}\n",
+                        set_operator,
+                        SizedGeneralPurpose::Byte(ret_val.id())
+                    ),
+                    format!("\tandq\t$255,{}\n", ret_val),
+                ]
+                .join(""),
+            )
         });
         rhs_ctx
     })

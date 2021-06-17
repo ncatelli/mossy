@@ -9,11 +9,9 @@ pub enum ParseErr {
     Unspecified(String),
 }
 
-pub type Statements = Vec<StmtNode>;
-
 /// parse expects a character slice as input and attempts to parse a valid
 /// expression, returning a parse error if it is invalid.
-pub fn parse(input: &[(usize, char)]) -> Result<Statements, ParseErr> {
+pub fn parse(input: &[(usize, char)]) -> Result<CompoundStmts, ParseErr> {
     compound_statements()
         .parse(input)
         .map_err(ParseErr::UnexpectedToken)
@@ -29,7 +27,7 @@ pub fn parse(input: &[(usize, char)]) -> Result<Statements, ParseErr> {
         })
 }
 
-fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Statements> {
+fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], CompoundStmts> {
     parcel::right(parcel::join(
         whitespace_wrapped(expect_character('{')),
         parcel::left(parcel::join(
@@ -37,6 +35,7 @@ fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Sta
             whitespace_wrapped(expect_character('}')),
         )),
     ))
+    .map(|stmts| CompoundStmts::new(stmts))
 }
 
 fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -78,10 +77,12 @@ fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> 
             whitespace_wrapped(expect_str("else")).and_then(|_| compound_statements()),
         ),
     )
-    .map(|((cond, cond_true), cond_false)| StmtNode::If(cond, cond_true, cond_false))
+    .map(|((cond, cond_true), cond_false)| {
+        StmtNode::If(cond, cond_true, cond_false.map(|stmts| stmts))
+    })
 }
 
-fn if_head<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], (ExprNode, Vec<StmtNode>)> {
+fn if_head<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], (ExprNode, CompoundStmts)> {
     whitespace_wrapped(expect_str("if"))
         .and_then(|_| parcel::join(parens_wrapped(expression()), compound_statements()))
 }
@@ -348,7 +349,7 @@ mod tests {
         let input: Vec<(usize, char)> = "{ 13 - 6 + 4 * 5 + 8 / 3; }".chars().enumerate().collect();
 
         assert_eq!(
-            Ok(vec![StmtNode::Expression(term_expr!(
+            Ok(CompoundStmts::new(vec![StmtNode::Expression(term_expr!(
                 term_expr!(
                     term_expr!(primary_expr!(13), '-', primary_expr!(6)),
                     '+',
@@ -356,7 +357,7 @@ mod tests {
                 ),
                 '+',
                 factor_expr!(primary_expr!(8), '/', primary_expr!(3))
-            ))]),
+            ))])),
             crate::parser::parse(&input)
         )
     }

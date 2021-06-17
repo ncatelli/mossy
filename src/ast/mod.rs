@@ -1,5 +1,22 @@
 pub type Span = std::ops::Range<usize>;
 
+#[derive(PartialEq, Debug, Clone)]
+pub struct CompoundStmts {
+    inner: Vec<StmtNode>,
+}
+
+impl CompoundStmts {
+    pub fn new(inner: Vec<StmtNode>) -> Self {
+        Self { inner }
+    }
+}
+
+impl From<CompoundStmts> for Vec<StmtNode> {
+    fn from(src: CompoundStmts) -> Self {
+        src.inner
+    }
+}
+
 /// AstNode representing any allowable statement in the ast.
 #[derive(PartialEq, Debug, Clone)]
 pub enum StmtNode {
@@ -11,7 +28,7 @@ pub enum StmtNode {
     Assignment(String, ExprNode),
     /// Represents a statement containing only a single expression.
     Expression(ExprNode),
-    If(ExprNode, Vec<Self>, Option<Vec<Self>>),
+    If(ExprNode, CompoundStmts, Option<CompoundStmts>),
 }
 
 /// Represents a single expression in the ast.
