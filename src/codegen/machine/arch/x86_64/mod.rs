@@ -173,17 +173,16 @@ impl CodeGenerator<SymbolTable, ast::CompoundStmts> for X86_64 {
             .enumerate()
             .map(|(block_id, block)| (codegen_label(block_id), block))
             .map(|(label, block)| {
+                let block_id = block.id;
                 let inner = block.inner;
                 let (ec_true, ec_false) = (block.exit_cond_true, block.exit_cond_false);
                 let inner_and_exit: Vec<String> = match (ec_true, ec_false) {
+                    (Some(next), None) if next == block_id + 1 => inner,
                     (Some(next), None) => inner
                         .into_iter()
                         .chain(codegen_jump(next).into_iter())
                         .collect(),
-                    _ => inner
-                        .into_iter()
-                        .chain(vec!["\tjmp\tpostamble\n".to_string()].into_iter())
-                        .collect(),
+                    _ => inner,
                 };
 
                 (label, inner_and_exit)
@@ -271,8 +270,12 @@ fn codegen_if_statement(
     allocator.allocate_then(|allocator, ret_val| {
         let parent_block_id = ctx.active_block;
         let mut cond_ctx = codegen_expr(ctx, allocator, ret_val, cond);
+        let exit_block_id = if false_case.is_some() {
+            parent_block_id + 3
+        } else {
+            parent_block_id + 2
+        };
 
-        let exit_block_id = cond_ctx.derive_child_from_parent(parent_block_id);
         let true_case_block_id = cond_ctx.derive_child_from_parent(parent_block_id);
         cond_ctx
             .get_mut(parent_block_id)
@@ -295,16 +298,20 @@ fn codegen_if_statement(
             (tctx, exit_block_id)
         };
 
-        // reset to parent
+        // reset parent block for compare.
         block_ctx.active_block = parent_block_id;
-
-        Ok(codegen_compare_and_jump(
+        let mut compare_block = codegen_compare_and_jump(
             block_ctx,
             allocator,
             ret_val,
             true_case_block_id,
             else_block_id,
-        ))
+        );
+
+        // generate an exit block
+        compare_block.derive_child_from_parent(parent_block_id);
+
+        Ok(compare_block)
     })
 }
 
@@ -599,7 +606,7 @@ fn codegen_compare_and_jump(
     mut ctx: BuildContext<Vec<String>>,
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
-    cond_true_id: BlockId,
+    _cond_true_id: BlockId,
     cond_false_id: BlockId,
 ) -> BuildContext<Vec<String>> {
     allocator.allocate_then(|_, zero_val| {
@@ -616,10 +623,9 @@ fn codegen_compare_and_jump(
                         SizedGeneralPurpose::Byte(ret_val.id())
                     ),
                     format!("\tandq\t$255,{}\n", ret_val),
-                    format!("\t{}\tL{}\n", "je", cond_true_id),
+                    format!("\t{}\tL{}\n", "jne", cond_false_id),
                 ]
                 .into_iter()
-                .chain(codegen_jump(cond_false_id).into_iter())
                 .collect(),
             )
         });
