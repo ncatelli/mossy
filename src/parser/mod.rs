@@ -124,8 +124,12 @@ fn equality<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
             .into_iter()
             .zip(operands.into_iter())
             .fold(first_expr, |lhs, (operator, rhs)| match operator {
-                EqualityExprOp::Equal => ExprNode::Equal(Box::new(lhs), Box::new(rhs)),
-                EqualityExprOp::NotEqual => ExprNode::NotEqual(Box::new(lhs), Box::new(rhs)),
+                EqualityExprOp::Equal => {
+                    ExprNode::Equal(EqualExprNode::new(Box::new(lhs), Box::new(rhs)))
+                }
+                EqualityExprOp::NotEqual => {
+                    ExprNode::NotEqual(NotEqualExprNode::new(Box::new(lhs), Box::new(rhs)))
+                }
             })
     })
     .or(|| relational())
@@ -160,13 +164,17 @@ fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
             .into_iter()
             .zip(operands.into_iter())
             .fold(first_expr, |lhs, (operator, rhs)| match operator {
-                RelationalExprOp::LessThan => ExprNode::LessThan(Box::new(lhs), Box::new(rhs)),
-                RelationalExprOp::LessEqual => ExprNode::LessEqual(Box::new(lhs), Box::new(rhs)),
+                RelationalExprOp::LessThan => {
+                    ExprNode::LessThan(LessThanExprNode::new(Box::new(lhs), Box::new(rhs)))
+                }
+                RelationalExprOp::LessEqual => {
+                    ExprNode::LessEqual(LessEqualExprNode::new(Box::new(lhs), Box::new(rhs)))
+                }
                 RelationalExprOp::GreaterThan => {
-                    ExprNode::GreaterThan(Box::new(lhs), Box::new(rhs))
+                    ExprNode::GreaterThan(GreaterThanExprNode::new(Box::new(lhs), Box::new(rhs)))
                 }
                 RelationalExprOp::GreaterEqual => {
-                    ExprNode::GreaterEqual(Box::new(lhs), Box::new(rhs))
+                    ExprNode::GreaterEqual(GreaterEqualExprNode::new(Box::new(lhs), Box::new(rhs)))
                 }
             })
     })

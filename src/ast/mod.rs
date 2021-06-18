@@ -37,18 +37,53 @@ pub enum ExprNode {
     Primary(Primary),
 
     // Comparative
-    Equal(Box<ExprNode>, Box<ExprNode>),
-    NotEqual(Box<ExprNode>, Box<ExprNode>),
-    LessThan(Box<ExprNode>, Box<ExprNode>),
-    GreaterThan(Box<ExprNode>, Box<ExprNode>),
-    LessEqual(Box<ExprNode>, Box<ExprNode>),
-    GreaterEqual(Box<ExprNode>, Box<ExprNode>),
+    Equal(EqualExprNode),
+    NotEqual(NotEqualExprNode),
+    LessThan(LessThanExprNode),
+    GreaterThan(GreaterThanExprNode),
+    LessEqual(LessEqualExprNode),
+    GreaterEqual(GreaterEqualExprNode),
 
     // Arithmetic
     Subtraction(Box<ExprNode>, Box<ExprNode>),
     Division(Box<ExprNode>, Box<ExprNode>),
     Addition(Box<ExprNode>, Box<ExprNode>),
     Multiplication(Box<ExprNode>, Box<ExprNode>),
+}
+
+/// Functions as a marker trait to denote that the implementing type is one of
+/// the Comparative branch of expressions.
+pub trait ComparativeExpression {}
+
+// Concrete comparative expression
+
+macro_rules! generate_comparative_nodes {
+    ($($name:tt,)*) => {
+       $(
+            #[derive(Debug, Clone, PartialEq)]
+            pub struct $name {
+                pub lhs: Box<ExprNode>,
+                pub rhs: Box<ExprNode>,
+            }
+
+            impl ComparativeExpression for $name {}
+
+            impl $name {
+                pub(crate) fn new(lhs: Box<ExprNode>, rhs: Box<ExprNode>) -> Self {
+                    Self { lhs, rhs }
+                }
+            }
+       )*
+    };
+}
+
+generate_comparative_nodes! {
+    EqualExprNode,
+    NotEqualExprNode,
+    LessThanExprNode,
+    GreaterThanExprNode,
+    LessEqualExprNode,
+    GreaterEqualExprNode,
 }
 
 /// Primary represents a primitive type within the ast.

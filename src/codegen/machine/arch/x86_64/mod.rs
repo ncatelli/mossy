@@ -1,6 +1,6 @@
 use crate::codegen::machine::arch::TargetArchitecture;
 use crate::codegen::register::Register;
-use crate::{ast::ExprNode, codegen::CodeGenerationErr};
+use crate::codegen::CodeGenerationErr;
 
 type BlockId = usize;
 
@@ -148,6 +148,7 @@ postamble:
     ret\n";
 
 use crate::ast;
+use crate::ast::ExprNode;
 use crate::codegen;
 use crate::codegen::machine;
 use crate::codegen::CodeGenerator;
@@ -378,7 +379,7 @@ fn codegen_expr(
             codegen_load_global(ctx, ret_val, &identifier)
         }
 
-        ExprNode::Equal(lhs, rhs) => codegen_compare_and_set(
+        ExprNode::Equal(ast::EqualExprNode { lhs, rhs }) => codegen_compare_and_set(
             ctx,
             allocator,
             ret_val,
@@ -386,7 +387,7 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
-        ExprNode::NotEqual(lhs, rhs) => codegen_compare_and_set(
+        ExprNode::NotEqual(ast::NotEqualExprNode { lhs, rhs }) => codegen_compare_and_set(
             ctx,
             allocator,
             ret_val,
@@ -394,7 +395,7 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
-        ExprNode::LessThan(lhs, rhs) => codegen_compare_and_set(
+        ExprNode::LessThan(ast::LessThanExprNode { lhs, rhs }) => codegen_compare_and_set(
             ctx,
             allocator,
             ret_val,
@@ -402,7 +403,7 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
-        ExprNode::GreaterThan(lhs, rhs) => codegen_compare_and_set(
+        ExprNode::GreaterThan(ast::GreaterThanExprNode { lhs, rhs }) => codegen_compare_and_set(
             ctx,
             allocator,
             ret_val,
@@ -410,7 +411,7 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
-        ExprNode::LessEqual(lhs, rhs) => codegen_compare_and_set(
+        ExprNode::LessEqual(ast::LessEqualExprNode { lhs, rhs }) => codegen_compare_and_set(
             ctx,
             allocator,
             ret_val,
@@ -418,7 +419,7 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
-        ExprNode::GreaterEqual(lhs, rhs) => codegen_compare_and_set(
+        ExprNode::GreaterEqual(ast::GreaterEqualExprNode { lhs, rhs }) => codegen_compare_and_set(
             ctx,
             allocator,
             ret_val,
