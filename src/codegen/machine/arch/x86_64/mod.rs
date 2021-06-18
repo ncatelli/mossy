@@ -173,14 +173,16 @@ impl CodeGenerator<SymbolTable, ast::CompoundStmts> for X86_64 {
             .enumerate()
             .map(|(block_id, block)| (codegen_label(block_id), block))
             .map(|(label, block)| {
+                let block_id = block.id;
                 let inner = block.inner;
                 let (ec_true, ec_false) = (block.exit_cond_true, block.exit_cond_false);
                 let inner_and_exit: Vec<String> = match (ec_true, ec_false) {
+                    (Some(next), None) if next == block_id + 1 => inner,
                     (Some(next), None) => inner
                         .into_iter()
                         .chain(codegen_jump(next).into_iter())
                         .collect(),
-                    _ => inner.into_iter().collect(),
+                    _ => inner,
                 };
 
                 (label, inner_and_exit)
