@@ -206,8 +206,12 @@ fn addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
             .into_iter()
             .zip(operands.into_iter())
             .fold(first_expr, |lhs, (operator, rhs)| match operator {
-                AdditionExprOp::Plus => ExprNode::Addition(Box::new(lhs), Box::new(rhs)),
-                AdditionExprOp::Minus => ExprNode::Subtraction(Box::new(lhs), Box::new(rhs)),
+                AdditionExprOp::Plus => {
+                    ExprNode::Addition(AdditionExprNode::new(Box::new(lhs), Box::new(rhs)))
+                }
+                AdditionExprOp::Minus => {
+                    ExprNode::Subtraction(SubtractionExprNode::new(Box::new(lhs), Box::new(rhs)))
+                }
             })
     })
     .or(|| multiplication())
@@ -238,10 +242,12 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
             .into_iter()
             .zip(operands.into_iter())
             .fold(first_expr, |lhs, (operator, rhs)| match operator {
-                MultiplicationExprOp::Star => {
-                    ExprNode::Multiplication(Box::new(lhs), Box::new(rhs))
+                MultiplicationExprOp::Star => ExprNode::Multiplication(
+                    MultiplicationExprNode::new(Box::new(lhs), Box::new(rhs)),
+                ),
+                MultiplicationExprOp::Slash => {
+                    ExprNode::Division(DivisionExprNode::new(Box::new(lhs), Box::new(rhs)))
                 }
-                MultiplicationExprOp::Slash => ExprNode::Division(Box::new(lhs), Box::new(rhs)),
             })
     })
     .or(|| primary())
@@ -329,19 +335,25 @@ fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
 mod tests {
     macro_rules! term_expr {
         ($lhs:expr, '+', $rhs:expr) => {
-            $crate::ast::ExprNode::Addition(Box::new($lhs), Box::new($rhs))
+            $crate::ast::ExprNode::Addition(AdditionExprNode::new(Box::new($lhs), Box::new($rhs)))
         };
         ($lhs:expr, '-', $rhs:expr) => {
-            $crate::ast::ExprNode::Subtraction(Box::new($lhs), Box::new($rhs))
+            $crate::ast::ExprNode::Subtraction(SubtractionExprNode::new(
+                Box::new($lhs),
+                Box::new($rhs),
+            ))
         };
     }
 
     macro_rules! factor_expr {
         ($lhs:expr, '*', $rhs:expr) => {
-            $crate::ast::ExprNode::Multiplication(Box::new($lhs), Box::new($rhs))
+            $crate::ast::ExprNode::Multiplication(MultiplicationExprNode::new(
+                Box::new($lhs),
+                Box::new($rhs),
+            ))
         };
         ($lhs:expr, '/', $rhs:expr) => {
-            $crate::ast::ExprNode::Division(Box::new($lhs), Box::new($rhs))
+            $crate::ast::ExprNode::Division(DivisionExprNode::new(Box::new($lhs), Box::new($rhs)))
         };
     }
 

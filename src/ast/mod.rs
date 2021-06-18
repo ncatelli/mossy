@@ -45,10 +45,10 @@ pub enum ExprNode {
     GreaterEqual(GreaterEqualExprNode),
 
     // Arithmetic
-    Subtraction(Box<ExprNode>, Box<ExprNode>),
-    Division(Box<ExprNode>, Box<ExprNode>),
-    Addition(Box<ExprNode>, Box<ExprNode>),
-    Multiplication(Box<ExprNode>, Box<ExprNode>),
+    Subtraction(SubtractionExprNode),
+    Division(DivisionExprNode),
+    Addition(AdditionExprNode),
+    Multiplication(MultiplicationExprNode),
 }
 
 /// Functions as a marker trait to denote that the implementing type is one of
@@ -84,6 +84,39 @@ generate_comparative_nodes! {
     GreaterThanExprNode,
     LessEqualExprNode,
     GreaterEqualExprNode,
+}
+
+/// Functions as a marker trait to denote that the implementing type is one of
+/// the Arithmetic branch of expressions.
+pub trait ArithmeticExpression {}
+
+// Concrete Arithmetic expression
+
+macro_rules! generate_arithmetic_nodes {
+    ($($name:tt,)*) => {
+       $(
+            #[derive(Debug, Clone, PartialEq)]
+            pub struct $name {
+                pub lhs: Box<ExprNode>,
+                pub rhs: Box<ExprNode>,
+            }
+
+            impl ArithmeticExpression for $name {}
+
+            impl $name {
+                pub(crate) fn new(lhs: Box<ExprNode>, rhs: Box<ExprNode>) -> Self {
+                    Self { lhs, rhs }
+                }
+            }
+       )*
+    };
+}
+
+generate_arithmetic_nodes! {
+    AdditionExprNode,
+    SubtractionExprNode,
+    MultiplicationExprNode,
+    DivisionExprNode,
 }
 
 /// Primary represents a primitive type within the ast.

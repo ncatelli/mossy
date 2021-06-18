@@ -427,12 +427,18 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
-        ExprNode::Addition(lhs, rhs) => codegen_addition(ctx, allocator, ret_val, lhs, rhs),
-        ExprNode::Subtraction(lhs, rhs) => codegen_subtraction(ctx, allocator, ret_val, lhs, rhs),
-        ExprNode::Multiplication(lhs, rhs) => {
+        ExprNode::Addition(ast::AdditionExprNode { lhs, rhs }) => {
+            codegen_addition(ctx, allocator, ret_val, lhs, rhs)
+        }
+        ExprNode::Subtraction(ast::SubtractionExprNode { lhs, rhs }) => {
+            codegen_subtraction(ctx, allocator, ret_val, lhs, rhs)
+        }
+        ExprNode::Multiplication(ast::MultiplicationExprNode { lhs, rhs }) => {
             codegen_multiplication(ctx, allocator, ret_val, lhs, rhs)
         }
-        ExprNode::Division(lhs, rhs) => codegen_division(ctx, allocator, ret_val, lhs, rhs),
+        ExprNode::Division(ast::DivisionExprNode { lhs, rhs }) => {
+            codegen_division(ctx, allocator, ret_val, lhs, rhs)
+        }
     }
 }
 
