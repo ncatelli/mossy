@@ -53,6 +53,7 @@ fn declaration_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], S
         )),
         whitespace_wrapped(expect_character(';')),
     ))
+    .map(DeclarationStmt::new)
     .map(StmtNode::Declaration)
 }
 
@@ -67,7 +68,8 @@ fn assignment_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], St
         ),
         whitespace_wrapped(expect_character(';')),
     ))
-    .map(|(ident, expr)| StmtNode::Assignment(ident, expr))
+    .map(|(ident, expr)| AssignmentStmt::new(ident, expr))
+    .map(StmtNode::Assignment)
 }
 
 fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -78,8 +80,9 @@ fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> 
         ),
     )
     .map(|((cond, cond_true), cond_false)| {
-        StmtNode::If(cond, cond_true, cond_false.map(|stmts| stmts))
+        IfStmt::new(cond, cond_true, cond_false.map(|stmts| stmts))
     })
+    .map(StmtNode::If)
 }
 
 fn if_head<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], (ExprNode, CompoundStmts)> {
@@ -92,6 +95,7 @@ fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], St
         whitespace_wrapped(expression()),
         whitespace_wrapped(expect_character(';')),
     ))
+    .map(ExpressionStmt::new)
     .map(StmtNode::Expression)
 }
 
@@ -124,8 +128,12 @@ fn equality<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
             .into_iter()
             .zip(operands.into_iter())
             .fold(first_expr, |lhs, (operator, rhs)| match operator {
-                EqualityExprOp::Equal => ExprNode::Equal(Box::new(lhs), Box::new(rhs)),
-                EqualityExprOp::NotEqual => ExprNode::NotEqual(Box::new(lhs), Box::new(rhs)),
+                EqualityExprOp::Equal => {
+                    ExprNode::Equal(EqualExprNode::new(Box::new(lhs), Box::new(rhs)))
+                }
+                EqualityExprOp::NotEqual => {
+                    ExprNode::NotEqual(NotEqualExprNode::new(Box::new(lhs), Box::new(rhs)))
+                }
             })
     })
     .or(|| relational())
@@ -160,13 +168,17 @@ fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
             .into_iter()
             .zip(operands.into_iter())
             .fold(first_expr, |lhs, (operator, rhs)| match operator {
-                RelationalExprOp::LessThan => ExprNode::LessThan(Box::new(lhs), Box::new(rhs)),
-                RelationalExprOp::LessEqual => ExprNode::LessEqual(Box::new(lhs), Box::new(rhs)),
+                RelationalExprOp::LessThan => {
+                    ExprNode::LessThan(LessThanExprNode::new(Box::new(lhs), Box::new(rhs)))
+                }
+                RelationalExprOp::LessEqual => {
+                    ExprNode::LessEqual(LessEqualExprNode::new(Box::new(lhs), Box::new(rhs)))
+                }
                 RelationalExprOp::GreaterThan => {
-                    ExprNode::GreaterThan(Box::new(lhs), Box::new(rhs))
+                    ExprNode::GreaterThan(GreaterThanExprNode::new(Box::new(lhs), Box::new(rhs)))
                 }
                 RelationalExprOp::GreaterEqual => {
-                    ExprNode::GreaterEqual(Box::new(lhs), Box::new(rhs))
+                    ExprNode::GreaterEqual(GreaterEqualExprNode::new(Box::new(lhs), Box::new(rhs)))
                 }
             })
     })
@@ -198,8 +210,12 @@ fn addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
             .into_iter()
             .zip(operands.into_iter())
             .fold(first_expr, |lhs, (operator, rhs)| match operator {
-                AdditionExprOp::Plus => ExprNode::Addition(Box::new(lhs), Box::new(rhs)),
-                AdditionExprOp::Minus => ExprNode::Subtraction(Box::new(lhs), Box::new(rhs)),
+                AdditionExprOp::Plus => {
+                    ExprNode::Addition(AdditionExprNode::new(Box::new(lhs), Box::new(rhs)))
+                }
+                AdditionExprOp::Minus => {
+                    ExprNode::Subtraction(SubtractionExprNode::new(Box::new(lhs), Box::new(rhs)))
+                }
             })
     })
     .or(|| multiplication())
@@ -230,10 +246,12 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
             .into_iter()
             .zip(operands.into_iter())
             .fold(first_expr, |lhs, (operator, rhs)| match operator {
-                MultiplicationExprOp::Star => {
-                    ExprNode::Multiplication(Box::new(lhs), Box::new(rhs))
+                MultiplicationExprOp::Star => ExprNode::Multiplication(
+                    MultiplicationExprNode::new(Box::new(lhs), Box::new(rhs)),
+                ),
+                MultiplicationExprOp::Slash => {
+                    ExprNode::Division(DivisionExprNode::new(Box::new(lhs), Box::new(rhs)))
                 }
-                MultiplicationExprOp::Slash => ExprNode::Division(Box::new(lhs), Box::new(rhs)),
             })
     })
     .or(|| primary())
@@ -321,19 +339,25 @@ fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
 mod tests {
     macro_rules! term_expr {
         ($lhs:expr, '+', $rhs:expr) => {
-            $crate::ast::ExprNode::Addition(Box::new($lhs), Box::new($rhs))
+            $crate::ast::ExprNode::Addition(AdditionExprNode::new(Box::new($lhs), Box::new($rhs)))
         };
         ($lhs:expr, '-', $rhs:expr) => {
-            $crate::ast::ExprNode::Subtraction(Box::new($lhs), Box::new($rhs))
+            $crate::ast::ExprNode::Subtraction(SubtractionExprNode::new(
+                Box::new($lhs),
+                Box::new($rhs),
+            ))
         };
     }
 
     macro_rules! factor_expr {
         ($lhs:expr, '*', $rhs:expr) => {
-            $crate::ast::ExprNode::Multiplication(Box::new($lhs), Box::new($rhs))
+            $crate::ast::ExprNode::Multiplication(MultiplicationExprNode::new(
+                Box::new($lhs),
+                Box::new($rhs),
+            ))
         };
         ($lhs:expr, '/', $rhs:expr) => {
-            $crate::ast::ExprNode::Division(Box::new($lhs), Box::new($rhs))
+            $crate::ast::ExprNode::Division(DivisionExprNode::new(Box::new($lhs), Box::new($rhs)))
         };
     }
 
@@ -349,15 +373,17 @@ mod tests {
         let input: Vec<(usize, char)> = "{ 13 - 6 + 4 * 5 + 8 / 3; }".chars().enumerate().collect();
 
         assert_eq!(
-            Ok(CompoundStmts::new(vec![StmtNode::Expression(term_expr!(
-                term_expr!(
-                    term_expr!(primary_expr!(13), '-', primary_expr!(6)),
+            Ok(CompoundStmts::new(vec![StmtNode::Expression(
+                ExpressionStmt::new(term_expr!(
+                    term_expr!(
+                        term_expr!(primary_expr!(13), '-', primary_expr!(6)),
+                        '+',
+                        factor_expr!(primary_expr!(4), '*', primary_expr!(5))
+                    ),
                     '+',
-                    factor_expr!(primary_expr!(4), '*', primary_expr!(5))
-                ),
-                '+',
-                factor_expr!(primary_expr!(8), '/', primary_expr!(3))
-            ))])),
+                    factor_expr!(primary_expr!(8), '/', primary_expr!(3))
+                ))
+            )])),
             crate::parser::parse(&input)
         )
     }

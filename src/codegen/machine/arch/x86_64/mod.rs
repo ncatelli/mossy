@@ -1,6 +1,6 @@
 use crate::codegen::machine::arch::TargetArchitecture;
 use crate::codegen::register::Register;
-use crate::{ast::ExprNode, codegen::CodeGenerationErr};
+use crate::codegen::CodeGenerationErr;
 
 type BlockId = usize;
 
@@ -148,6 +148,7 @@ postamble:
     ret\n";
 
 use crate::ast;
+use crate::ast::ExprNode;
 use crate::codegen;
 use crate::codegen::machine;
 use crate::codegen::CodeGenerator;
@@ -224,21 +225,26 @@ fn codegen_statement(
     input: ast::StmtNode,
 ) -> Result<BuildContext<Vec<String>>, CodeGenerationErr> {
     match input {
-        ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
-            ctx = codegen_expr(ctx, allocator, ret_val, expr);
-            ctx.get_active_block_mut().map(|block| {
-                for inst in codegen_printint(ret_val).into_iter() {
-                    block.inner.push(inst);
-                }
-            });
-            Ok(ctx)
-        }),
-        ast::StmtNode::Declaration(identifier) => {
+        ast::StmtNode::Expression(ast::ExpressionStmt { inner: expr }) => {
+            allocator.allocate_then(|allocator, ret_val| {
+                ctx = codegen_expr(ctx, allocator, ret_val, expr);
+                ctx.get_active_block_mut().map(|block| {
+                    for inst in codegen_printint(ret_val).into_iter() {
+                        block.inner.push(inst);
+                    }
+                });
+                Ok(ctx)
+            })
+        }
+        ast::StmtNode::Declaration(ast::DeclarationStmt { id: identifier }) => {
             symboltable.declare_global(&identifier);
             let ctx = codegen_global_symbol(ctx, &identifier);
             Ok(ctx)
         }
-        ast::StmtNode::Assignment(identifier, expr) => symboltable
+        ast::StmtNode::Assignment(ast::AssignmentStmt {
+            id: identifier,
+            value: expr,
+        }) => symboltable
             .has_global(&identifier)
             .then(|| ())
             .map(|_| {
@@ -248,7 +254,11 @@ fn codegen_statement(
                 })
             })
             .ok_or(CodeGenerationErr::UndefinedReference(identifier)),
-        ast::StmtNode::If(cond, true_case, false_case) => codegen_if_statement(
+        ast::StmtNode::If(ast::IfStmt {
+            cond,
+            true_case,
+            false_case,
+        }) => codegen_if_statement(
             ctx,
             allocator,
             symboltable,
@@ -378,7 +388,7 @@ fn codegen_expr(
             codegen_load_global(ctx, ret_val, &identifier)
         }
 
-        ExprNode::Equal(lhs, rhs) => codegen_compare_and_set(
+        ExprNode::Equal(ast::EqualExprNode { lhs, rhs }) => codegen_compare_and_set(
             ctx,
             allocator,
             ret_val,
@@ -386,7 +396,7 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
-        ExprNode::NotEqual(lhs, rhs) => codegen_compare_and_set(
+        ExprNode::NotEqual(ast::NotEqualExprNode { lhs, rhs }) => codegen_compare_and_set(
             ctx,
             allocator,
             ret_val,
@@ -394,7 +404,7 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
-        ExprNode::LessThan(lhs, rhs) => codegen_compare_and_set(
+        ExprNode::LessThan(ast::LessThanExprNode { lhs, rhs }) => codegen_compare_and_set(
             ctx,
             allocator,
             ret_val,
@@ -402,7 +412,7 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
-        ExprNode::GreaterThan(lhs, rhs) => codegen_compare_and_set(
+        ExprNode::GreaterThan(ast::GreaterThanExprNode { lhs, rhs }) => codegen_compare_and_set(
             ctx,
             allocator,
             ret_val,
@@ -410,7 +420,7 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
-        ExprNode::LessEqual(lhs, rhs) => codegen_compare_and_set(
+        ExprNode::LessEqual(ast::LessEqualExprNode { lhs, rhs }) => codegen_compare_and_set(
             ctx,
             allocator,
             ret_val,
@@ -418,7 +428,7 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
-        ExprNode::GreaterEqual(lhs, rhs) => codegen_compare_and_set(
+        ExprNode::GreaterEqual(ast::GreaterEqualExprNode { lhs, rhs }) => codegen_compare_and_set(
             ctx,
             allocator,
             ret_val,
@@ -426,12 +436,18 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
-        ExprNode::Addition(lhs, rhs) => codegen_addition(ctx, allocator, ret_val, lhs, rhs),
-        ExprNode::Subtraction(lhs, rhs) => codegen_subtraction(ctx, allocator, ret_val, lhs, rhs),
-        ExprNode::Multiplication(lhs, rhs) => {
+        ExprNode::Addition(ast::AdditionExprNode { lhs, rhs }) => {
+            codegen_addition(ctx, allocator, ret_val, lhs, rhs)
+        }
+        ExprNode::Subtraction(ast::SubtractionExprNode { lhs, rhs }) => {
+            codegen_subtraction(ctx, allocator, ret_val, lhs, rhs)
+        }
+        ExprNode::Multiplication(ast::MultiplicationExprNode { lhs, rhs }) => {
             codegen_multiplication(ctx, allocator, ret_val, lhs, rhs)
         }
-        ExprNode::Division(lhs, rhs) => codegen_division(ctx, allocator, ret_val, lhs, rhs),
+        ExprNode::Division(ast::DivisionExprNode { lhs, rhs }) => {
+            codegen_division(ctx, allocator, ret_val, lhs, rhs)
+        }
     }
 }
 
