@@ -22,13 +22,68 @@ impl From<CompoundStmts> for Vec<StmtNode> {
 pub enum StmtNode {
     /// Declaration represents a global declaration statement with the
     /// enclosed string representing the Id of the variable.
-    Declaration(String),
+    Declaration(DeclarationStmt),
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.
-    Assignment(String, ExprNode),
+    Assignment(AssignmentStmt),
     /// Represents a statement containing only a single expression.
-    Expression(ExprNode),
-    If(ExprNode, CompoundStmts, Option<CompoundStmts>),
+    Expression(ExpressionStmt),
+    If(IfStmt),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeclarationStmt {
+    pub id: String,
+}
+
+impl DeclarationStmt {
+    pub fn new(id: String) -> Self {
+        Self { id }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AssignmentStmt {
+    pub id: String,
+    pub value: ExprNode,
+}
+
+impl AssignmentStmt {
+    pub fn new(id: String, value: ExprNode) -> Self {
+        Self { id, value }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExpressionStmt {
+    pub inner: ExprNode,
+}
+
+impl ExpressionStmt {
+    pub fn new(inner: ExprNode) -> Self {
+        Self { inner }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct IfStmt {
+    pub cond: ExprNode,
+    pub true_case: CompoundStmts,
+    pub false_case: Option<CompoundStmts>,
+}
+
+impl IfStmt {
+    pub fn new(
+        cond: ExprNode,
+        true_case: CompoundStmts,
+        false_case: Option<CompoundStmts>,
+    ) -> Self {
+        Self {
+            cond,
+            true_case,
+            false_case,
+        }
+    }
 }
 
 /// Represents a single expression in the ast.

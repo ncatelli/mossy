@@ -53,6 +53,7 @@ fn declaration_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], S
         )),
         whitespace_wrapped(expect_character(';')),
     ))
+    .map(DeclarationStmt::new)
     .map(StmtNode::Declaration)
 }
 
@@ -67,7 +68,8 @@ fn assignment_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], St
         ),
         whitespace_wrapped(expect_character(';')),
     ))
-    .map(|(ident, expr)| StmtNode::Assignment(ident, expr))
+    .map(|(ident, expr)| AssignmentStmt::new(ident, expr))
+    .map(StmtNode::Assignment)
 }
 
 fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -78,8 +80,9 @@ fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> 
         ),
     )
     .map(|((cond, cond_true), cond_false)| {
-        StmtNode::If(cond, cond_true, cond_false.map(|stmts| stmts))
+        IfStmt::new(cond, cond_true, cond_false.map(|stmts| stmts))
     })
+    .map(StmtNode::If)
 }
 
 fn if_head<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], (ExprNode, CompoundStmts)> {
@@ -92,6 +95,7 @@ fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], St
         whitespace_wrapped(expression()),
         whitespace_wrapped(expect_character(';')),
     ))
+    .map(ExpressionStmt::new)
     .map(StmtNode::Expression)
 }
 
@@ -369,15 +373,17 @@ mod tests {
         let input: Vec<(usize, char)> = "{ 13 - 6 + 4 * 5 + 8 / 3; }".chars().enumerate().collect();
 
         assert_eq!(
-            Ok(CompoundStmts::new(vec![StmtNode::Expression(term_expr!(
-                term_expr!(
-                    term_expr!(primary_expr!(13), '-', primary_expr!(6)),
+            Ok(CompoundStmts::new(vec![StmtNode::Expression(
+                ExpressionStmt::new(term_expr!(
+                    term_expr!(
+                        term_expr!(primary_expr!(13), '-', primary_expr!(6)),
+                        '+',
+                        factor_expr!(primary_expr!(4), '*', primary_expr!(5))
+                    ),
                     '+',
-                    factor_expr!(primary_expr!(4), '*', primary_expr!(5))
-                ),
-                '+',
-                factor_expr!(primary_expr!(8), '/', primary_expr!(3))
-            ))])),
+                    factor_expr!(primary_expr!(8), '/', primary_expr!(3))
+                ))
+            )])),
             crate::parser::parse(&input)
         )
     }

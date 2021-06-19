@@ -225,21 +225,26 @@ fn codegen_statement(
     input: ast::StmtNode,
 ) -> Result<BuildContext<Vec<String>>, CodeGenerationErr> {
     match input {
-        ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
-            ctx = codegen_expr(ctx, allocator, ret_val, expr);
-            ctx.get_active_block_mut().map(|block| {
-                for inst in codegen_printint(ret_val).into_iter() {
-                    block.inner.push(inst);
-                }
-            });
-            Ok(ctx)
-        }),
-        ast::StmtNode::Declaration(identifier) => {
+        ast::StmtNode::Expression(ast::ExpressionStmt { inner: expr }) => {
+            allocator.allocate_then(|allocator, ret_val| {
+                ctx = codegen_expr(ctx, allocator, ret_val, expr);
+                ctx.get_active_block_mut().map(|block| {
+                    for inst in codegen_printint(ret_val).into_iter() {
+                        block.inner.push(inst);
+                    }
+                });
+                Ok(ctx)
+            })
+        }
+        ast::StmtNode::Declaration(ast::DeclarationStmt { id: identifier }) => {
             symboltable.declare_global(&identifier);
             let ctx = codegen_global_symbol(ctx, &identifier);
             Ok(ctx)
         }
-        ast::StmtNode::Assignment(identifier, expr) => symboltable
+        ast::StmtNode::Assignment(ast::AssignmentStmt {
+            id: identifier,
+            value: expr,
+        }) => symboltable
             .has_global(&identifier)
             .then(|| ())
             .map(|_| {
@@ -249,7 +254,11 @@ fn codegen_statement(
                 })
             })
             .ok_or(CodeGenerationErr::UndefinedReference(identifier)),
-        ast::StmtNode::If(cond, true_case, false_case) => codegen_if_statement(
+        ast::StmtNode::If(ast::IfStmt {
+            cond,
+            true_case,
+            false_case,
+        }) => codegen_if_statement(
             ctx,
             allocator,
             symboltable,
