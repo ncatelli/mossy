@@ -18,6 +18,27 @@ where
     }
 }
 
+struct BoxedCodeGenEmitter<'a, A, B> {
+    emitter: Box<dyn CodeGenEmitter<'a, A, B> + 'a>,
+}
+
+impl<'a, A, B> BoxedCodeGenEmitter<'a, A, B> {
+    pub fn new<E>(emitter: E) -> Self
+    where
+        E: CodeGenEmitter<'a, A, B> + 'a,
+    {
+        BoxedCodeGenEmitter {
+            emitter: Box::new(emitter),
+        }
+    }
+}
+
+impl<'a, A, B> CodeGenEmitter<'a, A, B> for BoxedCodeGenEmitter<'a, A, B> {
+    fn emit(&self, input: A) -> EmitResult<'a, B> {
+        self.emitter.emit(input)
+    }
+}
+
 type BlockId = usize;
 
 #[derive(Debug, Clone)]
@@ -44,6 +65,17 @@ impl<T> Block<T> {
             exit_cond_true,
             exit_cond_false,
         }
+    }
+}
+
+impl<T> Block<Vec<T>> {
+    fn append(mut self, inner: T) -> Self {
+        self.append_mut(inner);
+        self
+    }
+
+    fn append_mut(&mut self, inner: T) {
+        self.inner.push(inner);
     }
 }
 
@@ -241,8 +273,8 @@ fn codegen_statement(
     input: ast::StmtNode,
 ) -> Result<BuildContext<Vec<String>>, CodeGenerationErr> {
     match input {
-        ast::StmtNode::Expression(ast::ExpressionStmt { inner: expr }) => {
-            allocator.allocate_then(|allocator, ret_val| {
+        ast::StmtNode::Expression(ast::ExpressionStmt { inner: expr }) => allocator
+            .allocate_then_mut(|allocator, ret_val| {
                 ctx = codegen_expr(ctx, allocator, ret_val, expr);
                 ctx.get_active_block_mut().map(|block| {
                     for inst in codegen_printint(ret_val).into_iter() {
@@ -250,11 +282,14 @@ fn codegen_statement(
                     }
                 });
                 Ok(ctx)
-            })
-        }
-        ast::StmtNode::Declaration(ast::DeclarationStmt { id: identifier }) => {
-            symboltable.declare_global(&identifier);
-            let ctx = codegen_global_symbol(ctx, &identifier);
+            }),
+        ast::StmtNode::Declaration(decl_stmt) => {
+            symboltable.declare_global(&decl_stmt.id);
+            ctx.get_active_block_mut().map(|block| {
+                *block = codegen_global_symbol(&decl_stmt)
+                    .emit(block.clone())
+                    .unwrap()
+            });
             Ok(ctx)
         }
         ast::StmtNode::Assignment(ast::AssignmentStmt {
@@ -264,7 +299,7 @@ fn codegen_statement(
             .has_global(&identifier)
             .then(|| ())
             .map(|_| {
-                allocator.allocate_then(|allocator, ret_val| {
+                allocator.allocate_then_mut(|allocator, ret_val| {
                     let expr_ctx = codegen_expr(ctx, allocator, ret_val, expr);
                     codegen_store_global(expr_ctx, ret_val, &identifier)
                 })
@@ -293,7 +328,7 @@ fn codegen_if_statement(
     true_case: crate::ast::CompoundStmts,
     false_case: Option<crate::ast::CompoundStmts>,
 ) -> Result<BuildContext<Vec<String>>, CodeGenerationErr> {
-    allocator.allocate_then(|allocator, ret_val| {
+    allocator.allocate_then_mut(|allocator, ret_val| {
         let parent_block_id = ctx.active_block;
         let mut cond_ctx = codegen_expr(ctx, allocator, ret_val, cond);
         let exit_block_id = if false_case.is_some() {
@@ -341,13 +376,10 @@ fn codegen_if_statement(
     })
 }
 
-fn codegen_global_symbol(
-    mut ctx: BuildContext<Vec<String>>,
-    identifier: &str,
-) -> BuildContext<Vec<String>> {
-    ctx.get_active_block_mut()
-        .map(|block| block.inner.push(format!("\t.comm\t{},1,8\n", identifier)));
-    ctx
+fn codegen_global_symbol<'a>(
+    stmt: &'a ast::DeclarationStmt,
+) -> impl CodeGenEmitter<'a, Block<Vec<String>>, Block<Vec<String>>> {
+    move |input: Block<Vec<String>>| Ok(input.append(format!("\t.comm\t{},1,8\n", stmt.id)))
 }
 
 fn codegen_store_global(
@@ -494,7 +526,7 @@ fn codegen_addition(
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
 ) -> BuildContext<Vec<String>> {
-    allocator.allocate_then(|allocator, lhs_retval| {
+    allocator.allocate_then_mut(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(ctx, allocator, lhs_retval, *lhs);
         let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, ret_val, *rhs);
 
@@ -517,7 +549,7 @@ fn codegen_subtraction(
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
 ) -> BuildContext<Vec<String>> {
-    allocator.allocate_then(|allocator, rhs_retval| {
+    allocator.allocate_then_mut(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(ctx, allocator, ret_val, *lhs);
         let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, rhs_retval, *rhs);
 
@@ -540,7 +572,7 @@ fn codegen_multiplication(
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
 ) -> BuildContext<Vec<String>> {
-    allocator.allocate_then(|allocator, lhs_retval| {
+    allocator.allocate_then_mut(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(ctx, allocator, lhs_retval, *lhs);
         let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, ret_val, *rhs);
 
@@ -563,7 +595,7 @@ fn codegen_division(
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
 ) -> BuildContext<Vec<String>> {
-    allocator.allocate_then(|allocator, rhs_retval| {
+    allocator.allocate_then_mut(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(ctx, allocator, ret_val, *lhs);
         let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, rhs_retval, *rhs);
         let operand_suffix = ret_val.operator_suffix();
@@ -601,7 +633,7 @@ fn codegen_compare_and_set(
     lhs: Box<ExprNode>,
     rhs: Box<ExprNode>,
 ) -> BuildContext<Vec<String>> {
-    allocator.allocate_then(|allocator, lhs_retval| {
+    allocator.allocate_then_mut(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(ctx, allocator, lhs_retval, *lhs);
         let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, ret_val, *rhs);
 
@@ -641,7 +673,7 @@ fn codegen_compare_and_jump(
     _cond_true_id: BlockId,
     cond_false_id: BlockId,
 ) -> BuildContext<Vec<String>> {
-    allocator.allocate_then(|_, zero_val| {
+    allocator.allocate_then_mut(|_, zero_val| {
         let operand_suffix = ret_val.operator_suffix();
 
         ctx.get_active_block_mut().map(|block| {

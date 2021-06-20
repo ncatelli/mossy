@@ -69,7 +69,7 @@ impl GPRegisterAllocator {
     }
 
     /// Allocates a register for the duration of the life of closure.
-    pub fn allocate_then<F, R>(&mut self, f: F) -> R
+    pub fn allocate_then_mut<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce(&mut Self, &mut SizedGeneralPurpose) -> R,
     {
@@ -110,8 +110,8 @@ mod tests {
     fn should_allocate_a_register_from_an_unutilized_pool() {
         assert_eq!(
             ["r14", "r15"],
-            x86_64::GPRegisterAllocator::default().allocate_then(|allocator, reg| {
-                [allocator.allocate_then(|_, reg| reg.id()), reg.id()]
+            x86_64::GPRegisterAllocator::default().allocate_then_mut(|allocator, reg| {
+                [allocator.allocate_then_mut(|_, reg| reg.id()), reg.id()]
             })
         )
     }
@@ -122,8 +122,9 @@ mod tests {
         let initial_len = allocator.registers.len();
 
         // allocator pool should decrease by 1 while allocated in scope.
-        allocator
-            .allocate_then(|allocator, _| assert_eq!(initial_len - 1, allocator.registers.len()));
+        allocator.allocate_then_mut(|allocator, _| {
+            assert_eq!(initial_len - 1, allocator.registers.len())
+        });
 
         // register should be freed on scope exit.
         assert_eq!(initial_len, allocator.registers.len());
