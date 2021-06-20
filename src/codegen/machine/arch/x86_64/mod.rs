@@ -2,6 +2,22 @@ use crate::codegen::machine::arch::TargetArchitecture;
 use crate::codegen::register::Register;
 use crate::codegen::CodeGenerationErr;
 
+type EmitResult<'a, T> = Result<T, String>;
+
+trait CodeGenEmitter<'a, A, B> {
+    fn emit(&self, input: A) -> EmitResult<'a, B>;
+}
+
+impl<'a, F, A, B> CodeGenEmitter<'a, A, B> for F
+where
+    A: 'a,
+    F: Fn(A) -> EmitResult<'a, B>,
+{
+    fn emit(&self, input: A) -> EmitResult<'a, B> {
+        self(input)
+    }
+}
+
 type BlockId = usize;
 
 #[derive(Debug, Clone)]
