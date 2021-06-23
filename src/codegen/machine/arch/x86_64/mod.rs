@@ -1,167 +1,4 @@
 use crate::codegen::machine::arch::TargetArchitecture;
-use crate::codegen::register::Register;
-use crate::codegen::CodeGenerationErr;
-
-type EmitResult<'a, T> = Result<T, String>;
-
-trait CodeGenEmitter<'a, A, B> {
-    fn emit(&self, input: A) -> EmitResult<'a, B>;
-}
-
-impl<'a, F, A, B> CodeGenEmitter<'a, A, B> for F
-where
-    A: 'a,
-    F: Fn(A) -> EmitResult<'a, B>,
-{
-    fn emit(&self, input: A) -> EmitResult<'a, B> {
-        self(input)
-    }
-}
-
-struct BoxedCodeGenEmitter<'a, A, B> {
-    emitter: Box<dyn CodeGenEmitter<'a, A, B> + 'a>,
-}
-
-impl<'a, A, B> BoxedCodeGenEmitter<'a, A, B> {
-    pub fn new<E>(emitter: E) -> Self
-    where
-        E: CodeGenEmitter<'a, A, B> + 'a,
-    {
-        BoxedCodeGenEmitter {
-            emitter: Box::new(emitter),
-        }
-    }
-}
-
-impl<'a, A, B> CodeGenEmitter<'a, A, B> for BoxedCodeGenEmitter<'a, A, B> {
-    fn emit(&self, input: A) -> EmitResult<'a, B> {
-        self.emitter.emit(input)
-    }
-}
-
-type BlockId = usize;
-
-#[derive(Debug, Clone)]
-struct Block<T> {
-    id: BlockId,
-    entry: Option<BlockId>,
-    inner: T,
-    exit_cond_true: Option<BlockId>,
-    exit_cond_false: Option<BlockId>,
-}
-
-impl<T> Block<T> {
-    fn new(
-        id: BlockId,
-        entry: Option<BlockId>,
-        inner: T,
-        exit_cond_true: Option<BlockId>,
-        exit_cond_false: Option<BlockId>,
-    ) -> Self {
-        Self {
-            id,
-            entry,
-            inner,
-            exit_cond_true,
-            exit_cond_false,
-        }
-    }
-}
-
-impl<T> Block<Vec<T>> {
-    fn append(mut self, inner: T) -> Self {
-        self.append_mut(inner);
-        self
-    }
-
-    fn append_mut(&mut self, inner: T) {
-        self.inner.push(inner);
-    }
-}
-
-impl<T> Default for Block<T>
-where
-    T: Default,
-{
-    fn default() -> Self {
-        Self {
-            id: 0,
-            entry: None,
-            inner: T::default(),
-            exit_cond_true: None,
-            exit_cond_false: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct BuildContext<BT> {
-    active_block: BlockId,
-    blocks: Vec<Block<BT>>,
-}
-
-impl<BT> BuildContext<BT>
-where
-    BT: Default,
-{
-    pub fn get_active_block_mut(&mut self) -> Option<&mut Block<BT>> {
-        self.blocks.get_mut(self.active_block)
-    }
-
-    pub fn get_mut(&mut self, block_id: BlockId) -> Option<&mut Block<BT>> {
-        self.blocks.get_mut(block_id)
-    }
-
-    pub fn derive_child_from_parent(&mut self, parent: BlockId) -> BlockId {
-        let new_id = self.blocks.len();
-        let child = <Block<BT>>::new(new_id, Some(parent), BT::default(), None, None);
-        self.blocks.push(child);
-
-        self.active_block = new_id;
-        new_id
-    }
-}
-
-impl<BT> Default for BuildContext<BT>
-where
-    BT: Default,
-{
-    fn default() -> Self {
-        Self {
-            active_block: 0,
-            blocks: vec![<Block<BT>>::default()],
-        }
-    }
-}
-
-/// X86_64 represents the x86_64 bit machine target.
-#[derive(Clone, Copy)]
-pub struct X86_64;
-
-mod register;
-use register::{GPRegisterAllocator, SizedGeneralPurpose};
-
-impl TargetArchitecture for X86_64 {}
-
-/// SymbolTable functions as a tracker for symbols that have been previously
-/// declared. For the time being, this only tracks global symbols.
-#[derive(Default, Debug, Clone)]
-pub struct SymbolTable {
-    globals: std::collections::HashSet<String>,
-}
-
-impl SymbolTable {
-    /// Marks a global variable as having been declared.
-    pub fn declare_global(&mut self, identifier: &str) {
-        self.globals.insert(identifier.to_string());
-    }
-
-    /// Returns a boolian representing if a global variable has already been
-    /// declared.
-    pub fn has_global(&mut self, identifier: &str) -> bool {
-        self.globals.contains(identifier)
-    }
-}
 
 /// Defines a constant preamble to be prepended to any compiled binaries.
 pub const CG_PREAMBLE: &str = "\t.text
@@ -195,512 +32,419 @@ postamble:
     popq	%rbp
     ret\n";
 
+static BlockIdCounter: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn generate_next_block_id() -> usize {
+    BlockIdCounter.fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+}
+
+type EmitResult<'a, T> = Result<T, String>;
+
+#[derive(Debug)]
+struct Map<E, F, A, B, C> {
+    input: std::marker::PhantomData<A>,
+    output_one: std::marker::PhantomData<B>,
+    output_two: std::marker::PhantomData<C>,
+    emitter: E,
+    map_fn: F,
+}
+
+impl<'a, E, F, A, B, C> Map<E, F, A, B, C> {
+    pub fn new(emitter: E, map_fn: F) -> Self {
+        Self {
+            input: std::marker::PhantomData,
+            output_one: std::marker::PhantomData,
+            output_two: std::marker::PhantomData,
+            emitter,
+            map_fn,
+        }
+    }
+}
+
+impl<'a, E, F, A, B, C> CodeGenEmitter<'a, A, C> for Map<E, F, A, B, C>
+where
+    E: CodeGenEmitter<'a, A, B>,
+    F: Fn(B) -> C + 'a,
+{
+    fn emit(&self, input: A) -> EmitResult<'a, C> {
+        self.emitter.emit(input).map(|res| (self.map_fn)(res))
+    }
+}
+
+#[derive(Debug)]
+pub struct AndThen<E1, E2, A, B, C> {
+    input: std::marker::PhantomData<A>,
+    output_one: std::marker::PhantomData<B>,
+    output_two: std::marker::PhantomData<C>,
+    emitter1: E1,
+    emitter2: E2,
+}
+
+impl<'a, E1, E2, A, B, C> AndThen<E1, E2, A, B, C> {
+    pub fn new(emitter1: E1, emitter2: E2) -> Self {
+        Self {
+            input: std::marker::PhantomData,
+            output_one: std::marker::PhantomData,
+            output_two: std::marker::PhantomData,
+            emitter1,
+            emitter2,
+        }
+    }
+}
+
+impl<'a, E1, E2, A, B, C> CodeGenEmitter<'a, A, C> for AndThen<E1, E2, A, B, C>
+where
+    A: 'a,
+    E1: CodeGenEmitter<'a, A, B>,
+    E2: CodeGenEmitter<'a, B, C>,
+{
+    fn emit(&self, input: A) -> EmitResult<'a, C> {
+        self.emitter1
+            .emit(input)
+            .and_then(|res| self.emitter2.emit(res))
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct WithAllocatorPool<'a, P, E, A, B> {
+    pool: &'a [P],
+    input: std::marker::PhantomData<A>,
+    output_one: std::marker::PhantomData<B>,
+    emitter: E,
+}
+
+impl<'a, P, E, A, B> WithAllocatorPool<'a, P, E, A, B> {
+    pub fn new(pool: &'a [P], emitter: E) -> Self {
+        Self {
+            pool,
+            input: std::marker::PhantomData,
+            output_one: std::marker::PhantomData,
+            emitter,
+        }
+    }
+}
+
+impl<'a, P, E, A, B> CodeGenEmitter<'a, A, B> for WithAllocatorPool<'a, P, E, A, B>
+where
+    A: 'a,
+    E: CodeGenEmitter<'a, (&'a [P], A), B>,
+{
+    fn emit(&self, input: A) -> EmitResult<'a, B> {
+        self.emitter.emit((&self.pool[..], input))
+    }
+}
+
+#[derive(Debug)]
+pub struct AllocateRegister<P, E, A, B> {
+    pool: std::marker::PhantomData<P>,
+    input: std::marker::PhantomData<A>,
+    output_one: std::marker::PhantomData<B>,
+    emitter: E,
+}
+
+impl<'a, P, E, A, B> AllocateRegister<P, E, A, B> {
+    pub fn new(emitter: E) -> Self {
+        Self {
+            pool: std::marker::PhantomData,
+            input: std::marker::PhantomData,
+            output_one: std::marker::PhantomData,
+            emitter,
+        }
+    }
+}
+
+impl<'a, P, E, A, B> CodeGenEmitter<'a, (&'a [P], A), B> for AllocateRegister<P, E, A, B>
+where
+    A: 'a,
+    E: CodeGenEmitter<'a, (&'a P, A), B>,
+{
+    fn emit(&self, (pool, input): (&'a [P], A)) -> EmitResult<'a, B> {
+        let pool_size = pool.len();
+        pool.get(pool_size - 1)
+            .ok_or_else(|| "unable to allocate register".to_string())
+            .and_then(|reg| self.emitter.emit((reg, input)))
+    }
+}
+
+pub(crate) trait CodeGenEmitter<'a, A, B> {
+    fn emit(&self, input: A) -> EmitResult<'a, B>;
+
+    fn map<F, C>(self, map_fn: F) -> BoxedCodeGenEmitter<'a, A, C>
+    where
+        Self: Sized + 'a,
+        A: 'a,
+        B: 'a,
+        C: 'a,
+        F: Fn(B) -> C + 'a,
+    {
+        BoxedCodeGenEmitter::new(Map::new(self, map_fn))
+    }
+
+    fn and_then<E2, C>(self, next: E2) -> BoxedCodeGenEmitter<'a, A, C>
+    where
+        Self: Sized + 'a,
+        A: 'a,
+        B: 'a,
+        C: 'a,
+        E2: CodeGenEmitter<'a, B, C> + 'a,
+    {
+        BoxedCodeGenEmitter::new(AndThen::new(self, next))
+    }
+
+    fn with_allocator_pool<P>(self, pool: &'a [P]) -> BoxedCodeGenEmitter<'a, A, B>
+    where
+        Self: Sized + CodeGenEmitter<'a, (&'a [P], A), B> + 'a,
+        A: 'a,
+        B: 'a,
+    {
+        BoxedCodeGenEmitter::new(WithAllocatorPool::new(pool, self))
+    }
+
+    fn allocate_register<P, E>(self) -> BoxedCodeGenEmitter<'a, (&'a [P], A), B>
+    where
+        Self: Sized + CodeGenEmitter<'a, (&'a P, A), B> + 'a,
+        A: 'a,
+        B: 'a,
+    {
+        BoxedCodeGenEmitter::new(AllocateRegister::new(self))
+    }
+}
+
+impl<'a, F, A, B> CodeGenEmitter<'a, A, B> for F
+where
+    A: 'a,
+    F: Fn(A) -> EmitResult<'a, B>,
+{
+    fn emit(&self, input: A) -> EmitResult<'a, B> {
+        self(input)
+    }
+}
+
+pub(crate) struct BoxedCodeGenEmitter<'a, A, B> {
+    emitter: Box<dyn CodeGenEmitter<'a, A, B> + 'a>,
+}
+
+impl<'a, A, B> BoxedCodeGenEmitter<'a, A, B> {
+    pub fn new<E>(emitter: E) -> Self
+    where
+        E: CodeGenEmitter<'a, A, B> + 'a,
+    {
+        BoxedCodeGenEmitter {
+            emitter: Box::new(emitter),
+        }
+    }
+}
+
+impl<'a, A, B> CodeGenEmitter<'a, A, B> for BoxedCodeGenEmitter<'a, A, B> {
+    fn emit(&self, input: A) -> EmitResult<'a, B> {
+        self.emitter.emit(input)
+    }
+}
+
+type BlockId = usize;
+
+#[derive(Debug, Clone, PartialEq)]
+struct Block<T> {
+    id: BlockId,
+    entry: Option<BlockId>,
+    inner: T,
+    exit_cond_true: Option<BlockId>,
+    exit_cond_false: Option<BlockId>,
+}
+
+impl<T> Block<T> {
+    fn new(
+        id: BlockId,
+        entry: Option<BlockId>,
+        inner: T,
+        exit_cond_true: Option<BlockId>,
+        exit_cond_false: Option<BlockId>,
+    ) -> Self {
+        Self {
+            id,
+            entry,
+            inner,
+            exit_cond_true,
+            exit_cond_false,
+        }
+    }
+}
+
+impl<T> Block<T>
+where
+    T: Default,
+{
+    fn derive_child(self) -> (Self, Self) {
+        let mut parent = self;
+        let parent_id = parent.id;
+        let child_block = Self::new(
+            generate_next_block_id(),
+            Some(parent_id),
+            T::default(),
+            None,
+            None,
+        );
+        let child_id = child_block.id;
+        parent.exit_cond_true = Some(child_id);
+
+        (parent, child_block)
+    }
+}
+
+impl<T> Block<Vec<T>> {
+    fn append(mut self, inner: T) -> Self {
+        self.append_mut(inner);
+        self
+    }
+
+    fn append_mut(&mut self, inner: T) {
+        self.inner.push(inner);
+    }
+}
+
+impl<T> Default for Block<T>
+where
+    T: Default,
+{
+    fn default() -> Self {
+        Self {
+            id: 0,
+            entry: None,
+            inner: T::default(),
+            exit_cond_true: None,
+            exit_cond_false: None,
+        }
+    }
+}
+
+/// X86_64 represents the x86_64 bit machine target.
+#[derive(Clone, Copy)]
+pub struct X86_64;
+
+mod register;
+use register::SizedGeneralPurpose;
+
+impl TargetArchitecture for X86_64 {}
+
 use crate::ast;
 use crate::ast::ExprNode;
 use crate::codegen;
 use crate::codegen::machine;
-use crate::codegen::CodeGenerator;
 
-impl CodeGenerator<SymbolTable, ast::CompoundStmts> for X86_64 {
-    fn generate(
+fn preamble<'a>() -> impl CodeGenEmitter<'a, Block<Vec<String>>, Block<Vec<String>>> {
+    move |input: Block<Vec<String>>| Ok(input.append(CG_PREAMBLE.to_string()))
+}
+
+fn postamble<'a>() -> impl CodeGenEmitter<'a, Block<Vec<String>>, [Block<Vec<String>>; 2]> {
+    move |input: Block<Vec<String>>| {
+        let (parent, child) = input.derive_child();
+        Ok([parent, child.append(CG_POSTAMBLE.to_string())])
+    }
+}
+
+fn label<'a>(block_id: BlockId) -> impl CodeGenEmitter<'a, Block<Vec<String>>, Block<Vec<String>>> {
+    move |input: Block<Vec<String>>| Ok(input.append(format!("L{}:\n", block_id)))
+}
+
+fn jump<'a>(block_id: BlockId) -> impl CodeGenEmitter<'a, Block<Vec<String>>, Block<Vec<String>>> {
+    move |input: Block<Vec<String>>| Ok(input.append(format!("\tjmp\tL{}\n", block_id)))
+}
+
+fn with_allocator_pool<'a, P>(
+    pool: &'a [P],
+) -> impl CodeGenEmitter<'a, Block<Vec<String>>, (&'a [P], Block<Vec<String>>)> {
+    move |input: Block<Vec<String>>| Ok((pool, input))
+}
+
+impl<'a> CodeGenEmitter<'a, (&'a SizedGeneralPurpose, Block<Vec<String>>), Block<Vec<String>>>
+    for ast::Uint8
+{
+    fn emit(
         &self,
-        symboltable: &mut SymbolTable,
-        input: ast::CompoundStmts,
-    ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
-        let mut allocator = GPRegisterAllocator::default();
-
-        let ctx = codegen_statements(
-            BuildContext::<Vec<String>>::default(),
-            &mut allocator,
-            symboltable,
-            input,
-        )?;
-
-        Ok(ctx
-            .blocks
-            .into_iter()
-            .enumerate()
-            .map(|(block_id, block)| (codegen_label(block_id), block))
-            .map(|(label, block)| {
-                let block_id = block.id;
-                let inner = block.inner;
-                let (ec_true, ec_false) = (block.exit_cond_true, block.exit_cond_false);
-                let inner_and_exit: Vec<String> = match (ec_true, ec_false) {
-                    (Some(next), None) if next == block_id + 1 => inner,
-                    (Some(next), None) => inner
-                        .into_iter()
-                        .chain(codegen_jump(next).into_iter())
-                        .collect(),
-                    _ => inner,
-                };
-
-                (label, inner_and_exit)
-            })
-            .map(|(label, insts)| label.into_iter().chain(insts.into_iter()).collect())
-            .collect())
+        (ret_val, block): (&'a SizedGeneralPurpose, Block<Vec<String>>),
+    ) -> EmitResult<'a, Block<Vec<String>>> {
+        let constant = self.0;
+        Ok(block.append(format!(
+            "\tmov{}\t${}, {}\n",
+            ret_val.operator_suffix(),
+            constant,
+            ret_val
+        )))
     }
 }
 
-/// Returns a vector-wrapped preamble.
-pub fn codegen_preamble() -> Vec<String> {
-    vec![String::from(machine::arch::x86_64::CG_PREAMBLE)]
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-/// Returns a vector-wrapped binary postamble
-pub fn codegen_postamble() -> Vec<String> {
-    vec![String::from(machine::arch::x86_64::CG_POSTAMBLE)]
-}
-
-fn codegen_statements(
-    mut ctx: BuildContext<Vec<String>>,
-    allocator: &mut GPRegisterAllocator,
-    symboltable: &mut SymbolTable,
-    input: ast::CompoundStmts,
-) -> Result<BuildContext<Vec<String>>, CodeGenerationErr> {
-    let stmts = Vec::<ast::StmtNode>::from(input);
-
-    for stmt in stmts.into_iter() {
-        ctx = codegen_statement(ctx, allocator, symboltable, stmt)?
+    fn reset_block_id_counter(reset_value: usize) {
+        BlockIdCounter.store(reset_value, std::sync::atomic::Ordering::SeqCst)
     }
 
-    Ok(ctx)
-}
-
-fn codegen_statement(
-    mut ctx: BuildContext<Vec<String>>,
-    allocator: &mut GPRegisterAllocator,
-    symboltable: &mut SymbolTable,
-    input: ast::StmtNode,
-) -> Result<BuildContext<Vec<String>>, CodeGenerationErr> {
-    match input {
-        ast::StmtNode::Expression(ast::ExpressionStmt { inner: expr }) => allocator
-            .allocate_then_mut(|allocator, ret_val| {
-                ctx = codegen_expr(ctx, allocator, ret_val, expr);
-                ctx.get_active_block_mut().map(|block| {
-                    for inst in codegen_printint(ret_val).into_iter() {
-                        block.inner.push(inst);
-                    }
-                });
-                Ok(ctx)
-            }),
-        ast::StmtNode::Declaration(decl_stmt) => {
-            symboltable.declare_global(&decl_stmt.id);
-            ctx.get_active_block_mut().map(|block| {
-                *block = codegen_global_symbol(&decl_stmt)
-                    .emit(block.clone())
-                    .unwrap()
-            });
-            Ok(ctx)
-        }
-        ast::StmtNode::Assignment(ast::AssignmentStmt {
-            id: identifier,
-            value: expr,
-        }) => symboltable
-            .has_global(&identifier)
-            .then(|| ())
-            .map(|_| {
-                allocator.allocate_then_mut(|allocator, ret_val| {
-                    let expr_ctx = codegen_expr(ctx, allocator, ret_val, expr);
-                    codegen_store_global(expr_ctx, ret_val, &identifier)
-                })
-            })
-            .ok_or(CodeGenerationErr::UndefinedReference(identifier)),
-        ast::StmtNode::If(ast::IfStmt {
-            cond,
-            true_case,
-            false_case,
-        }) => codegen_if_statement(
-            ctx,
-            allocator,
-            symboltable,
-            cond,
-            true_case,
-            false_case.map(|stmts| stmts),
-        ),
-    }
-}
-
-fn codegen_if_statement(
-    ctx: BuildContext<Vec<String>>,
-    allocator: &mut GPRegisterAllocator,
-    symboltable: &mut SymbolTable,
-    cond: crate::ast::ExprNode,
-    true_case: crate::ast::CompoundStmts,
-    false_case: Option<crate::ast::CompoundStmts>,
-) -> Result<BuildContext<Vec<String>>, CodeGenerationErr> {
-    allocator.allocate_then_mut(|allocator, ret_val| {
-        let parent_block_id = ctx.active_block;
-        let mut cond_ctx = codegen_expr(ctx, allocator, ret_val, cond);
-        let exit_block_id = if false_case.is_some() {
-            parent_block_id + 3
-        } else {
-            parent_block_id + 2
+    macro_rules! gen_test_block {
+        () => {
+            Block::new(generate_next_block_id(), None, vec![], None, None)
         };
-
-        let true_case_block_id = cond_ctx.derive_child_from_parent(parent_block_id);
-        cond_ctx
-            .get_mut(parent_block_id)
-            .map(|parent| parent.exit_cond_true = Some(true_case_block_id));
-
-        let mut tctx = codegen_statements(cond_ctx, allocator, symboltable, true_case)?;
-        tctx.get_active_block_mut()
-            .map(|block| block.exit_cond_true = Some(exit_block_id));
-
-        let (mut block_ctx, else_block_id) = if let Some(false_case_stmts) = false_case {
-            let false_case_block_id = tctx.derive_child_from_parent(parent_block_id);
-            tctx.get_mut(parent_block_id)
-                .map(|parent| parent.exit_cond_false = Some(false_case_block_id));
-
-            let mut fctx = codegen_statements(tctx, allocator, symboltable, false_case_stmts)?;
-            fctx.get_active_block_mut()
-                .map(|block| block.exit_cond_true = Some(exit_block_id));
-            (fctx, false_case_block_id)
-        } else {
-            (tctx, exit_block_id)
+        ($inner:expr) => {
+            Block::new(generate_next_block_id(), None, $inner, None, None)
         };
+        ($inner:expr, $child:expr) => {
+            Block::new(generate_next_block_id(), None, $inner, Some($child), None)
+        };
+    }
 
-        // reset parent block for compare.
-        block_ctx.active_block = parent_block_id;
-        let mut compare_block = codegen_compare_and_jump(
-            block_ctx,
-            allocator,
-            ret_val,
-            true_case_block_id,
-            else_block_id,
+    #[test]
+    fn should_generate_expected_preamble_block() {
+        reset_block_id_counter(0);
+
+        assert_eq!(
+            Ok(gen_test_block!(vec![CG_PREAMBLE.to_string()])),
+            preamble().emit(Block::default())
         );
-
-        // generate an exit block
-        compare_block.derive_child_from_parent(parent_block_id);
-
-        Ok(compare_block)
-    })
-}
-
-fn codegen_global_symbol<'a>(
-    stmt: &'a ast::DeclarationStmt,
-) -> impl CodeGenEmitter<'a, Block<Vec<String>>, Block<Vec<String>>> {
-    move |input: Block<Vec<String>>| Ok(input.append(format!("\t.comm\t{},1,8\n", stmt.id)))
-}
-
-fn codegen_store_global(
-    mut ctx: BuildContext<Vec<String>>,
-    ret: &mut SizedGeneralPurpose,
-    identifier: &str,
-) -> BuildContext<Vec<String>> {
-    ctx.get_active_block_mut().map(|block| {
-        block.inner.push(format!(
-            "\tmov{}\t%{}, {}(%rip)\n",
-            ret.operator_suffix(),
-            ret.id(),
-            identifier
-        ))
-    });
-    ctx
-}
-
-fn codegen_load_global(
-    mut ctx: BuildContext<Vec<String>>,
-    ret: &mut SizedGeneralPurpose,
-    identifier: &str,
-) -> BuildContext<Vec<String>> {
-    ctx.get_active_block_mut().map(|block| {
-        block.inner.push(format!(
-            "\tmov{}\t{}(%rip), %{}\n",
-            ret.operator_suffix(),
-            identifier,
-            ret.id()
-        ))
-    });
-    ctx
-}
-
-pub fn codegen_label(block_id: usize) -> Vec<String> {
-    vec![format!("L{}:\n", block_id)]
-}
-
-pub fn codegen_jump(block_id: usize) -> Vec<String> {
-    vec![format!("\tjmp\tL{}\n", block_id)]
-}
-
-fn codegen_expr(
-    ctx: BuildContext<Vec<String>>,
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
-    expr: crate::ast::ExprNode,
-) -> BuildContext<Vec<String>> {
-    use crate::ast::Primary;
-
-    match expr {
-        ExprNode::Primary(Primary::Uint8(ast::Uint8(uc))) => codegen_constant_u8(ctx, ret_val, uc),
-        ExprNode::Primary(Primary::Identifier(identifier)) => {
-            codegen_load_global(ctx, ret_val, &identifier)
-        }
-
-        ExprNode::Equal(ast::EqualExprNode { lhs, rhs }) => codegen_compare_and_set(
-            ctx,
-            allocator,
-            ret_val,
-            ComparisonOperation::Equal,
-            lhs,
-            rhs,
-        ),
-        ExprNode::NotEqual(ast::NotEqualExprNode { lhs, rhs }) => codegen_compare_and_set(
-            ctx,
-            allocator,
-            ret_val,
-            ComparisonOperation::NotEqual,
-            lhs,
-            rhs,
-        ),
-        ExprNode::LessThan(ast::LessThanExprNode { lhs, rhs }) => codegen_compare_and_set(
-            ctx,
-            allocator,
-            ret_val,
-            ComparisonOperation::LessThan,
-            lhs,
-            rhs,
-        ),
-        ExprNode::GreaterThan(ast::GreaterThanExprNode { lhs, rhs }) => codegen_compare_and_set(
-            ctx,
-            allocator,
-            ret_val,
-            ComparisonOperation::GreaterThan,
-            lhs,
-            rhs,
-        ),
-        ExprNode::LessEqual(ast::LessEqualExprNode { lhs, rhs }) => codegen_compare_and_set(
-            ctx,
-            allocator,
-            ret_val,
-            ComparisonOperation::LessEqual,
-            lhs,
-            rhs,
-        ),
-        ExprNode::GreaterEqual(ast::GreaterEqualExprNode { lhs, rhs }) => codegen_compare_and_set(
-            ctx,
-            allocator,
-            ret_val,
-            ComparisonOperation::GreaterEqual,
-            lhs,
-            rhs,
-        ),
-        ExprNode::Addition(ast::AdditionExprNode { lhs, rhs }) => {
-            codegen_addition(ctx, allocator, ret_val, lhs, rhs)
-        }
-        ExprNode::Subtraction(ast::SubtractionExprNode { lhs, rhs }) => {
-            codegen_subtraction(ctx, allocator, ret_val, lhs, rhs)
-        }
-        ExprNode::Multiplication(ast::MultiplicationExprNode { lhs, rhs }) => {
-            codegen_multiplication(ctx, allocator, ret_val, lhs, rhs)
-        }
-        ExprNode::Division(ast::DivisionExprNode { lhs, rhs }) => {
-            codegen_division(ctx, allocator, ret_val, lhs, rhs)
-        }
     }
-}
 
-fn codegen_constant_u8(
-    mut ctx: BuildContext<Vec<String>>,
-    ret_val: &mut SizedGeneralPurpose,
-    constant: u8,
-) -> BuildContext<Vec<String>> {
-    ctx.get_active_block_mut().map(|block| {
-        block.inner.push(
-            vec![format!(
-                "\tmov{}\t${}, {}\n",
-                ret_val.operator_suffix(),
-                constant,
-                ret_val
-            )]
-            .into_iter()
-            .collect(),
-        )
-    });
-    ctx
-}
+    #[test]
+    fn should_generate_expected_postamble_block() {
+        // Block is defaulting to 0, assume Reset counter has incremented once.
+        reset_block_id_counter(1);
+        assert_eq!(
+            Ok([
+                Block::new(0, None, vec![], Some(1), None),
+                Block::new(1, Some(0), vec![CG_POSTAMBLE.to_string()], None, None),
+            ]),
+            postamble().emit(Block::default())
+        );
+    }
 
-fn codegen_addition(
-    ctx: BuildContext<Vec<String>>,
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
-    lhs: Box<ExprNode>,
-    rhs: Box<ExprNode>,
-) -> BuildContext<Vec<String>> {
-    allocator.allocate_then_mut(|allocator, lhs_retval| {
-        let lhs_ctx = codegen_expr(ctx, allocator, lhs_retval, *lhs);
-        let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, ret_val, *rhs);
+    #[test]
+    fn should_be_able_to_compose_generators_of_matching_input_output_types() {
+        reset_block_id_counter(0);
 
-        rhs_ctx.get_active_block_mut().map(|block| {
-            block.inner.push(format!(
-                "\tadd{}\t{}, {}\n",
-                ret_val.operator_suffix(),
-                lhs_retval,
-                ret_val
-            ))
-        });
-        rhs_ctx
-    })
-}
+        assert_eq!(
+            Ok([
+                Block::new(0, None, vec![CG_PREAMBLE.to_string()], Some(1), None),
+                Block::new(1, Some(0), vec![CG_POSTAMBLE.to_string()], None, None),
+            ]),
+            preamble().and_then(postamble()).emit(gen_test_block!())
+        );
+    }
 
-fn codegen_subtraction(
-    ctx: BuildContext<Vec<String>>,
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
-    lhs: Box<ExprNode>,
-    rhs: Box<ExprNode>,
-) -> BuildContext<Vec<String>> {
-    allocator.allocate_then_mut(|allocator, rhs_retval| {
-        let lhs_ctx = codegen_expr(ctx, allocator, ret_val, *lhs);
-        let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, rhs_retval, *rhs);
+    #[test]
+    fn should_generate_8bit_mov_to_register_from_constant() {
+        use crate::codegen::machine::arch::x86_64::register;
 
-        rhs_ctx.get_active_block_mut().map(|block| {
-            block.inner.push(format!(
-                "\tsub{}\t{}, {}\n",
-                ret_val.operator_suffix(),
-                rhs_retval,
-                ret_val,
-            ))
-        });
-        rhs_ctx
-    })
-}
-
-fn codegen_multiplication(
-    ctx: BuildContext<Vec<String>>,
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
-    lhs: Box<ExprNode>,
-    rhs: Box<ExprNode>,
-) -> BuildContext<Vec<String>> {
-    allocator.allocate_then_mut(|allocator, lhs_retval| {
-        let lhs_ctx = codegen_expr(ctx, allocator, lhs_retval, *lhs);
-        let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, ret_val, *rhs);
-
-        rhs_ctx.get_active_block_mut().map(|block| {
-            block.inner.push(format!(
-                "\timul{}\t{}, {}\n",
-                ret_val.operator_suffix(),
-                lhs_retval,
-                ret_val
-            ))
-        });
-        rhs_ctx
-    })
-}
-
-fn codegen_division(
-    ctx: BuildContext<Vec<String>>,
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
-    lhs: Box<ExprNode>,
-    rhs: Box<ExprNode>,
-) -> BuildContext<Vec<String>> {
-    allocator.allocate_then_mut(|allocator, rhs_retval| {
-        let lhs_ctx = codegen_expr(ctx, allocator, ret_val, *lhs);
-        let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, rhs_retval, *rhs);
-        let operand_suffix = ret_val.operator_suffix();
-
-        rhs_ctx.get_active_block_mut().map(|block| {
-            block.inner.push(
-                vec![
-                    format!("\tmov{}\t{},%rax\n", operand_suffix, ret_val),
-                    String::from("\tcqo\n"),
-                    format!("\tidiv{}\t{}\n", operand_suffix, rhs_retval),
-                    format!("\tmov{}\t%rax,{}\n", operand_suffix, ret_val),
-                ]
-                .join(""),
-            )
-        });
-        rhs_ctx
-    })
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ComparisonOperation {
-    LessThan,
-    LessEqual,
-    GreaterThan,
-    GreaterEqual,
-    Equal,
-    NotEqual,
-}
-
-fn codegen_compare_and_set(
-    ctx: BuildContext<Vec<String>>,
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
-    comparison_op: ComparisonOperation,
-    lhs: Box<ExprNode>,
-    rhs: Box<ExprNode>,
-) -> BuildContext<Vec<String>> {
-    allocator.allocate_then_mut(|allocator, lhs_retval| {
-        let lhs_ctx = codegen_expr(ctx, allocator, lhs_retval, *lhs);
-        let mut rhs_ctx = codegen_expr(lhs_ctx, allocator, ret_val, *rhs);
-
-        let set_operator = match comparison_op {
-            ComparisonOperation::LessThan => "setl",
-            ComparisonOperation::LessEqual => "setle",
-            ComparisonOperation::GreaterThan => "setg",
-            ComparisonOperation::GreaterEqual => "setge",
-            ComparisonOperation::Equal => "sete",
-            ComparisonOperation::NotEqual => "setne",
-        };
-
-        let operand_suffix = ret_val.operator_suffix();
-
-        rhs_ctx.get_active_block_mut().map(|block| {
-            block.inner.push(
-                vec![
-                    format!("\tcmp{}\t{}, {}\n", operand_suffix, ret_val, lhs_retval),
-                    format!(
-                        "\t{}\t{}\n",
-                        set_operator,
-                        SizedGeneralPurpose::Byte(ret_val.id())
-                    ),
-                    format!("\tandq\t$255,{}\n", ret_val),
-                ]
-                .join(""),
-            )
-        });
-        rhs_ctx
-    })
-}
-
-fn codegen_compare_and_jump(
-    mut ctx: BuildContext<Vec<String>>,
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
-    _cond_true_id: BlockId,
-    cond_false_id: BlockId,
-) -> BuildContext<Vec<String>> {
-    allocator.allocate_then_mut(|_, zero_val| {
-        let operand_suffix = ret_val.operator_suffix();
-
-        ctx.get_active_block_mut().map(|block| {
-            block.inner.push(
-                vec![
-                    format!("\tandq\t$0,{}\n", zero_val),
-                    format!("\tcmp{}\t{}, {}\n", operand_suffix, ret_val, zero_val),
-                    format!(
-                        "\t{}\t{}\n",
-                        "sete",
-                        SizedGeneralPurpose::Byte(ret_val.id())
-                    ),
-                    format!("\tandq\t$255,{}\n", ret_val),
-                    format!("\t{}\tL{}\n", "jne", cond_false_id),
-                ]
-                .into_iter()
-                .collect(),
-            )
-        });
-        ctx
-    })
-}
-
-fn codegen_printint(reg: &mut SizedGeneralPurpose) -> Vec<String> {
-    vec![format!(
-        "\tmov{}\t{}, %rdi\n\tcall\tprintint\n",
-        reg.operator_suffix(),
-        reg
-    )]
+        reset_block_id_counter(0);
+        assert_eq!(
+            Ok(Block::new(
+                0,
+                None,
+                vec!["\tmovq\t$5, %r15\n".to_string()],
+                None,
+                None
+            )),
+            with_allocator_pool(&register::GPRegisters[..])
+                .and_then(AllocateRegister::new(ast::Uint8(5)))
+                .emit(gen_test_block!())
+        );
+    }
 }

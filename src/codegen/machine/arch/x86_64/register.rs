@@ -1,6 +1,17 @@
 use crate::codegen::register::{AddressWidth, Register};
 
-#[derive(Debug, Clone, Copy)]
+pub const GPRegisters: [SizedGeneralPurpose; 8] = [
+    SizedGeneralPurpose::QuadWord("r8"),
+    SizedGeneralPurpose::QuadWord("r9"),
+    SizedGeneralPurpose::QuadWord("r10"),
+    SizedGeneralPurpose::QuadWord("r11"),
+    SizedGeneralPurpose::QuadWord("r12"),
+    SizedGeneralPurpose::QuadWord("r13"),
+    SizedGeneralPurpose::QuadWord("r14"),
+    SizedGeneralPurpose::QuadWord("r15"),
+];
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(dead_code)]
 pub enum SizedGeneralPurpose {
     QuadWord(&'static str),
@@ -110,7 +121,7 @@ mod tests {
     fn should_allocate_a_register_from_an_unutilized_pool() {
         assert_eq!(
             ["r14", "r15"],
-            x86_64::GPRegisterAllocator::default().allocate_then_mut(|allocator, reg| {
+            x86_64::register::GPRegisterAllocator::default().allocate_then_mut(|allocator, reg| {
                 [allocator.allocate_then_mut(|_, reg| reg.id()), reg.id()]
             })
         )
@@ -118,7 +129,7 @@ mod tests {
 
     #[test]
     fn should_free_allocations_on_scope_exit() {
-        let mut allocator = x86_64::GPRegisterAllocator::default();
+        let mut allocator = x86_64::register::GPRegisterAllocator::default();
         let initial_len = allocator.registers.len();
 
         // allocator pool should decrease by 1 while allocated in scope.
