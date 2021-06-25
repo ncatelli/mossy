@@ -433,19 +433,15 @@ impl<'a>
         &self,
         (pool, ret_val, block): AllocatorReturnValueBlock,
     ) -> EmitResult<'a, Block<Vec<String>>> {
-        self.lhs
-            .emit((pool, ret_val, block))
-            .and_then(|block| {
-                AllocateRegisterWithPool::new(
-                    |(pool, rhs_ret_val, block): AllocatorReturnValueBlock| {
-                        self.rhs
-                            .emit((&pool[..], rhs_ret_val, block))
-                            .map(|b| (*rhs_ret_val, b))
-                    },
-                )
-                .map(|(rhs_ret_val, block)| (ret_val, rhs_ret_val, block))
-                .emit((&pool[..], block))
-            })
+        self.lhs.emit((pool, ret_val, block)).and_then(|block| {
+            AllocateRegisterWithPool::new(
+                |(pool, rhs_ret_val, block): AllocatorReturnValueBlock| {
+                    self.rhs
+                        .emit((&pool[..], rhs_ret_val, block))
+                        .map(|b| (*rhs_ret_val, b))
+                },
+            )
+            .map(|(rhs_ret_val, block)| (ret_val, rhs_ret_val, block))
             .map(|(lhs_reg, rhs_reg, block)| {
                 block.append(format!(
                     "\tadd{}\t{}, {}\n",
@@ -454,6 +450,8 @@ impl<'a>
                     lhs_reg
                 ))
             })
+            .emit((&pool[..], block))
+        })
     }
 }
 
