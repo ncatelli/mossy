@@ -388,25 +388,17 @@ fn with_allocator_pool<'a, P>(
     move |input: Block<Vec<String>>| Ok((pool, input))
 }
 
+type AllocatorReturnValueBlock<'a> = (
+    &'a [SizedGeneralPurpose],
+    &'a SizedGeneralPurpose,
+    Block<Vec<String>>,
+);
+
 /// evaulate an expression node.
-impl<'a>
-    CodeGenEmitter<
-        'a,
-        (
-            &'a [SizedGeneralPurpose],
-            &'a SizedGeneralPurpose,
-            Block<Vec<String>>,
-        ),
-        Block<Vec<String>>,
-    > for ast::ExprNode
-{
+impl<'a> CodeGenEmitter<'a, AllocatorReturnValueBlock<'a>, Block<Vec<String>>> for ast::ExprNode {
     fn emit(
         &self,
-        (pool, ret_val, block): (
-            &'a [SizedGeneralPurpose],
-            &'a SizedGeneralPurpose,
-            Block<Vec<String>>,
-        ),
+        (pool, ret_val, block): AllocatorReturnValueBlock<'a>,
     ) -> EmitResult<'a, Block<Vec<String>>> {
         match self {
             ExprNode::Primary(ast::Primary::Uint8(val)) => val.emit((ret_val, block)),
@@ -439,20 +431,18 @@ impl<'a>
 {
     fn emit(
         &self,
-        (pool, ret_val, block): (
-            &'a [SizedGeneralPurpose],
-            &'a SizedGeneralPurpose,
-            Block<Vec<String>>,
-        ),
+        (pool, ret_val, block): AllocatorReturnValueBlock,
     ) -> EmitResult<'a, Block<Vec<String>>> {
         self.lhs
             .emit((pool, ret_val, block))
             .and_then(|block| {
-                AllocateRegister::new(|(rhs_ret_val, block)| {
-                    self.rhs
-                        .emit((&pool[..], rhs_ret_val, block))
-                        .map(|b| (rhs_ret_val, b))
-                })
+                AllocateRegisterWithPool::new(
+                    |(pool, rhs_ret_val, block): AllocatorReturnValueBlock| {
+                        self.rhs
+                            .emit((&pool[..], rhs_ret_val, block))
+                            .map(|b| (*rhs_ret_val, b))
+                    },
+                )
                 .map(|(rhs_ret_val, block)| (ret_val, rhs_ret_val, block))
                 .emit((&pool[..], block))
             })
@@ -597,11 +587,7 @@ mod tests {
                 .and_then(
                     |(pool, block): (&[SizedGeneralPurpose], Block<Vec<String>>)| {
                         AllocateRegisterWithPool::new(
-                            |(pool, ret_val, block): (
-                                &[SizedGeneralPurpose],
-                                &SizedGeneralPurpose,
-                                Block<Vec<String>>,
-                            )| {
+                            |(pool, ret_val, block): AllocatorReturnValueBlock| {
                                 let pool_size = pool.len();
                                 ExprNode::Addition(AdditionExprNode::new(
                                     Box::new(ExprNode::Primary(Primary::Uint8(Uint8(1)))),
