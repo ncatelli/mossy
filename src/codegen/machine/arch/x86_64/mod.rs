@@ -166,6 +166,38 @@ where
     }
 }
 
+#[derive(Debug)]
+pub struct AllocateRegisterWithPool<P, E, A, B> {
+    pool: std::marker::PhantomData<P>,
+    input: std::marker::PhantomData<A>,
+    output_one: std::marker::PhantomData<B>,
+    emitter: E,
+}
+
+impl<'a, P, E, A, B> AllocateRegisterWithPool<P, E, A, B> {
+    pub fn new(emitter: E) -> Self {
+        Self {
+            pool: std::marker::PhantomData,
+            input: std::marker::PhantomData,
+            output_one: std::marker::PhantomData,
+            emitter,
+        }
+    }
+}
+
+impl<'a, P, E, A, B> CodeGenEmitter<'a, (&'a [P], A), B> for AllocateRegisterWithPool<P, E, A, B>
+where
+    A: 'a,
+    E: CodeGenEmitter<'a, (&'a [P], &'a P, A), B>,
+{
+    fn emit(&self, (pool, input): (&'a [P], A)) -> EmitResult<'a, B> {
+        let pool_size = pool.len();
+        pool.get(pool_size - 1)
+            .ok_or_else(|| "unable to allocate register".to_string())
+            .and_then(|reg| self.emitter.emit((&pool[..pool_size - 1], reg, input)))
+    }
+}
+
 pub(crate) trait CodeGenEmitter<'a, A, B> {
     fn emit(&self, input: A) -> EmitResult<'a, B>;
 
@@ -356,6 +388,86 @@ fn with_allocator_pool<'a, P>(
     move |input: Block<Vec<String>>| Ok((pool, input))
 }
 
+/// evaulate an expression node.
+impl<'a>
+    CodeGenEmitter<
+        'a,
+        (
+            &'a [SizedGeneralPurpose],
+            &'a SizedGeneralPurpose,
+            Block<Vec<String>>,
+        ),
+        Block<Vec<String>>,
+    > for ast::ExprNode
+{
+    fn emit(
+        &self,
+        (pool, ret_val, block): (
+            &'a [SizedGeneralPurpose],
+            &'a SizedGeneralPurpose,
+            Block<Vec<String>>,
+        ),
+    ) -> EmitResult<'a, Block<Vec<String>>> {
+        match self {
+            ExprNode::Primary(ast::Primary::Uint8(val)) => val.emit((ret_val, block)),
+            ExprNode::Primary(_) => todo!(),
+            ExprNode::Equal(_) => todo!(),
+            ExprNode::NotEqual(_) => todo!(),
+            ExprNode::LessThan(_) => todo!(),
+            ExprNode::GreaterThan(_) => todo!(),
+            ExprNode::LessEqual(_) => todo!(),
+            ExprNode::GreaterEqual(_) => todo!(),
+            ExprNode::Subtraction(_) => todo!(),
+            ExprNode::Division(_) => todo!(),
+            ExprNode::Addition(add_expr) => add_expr.emit((pool, ret_val, block)),
+            ExprNode::Multiplication(_) => todo!(),
+        }
+    }
+}
+
+/// evaluate addition
+impl<'a>
+    CodeGenEmitter<
+        'a,
+        (
+            &'a [SizedGeneralPurpose],
+            &'a SizedGeneralPurpose,
+            Block<Vec<String>>,
+        ),
+        Block<Vec<String>>,
+    > for ast::AdditionExprNode
+{
+    fn emit(
+        &self,
+        (pool, ret_val, block): (
+            &'a [SizedGeneralPurpose],
+            &'a SizedGeneralPurpose,
+            Block<Vec<String>>,
+        ),
+    ) -> EmitResult<'a, Block<Vec<String>>> {
+        self.lhs
+            .emit((pool, ret_val, block))
+            .and_then(|block| {
+                AllocateRegister::new(|(rhs_ret_val, block)| {
+                    self.rhs
+                        .emit((&pool[..], rhs_ret_val, block))
+                        .map(|b| (rhs_ret_val, b))
+                })
+                .map(|(rhs_ret_val, block)| (ret_val, rhs_ret_val, block))
+                .emit((&pool[..], block))
+            })
+            .map(|(lhs_reg, rhs_reg, block)| {
+                block.append(format!(
+                    "\tadd{}\t{}, {}\n",
+                    lhs_reg.operator_suffix(),
+                    rhs_reg,
+                    lhs_reg
+                ))
+            })
+    }
+}
+
+/// load a constant into a register.
 impl<'a> CodeGenEmitter<'a, (&'a SizedGeneralPurpose, Block<Vec<String>>), Block<Vec<String>>>
     for ast::Uint8
 {
@@ -430,7 +542,8 @@ mod tests {
     }
 
     #[test]
-    fn should_generate_8bit_mov_to_register_from_constant() {
+    fn should_generate_8bit_mov_to_register_from_constant_expr() {
+        use crate::ast::*;
         use crate::codegen::machine::arch::x86_64::register;
 
         reset_block_id_counter(0);
@@ -443,7 +556,67 @@ mod tests {
                 None
             )),
             with_allocator_pool(&register::GPRegisters[..])
-                .and_then(AllocateRegister::new(ast::Uint8(5)))
+                .and_then(
+                    |(pool, block): (&[SizedGeneralPurpose], Block<Vec<String>>)| {
+                        AllocateRegister::new(|(ret_val, block)| {
+                            let pool_size = pool.len() - 1;
+                            ExprNode::Primary(Primary::Uint8(Uint8(5))).emit((
+                                &pool[..pool_size],
+                                ret_val,
+                                block,
+                            ))
+                        })
+                        .emit((&pool[..], block))
+                    }
+                )
+                .emit(gen_test_block!())
+        );
+    }
+
+    #[test]
+    fn should_generate_8bit_add_to_register_from_constant_expr() {
+        use crate::ast::*;
+
+        reset_block_id_counter(0);
+        assert_eq!(
+            Ok(Block::new(
+                0,
+                None,
+                vec![
+                    "\tmovq\t$1, %r15\n",
+                    "\tmovq\t$2, %r14\n",
+                    "\taddq\t%r14, %r15\n"
+                ]
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
+                None,
+                None
+            )),
+            with_allocator_pool(&register::GPRegisters[..])
+                .and_then(
+                    |(pool, block): (&[SizedGeneralPurpose], Block<Vec<String>>)| {
+                        AllocateRegisterWithPool::new(
+                            |(pool, ret_val, block): (
+                                &[SizedGeneralPurpose],
+                                &SizedGeneralPurpose,
+                                Block<Vec<String>>,
+                            )| {
+                                let pool_size = pool.len();
+                                ExprNode::Addition(AdditionExprNode::new(
+                                    Box::new(ExprNode::Primary(Primary::Uint8(Uint8(1)))),
+                                    Box::new(ExprNode::Primary(Primary::Uint8(Uint8(2)))),
+                                ))
+                                .emit((
+                                    &pool[..pool_size],
+                                    ret_val,
+                                    block,
+                                ))
+                            },
+                        )
+                        .emit((&pool[..], block))
+                    }
+                )
                 .emit(gen_test_block!())
         );
     }
