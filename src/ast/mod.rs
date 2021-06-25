@@ -2,7 +2,7 @@ pub type Span = std::ops::Range<usize>;
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct CompoundStmts {
-    inner: Vec<StmtNode>,
+    pub inner: Vec<StmtNode>,
 }
 
 impl CompoundStmts {

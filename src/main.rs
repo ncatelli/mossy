@@ -88,26 +88,13 @@ fn write_dest_file(filename: &str, data: &[u8]) -> RuntimeResult<()> {
 }
 
 fn compile(source: &str) -> RuntimeResult<String> {
-    /*
     use mossy::codegen::machine::arch::x86_64;
     use mossy::codegen::CodeGenerator;
     let input: Vec<(usize, char)> = source.chars().enumerate().collect();
-    let mut symbol_table = x86_64::SymbolTable::default();
     parser::parse(&input)
-        .map(|ast_node| x86_64::X86_64.generate(&mut symbol_table, ast_node))
+        .map(|ast_node| x86_64::X86_64.generate(&mut (), ast_node))
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
-        .map(|insts| {
-            vec![
-                x86_64::codegen_preamble(),
-                insts,
-                x86_64::codegen_postamble(),
-            ]
-            .into_iter()
-            .flatten()
-            .collect()
-        })
+        .map(|insts| vec![insts].into_iter().flatten().collect())
         .map(|insts: Vec<String>| insts.into_iter().collect::<String>())
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))
-        */
-    todo!()
 }

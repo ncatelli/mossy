@@ -40,6 +40,8 @@ fn generate_next_block_id() -> usize {
 
 type EmitResult<'a, T> = Result<T, String>;
 
+// combinators
+
 #[derive(Debug)]
 struct Map<E, F, A, B, C> {
     input: std::marker::PhantomData<A>,
@@ -360,8 +362,21 @@ impl TargetArchitecture for X86_64 {}
 
 use crate::ast;
 use crate::ast::ExprNode;
-use crate::codegen;
-use crate::codegen::machine;
+
+impl crate::codegen::CodeGenerator<(), ast::CompoundStmts> for X86_64 {
+    fn generate(
+        &self,
+        _symboltable: &mut (),
+        input: ast::CompoundStmts,
+    ) -> Result<Vec<String>, crate::codegen::CodeGenerationErr> {
+        let block = Block::default();
+        input
+            .emit(block)
+            .map(|b| "".to_string())
+            .map_err(crate::codegen::CodeGenerationErr::Unspecified)
+            .map(|res| vec![res])
+    }
+}
 
 fn preamble<'a>() -> impl CodeGenEmitter<'a, Block<Vec<String>>, Block<Vec<String>>> {
     move |input: Block<Vec<String>>| Ok(input.append(CG_PREAMBLE.to_string()))
@@ -393,6 +408,45 @@ type AllocatorReturnValueBlock<'a> = (
     &'a SizedGeneralPurpose,
     Block<Vec<String>>,
 );
+
+impl<'a> CodeGenEmitter<'a, Block<Vec<String>>, Vec<Block<Vec<String>>>> for ast::CompoundStmts {
+    fn emit(&self, block: Block<Vec<String>>) -> EmitResult<'a, Vec<Block<Vec<String>>>> {
+        self.inner.iter().try_fold(vec![block], |mut acc, stmt| {
+            acc.pop()
+                .ok_or_else(|| "Undefined block".to_string())
+                .and_then(|last| stmt.emit(last))
+                .and_then(|result_blocks| {
+                    acc.extend(result_blocks.into_iter());
+                    Ok(acc)
+                })
+        })
+    }
+}
+
+/// evaulate an statement node.
+impl<'a> CodeGenEmitter<'a, Block<Vec<String>>, Vec<Block<Vec<String>>>> for ast::StmtNode {
+    fn emit(&self, block: Block<Vec<String>>) -> EmitResult<'a, Vec<Block<Vec<String>>>> {
+        match self {
+            ast::StmtNode::Declaration(_) => todo!(),
+            ast::StmtNode::Assignment(_) => todo!(),
+            ast::StmtNode::Expression(expr_stmt) => expr_stmt.emit(block).map(|res| vec![res]),
+            ast::StmtNode::If(_) => todo!(),
+        }
+    }
+}
+
+/// evaulate an Expressions statement.
+impl<'a> CodeGenEmitter<'a, Block<Vec<String>>, Block<Vec<String>>> for ast::ExpressionStmt {
+    fn emit(&self, block: Block<Vec<String>>) -> EmitResult<'a, Block<Vec<String>>> {
+        with_allocator_pool(&register::GPRegisters)
+            .and_then(AllocateRegisterWithPool::new(
+                |(pool, ret_val, block): AllocatorReturnValueBlock| {
+                    self.inner.emit((&pool[..], ret_val, block))
+                },
+            ))
+            .emit(block)
+    }
+}
 
 /// evaulate an expression node.
 impl<'a> CodeGenEmitter<'a, AllocatorReturnValueBlock<'a>, Block<Vec<String>>> for ast::ExprNode {
