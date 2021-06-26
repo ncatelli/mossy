@@ -326,6 +326,15 @@ where
 }
 
 impl<T> Block<Vec<T>> {
+    fn prepend(mut self, inner: T) -> Self {
+        self.prepend_mut(inner);
+        self
+    }
+
+    fn prepend_mut(&mut self, inner: T) {
+        self.inner.insert(0, inner);
+    }
+
     fn append(mut self, inner: T) -> Self {
         self.append_mut(inner);
         self
@@ -372,9 +381,18 @@ impl crate::codegen::CodeGenerator<(), ast::CompoundStmts> for X86_64 {
         let block = Block::default();
         input
             .emit(block)
-            .map(|b| "".to_string())
+            .map(|blocks| {
+                blocks
+                    .into_iter()
+                    // TODO: Remove this, block should generate this.
+                    .map(|block| {
+                        let id = block.id;
+                        block.prepend(format!("L{}:\n", id))
+                    })
+                    .flat_map(|block| block.inner)
+                    .collect::<Vec<String>>()
+            })
             .map_err(crate::codegen::CodeGenerationErr::Unspecified)
-            .map(|res| vec![res])
     }
 }
 
@@ -403,6 +421,8 @@ fn with_allocator_pool<'a, P>(
     move |input: Block<Vec<String>>| Ok((pool, input))
 }
 
+/// Represents a common pattern of grouping a general-purpose register pool, a
+/// return value general-purpose register and a block.
 type AllocatorReturnValueBlock<'a> = (
     &'a [SizedGeneralPurpose],
     &'a SizedGeneralPurpose,
