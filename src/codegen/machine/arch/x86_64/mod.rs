@@ -495,7 +495,8 @@ impl<'a>
                         .map(|b| (*rhs_ret_val, b))
                 },
             )
-            .map(|(rhs_ret_val, block)| (ret_val, rhs_ret_val, block))
+            // capture the return value register.
+            .map(|(rhs_ret_val, block)| (*ret_val, rhs_ret_val, block))
             .map(|(lhs_reg, rhs_reg, block)| {
                 block.append(format!(
                     "\tadd{}\t{}, {}\n",
@@ -572,14 +573,14 @@ mod tests {
 
     #[test]
     fn should_be_able_to_compose_generators_of_matching_input_output_types() {
-        reset_block_id_counter(0);
+        reset_block_id_counter(1);
 
         assert_eq!(
             Ok([
                 Block::new(0, None, vec![CG_PREAMBLE.to_string()], Some(1), None),
                 Block::new(1, Some(0), vec![CG_POSTAMBLE.to_string()], None, None),
             ]),
-            preamble().and_then(postamble()).emit(gen_test_block!())
+            preamble().and_then(postamble()).emit(Block::default())
         );
     }
 
@@ -598,20 +599,10 @@ mod tests {
                 None
             )),
             with_allocator_pool(&register::GPRegisters[..])
-                .and_then(
-                    |(pool, block): (&[SizedGeneralPurpose], Block<Vec<String>>)| {
-                        AllocateRegister::new(|(ret_val, block)| {
-                            let pool_size = pool.len() - 1;
-                            ExprNode::Primary(Primary::Uint8(Uint8(5))).emit((
-                                &pool[..pool_size],
-                                ret_val,
-                                block,
-                            ))
-                        })
-                        .emit((&pool[..], block))
-                    }
-                )
-                .emit(gen_test_block!())
+                .and_then(AllocateRegisterWithPool::new(ExprNode::Primary(
+                    Primary::Uint8(Uint8(5))
+                )))
+                .emit(Block::default())
         );
     }
 
@@ -636,26 +627,13 @@ mod tests {
                 None
             )),
             with_allocator_pool(&register::GPRegisters[..])
-                .and_then(
-                    |(pool, block): (&[SizedGeneralPurpose], Block<Vec<String>>)| {
-                        AllocateRegisterWithPool::new(
-                            |(pool, ret_val, block): AllocatorReturnValueBlock| {
-                                let pool_size = pool.len();
-                                ExprNode::Addition(AdditionExprNode::new(
-                                    Box::new(ExprNode::Primary(Primary::Uint8(Uint8(1)))),
-                                    Box::new(ExprNode::Primary(Primary::Uint8(Uint8(2)))),
-                                ))
-                                .emit((
-                                    &pool[..pool_size],
-                                    ret_val,
-                                    block,
-                                ))
-                            },
-                        )
-                        .emit((&pool[..], block))
-                    }
-                )
-                .emit(gen_test_block!())
+                .and_then(AllocateRegisterWithPool::new(ExprNode::Addition(
+                    AdditionExprNode::new(
+                        Box::new(ExprNode::Primary(Primary::Uint8(Uint8(1)))),
+                        Box::new(ExprNode::Primary(Primary::Uint8(Uint8(2)))),
+                    )
+                )))
+                .emit(Block::default())
         );
     }
 }
