@@ -360,6 +360,18 @@ where
     }
 }
 
+// block emitter combinators
+fn block_label<'a>() -> impl CodeGenEmitter<'a, Block<Vec<String>>, Block<Vec<String>>> {
+    move |block: Block<Vec<String>>| {
+        let id = block.id;
+        prepend_label(id).emit(block)
+    }
+}
+
+fn block_to_asm<'a>() -> impl CodeGenEmitter<'a, Block<Vec<String>>, String> {
+    block_label().and_then(|block: Block<Vec<String>>| Ok(block.inner.join("")))
+}
+
 /// X86_64 represents the x86_64 bit machine target.
 #[derive(Clone, Copy)]
 pub struct X86_64;
@@ -379,19 +391,14 @@ impl crate::codegen::CodeGenerator<(), ast::CompoundStmts> for X86_64 {
         input: ast::CompoundStmts,
     ) -> Result<Vec<String>, crate::codegen::CodeGenerationErr> {
         let block = Block::default();
-        input
-            .emit(block)
-            .map(|blocks| {
+        preamble()
+            .and_then(input.and_then(|blocks: Vec<Block<Vec<String>>>| {
                 blocks
                     .into_iter()
-                    // TODO: Remove this, block should generate this.
-                    .map(|block| {
-                        let id = block.id;
-                        block.prepend(format!("L{}:\n", id))
-                    })
-                    .flat_map(|block| block.inner)
-                    .collect::<Vec<String>>()
-            })
+                    .map(|block| block_to_asm().emit(block))
+                    .collect::<Result<Vec<String>, _>>()
+            }))
+            .emit(block)
             .map_err(crate::codegen::CodeGenerationErr::Unspecified)
     }
 }
@@ -407,10 +414,19 @@ fn postamble<'a>() -> impl CodeGenEmitter<'a, Block<Vec<String>>, [Block<Vec<Str
     }
 }
 
+#[allow(dead_code)]
+fn prepend_label<'a>(
+    block_id: BlockId,
+) -> impl CodeGenEmitter<'a, Block<Vec<String>>, Block<Vec<String>>> {
+    move |input: Block<Vec<String>>| Ok(input.prepend(format!("L{}:\n", block_id)))
+}
+
+#[allow(dead_code)]
 fn label<'a>(block_id: BlockId) -> impl CodeGenEmitter<'a, Block<Vec<String>>, Block<Vec<String>>> {
     move |input: Block<Vec<String>>| Ok(input.append(format!("L{}:\n", block_id)))
 }
 
+#[allow(dead_code)]
 fn jump<'a>(block_id: BlockId) -> impl CodeGenEmitter<'a, Block<Vec<String>>, Block<Vec<String>>> {
     move |input: Block<Vec<String>>| Ok(input.append(format!("\tjmp\tL{}\n", block_id)))
 }
@@ -458,7 +474,7 @@ impl<'a> CodeGenEmitter<'a, Block<Vec<String>>, Vec<Block<Vec<String>>>> for ast
 /// evaulate an Expressions statement.
 impl<'a> CodeGenEmitter<'a, Block<Vec<String>>, Block<Vec<String>>> for ast::ExpressionStmt {
     fn emit(&self, block: Block<Vec<String>>) -> EmitResult<'a, Block<Vec<String>>> {
-        with_allocator_pool(&register::GPRegisters)
+        with_allocator_pool(&register::GPREGISTERS)
             .and_then(AllocateRegisterWithPool::new(
                 |(pool, ret_val, block): AllocatorReturnValueBlock| {
                     self.inner.emit((&pool[..], ret_val, block))
@@ -618,7 +634,7 @@ mod tests {
                 None,
                 None
             )),
-            with_allocator_pool(&register::GPRegisters[..])
+            with_allocator_pool(&register::GPREGISTERS[..])
                 .and_then(AllocateRegisterWithPool::new(ExprNode::Primary(
                     Primary::Uint8(Uint8(5))
                 )))
@@ -646,7 +662,7 @@ mod tests {
                 None,
                 None
             )),
-            with_allocator_pool(&register::GPRegisters[..])
+            with_allocator_pool(&register::GPREGISTERS[..])
                 .and_then(AllocateRegisterWithPool::new(ExprNode::Addition(
                     AdditionExprNode::new(
                         Box::new(ExprNode::Primary(Primary::Uint8(Uint8(1)))),

@@ -1,6 +1,6 @@
 use crate::codegen::register::{AddressWidth, Register};
 
-pub const GPRegisters: [SizedGeneralPurpose; 8] = [
+pub const GPREGISTERS: [SizedGeneralPurpose; 8] = [
     SizedGeneralPurpose::QuadWord("r8"),
     SizedGeneralPurpose::QuadWord("r9"),
     SizedGeneralPurpose::QuadWord("r10"),
