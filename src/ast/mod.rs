@@ -1,20 +1,19 @@
 pub type Span = std::ops::Range<usize>;
 
 #[derive(PartialEq, Debug, Clone)]
-pub struct SpannedExprNode {
-    pub span: Span,
-    pub node: ExprNode,
+pub struct CompoundStmts {
+    inner: Vec<StmtNode>,
 }
 
-impl<'a> SpannedExprNode {
-    #[allow(dead_code)]
-    pub fn new(span: Span, node: ExprNode) -> Self {
-        Self { span, node }
+impl CompoundStmts {
+    pub fn new(inner: Vec<StmtNode>) -> Self {
+        Self { inner }
     }
+}
 
-    #[allow(dead_code)]
-    pub fn unwrap(self) -> ExprNode {
-        self.node
+impl From<CompoundStmts> for Vec<StmtNode> {
+    fn from(src: CompoundStmts) -> Self {
+        src.inner
     }
 }
 
@@ -29,6 +28,7 @@ pub enum StmtNode {
     Assignment(String, ExprNode),
     /// Represents a statement containing only a single expression.
     Expression(ExprNode),
+    If(ExprNode, CompoundStmts, Option<CompoundStmts>),
 }
 
 /// Represents a single expression in the ast.
@@ -36,7 +36,7 @@ pub enum StmtNode {
 pub enum ExprNode {
     Primary(Primary),
 
-    // comparative
+    // Comparative
     Equal(Box<ExprNode>, Box<ExprNode>),
     NotEqual(Box<ExprNode>, Box<ExprNode>),
     LessThan(Box<ExprNode>, Box<ExprNode>),

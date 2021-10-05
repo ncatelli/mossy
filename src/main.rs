@@ -1,11 +1,9 @@
-use mossy::{codegen::CodeGenerationErr, parser};
+use mossy::parser;
 use scrap::prelude::v1::*;
 use std::env;
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
-
-const EXIT_SUCCESS: i32 = 0;
 
 type RuntimeResult<T> = Result<T, RuntimeError>;
 
@@ -43,23 +41,25 @@ fn main() {
             "an input path for a source file.",
         ))
         .with_flag(
-            scrap::Flag::expect_string("out-file", "o", "an output path assembly.")
+            scrap::Flag::expect_string("out-file", "o", "an assembly output path.")
                 .optional()
                 .with_default("a.s".to_string()),
         )
         .with_handler(|(inf, ouf)| {
             read_src_file(&inf)
-                .map(|input| compile(&input))
-                .and_then(std::convert::identity)
-                .map(|asm| write_dest_file(&ouf, &asm.as_bytes()).map(|_| EXIT_SUCCESS))
+                .and_then(|input| compile(&input))
+                .and_then(|asm| write_dest_file(&ouf, &asm.as_bytes()))
         });
 
     let help_string = cmd.help();
-    let eval_res = cmd.evaluate(&args[..]).map(|flags| cmd.dispatch(flags));
+    let eval_res = cmd
+        .evaluate(&args[..])
+        .map_err(|e| RuntimeError::Undefined(e.to_string()))
+        .and_then(|flags| cmd.dispatch(flags));
 
     match eval_res {
         Ok(_) => (),
-        Err(_) => println!("{}", &help_string),
+        Err(e) => println!("{}\n\n{}", &e.to_string(), &help_string),
     }
 }
 
@@ -94,18 +94,15 @@ fn compile(source: &str) -> RuntimeResult<String> {
     let mut symbol_table = x86_64::SymbolTable::default();
 
     parser::parse(&input)
-        .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
-        .into_iter()
         .map(|ast_node| x86_64::X86_64.generate(&mut symbol_table, ast_node))
-        .collect::<Result<Vec<Vec<String>>, CodeGenerationErr>>()
+        .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
         .map(|insts| {
             vec![
-                vec![x86_64::codegen_preamble()],
+                x86_64::codegen_preamble(),
                 insts,
-                vec![x86_64::codegen_postamble()],
+                x86_64::codegen_postamble(),
             ]
             .into_iter()
-            .flatten()
             .flatten()
             .collect()
         })

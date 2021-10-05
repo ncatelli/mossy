@@ -1,6 +1,9 @@
 use crate::codegen::machine::arch::TargetArchitecture;
 use crate::codegen::register::Register;
 use crate::{ast::ExprNode, codegen::CodeGenerationErr};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+static BLOCK_ID: AtomicUsize = AtomicUsize::new(0);
 
 /// X86_64 represents the x86_64 bit machine target.
 pub struct X86_64;
@@ -64,39 +67,102 @@ use crate::codegen;
 use crate::codegen::machine;
 use crate::codegen::CodeGenerator;
 
-impl CodeGenerator<SymbolTable> for X86_64 {
+impl CodeGenerator<SymbolTable, ast::CompoundStmts> for X86_64 {
     fn generate(
-        self,
+        &self,
         symboltable: &mut SymbolTable,
-        input: ast::StmtNode,
-    ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
+        input: ast::CompoundStmts,
+    ) -> Result<Vec<String>, CodeGenerationErr> {
         let mut allocator = GPRegisterAllocator::default();
-        match input {
-            ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
-                Ok(vec![
-                    codegen_expr(allocator, ret_val, expr),
-                    codegen_printint(ret_val),
-                ])
-            }),
-            ast::StmtNode::Declaration(identifier) => {
-                symboltable.declare_global(&identifier);
-                Ok(vec![codegen_global_symbol(&identifier)])
-            }
-            ast::StmtNode::Assignment(identifier, expr) => symboltable
-                .has_global(&identifier)
-                .then(|| ())
-                .map(|_| {
-                    allocator.allocate_then(|allocator, ret_val| {
-                        vec![
-                            codegen_expr(allocator, ret_val, expr),
-                            codegen_store_global(ret_val, &identifier),
-                        ]
-                    })
-                })
-                .ok_or(CodeGenerationErr::UndefinedReference(identifier)),
-        }
-        .map(|insts| insts.into_iter().flatten().collect())
+        codegen_statements(&mut allocator, symboltable, input)
     }
+}
+
+fn codegen_statements(
+    allocator: &mut GPRegisterAllocator,
+    symboltable: &mut SymbolTable,
+    input: ast::CompoundStmts,
+) -> Result<Vec<String>, CodeGenerationErr> {
+    let stmts = Vec::<ast::StmtNode>::from(input);
+
+    stmts
+        .into_iter()
+        .map(|stmt| codegen_statement(allocator, symboltable, stmt).map(|output| output.join("\n")))
+        .collect::<Result<Vec<String>, _>>()
+}
+
+fn codegen_statement(
+    allocator: &mut GPRegisterAllocator,
+    symboltable: &mut SymbolTable,
+    input: ast::StmtNode,
+) -> Result<Vec<String>, codegen::CodeGenerationErr> {
+    match input {
+        ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
+            Ok(vec![
+                codegen_expr(allocator, ret_val, expr),
+                codegen_printint(ret_val),
+            ])
+        }),
+        ast::StmtNode::Declaration(identifier) => {
+            symboltable.declare_global(&identifier);
+            Ok(vec![codegen_global_symbol(&identifier)])
+        }
+        ast::StmtNode::Assignment(identifier, expr) => symboltable
+            .has_global(&identifier)
+            .then(|| ())
+            .map(|_| {
+                allocator.allocate_then(|allocator, ret_val| {
+                    vec![
+                        codegen_expr(allocator, ret_val, expr),
+                        codegen_store_global(ret_val, &identifier),
+                    ]
+                })
+            })
+            .ok_or(CodeGenerationErr::UndefinedReference(identifier)),
+        ast::StmtNode::If(cond, true_case, false_case) => {
+            codegen_if_statement(allocator, symboltable, cond, true_case, false_case)
+                .map(|insts| vec![insts])
+        }
+    }
+    .map(|insts| insts.into_iter().flatten().collect())
+}
+
+fn codegen_if_statement(
+    allocator: &mut GPRegisterAllocator,
+    symboltable: &mut SymbolTable,
+    cond: crate::ast::ExprNode,
+    true_case: crate::ast::CompoundStmts,
+    false_case: Option<crate::ast::CompoundStmts>,
+) -> Result<Vec<String>, codegen::CodeGenerationErr> {
+    allocator.allocate_then(|allocator, ret_val| {
+        let cond_ctx = codegen_expr(allocator, ret_val, cond);
+        let exit_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+        let true_case_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+        let tctx = codegen_statements(allocator, symboltable, true_case)?;
+
+        let (block_ctx, else_block_id) = if let Some(false_case_stmts) = false_case {
+            let false_case_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let fctx = codegen_statements(allocator, symboltable, false_case_stmts)?;
+
+            (fctx, false_case_block_id)
+        } else {
+            (vec![], exit_block_id)
+        };
+
+        Ok(vec![
+            cond_ctx,
+            codegen_compare_and_jmp(allocator, ret_val, true_case_block_id, else_block_id),
+            codegen_label(true_case_block_id),
+            tctx,
+            codegen_jump(exit_block_id),
+            codegen_label(else_block_id),
+            block_ctx,
+            codegen_label(exit_block_id),
+        ]
+        .into_iter()
+        .flatten()
+        .collect())
+    })
 }
 
 /// Returns a vector-wrapped preamble.
@@ -131,6 +197,16 @@ fn codegen_load_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<S
     )]
 }
 
+type BlockId = usize;
+
+fn codegen_label(block_id: BlockId) -> Vec<String> {
+    vec![format!("L{}:\n", block_id)]
+}
+
+fn codegen_jump(block_id: BlockId) -> Vec<String> {
+    vec![format!("\tjmp\tL{}\n", block_id)]
+}
+
 fn codegen_expr(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
@@ -145,15 +221,15 @@ fn codegen_expr(
         }
 
         ExprNode::Equal(lhs, rhs) => {
-            codegen_compare(allocator, ret_val, ComparisonOperation::Equal, lhs, rhs)
+            codegen_compare_and_set(allocator, ret_val, ComparisonOperation::Equal, lhs, rhs)
         }
         ExprNode::NotEqual(lhs, rhs) => {
-            codegen_compare(allocator, ret_val, ComparisonOperation::NotEqual, lhs, rhs)
+            codegen_compare_and_set(allocator, ret_val, ComparisonOperation::NotEqual, lhs, rhs)
         }
         ExprNode::LessThan(lhs, rhs) => {
-            codegen_compare(allocator, ret_val, ComparisonOperation::LessThan, lhs, rhs)
+            codegen_compare_and_set(allocator, ret_val, ComparisonOperation::LessThan, lhs, rhs)
         }
-        ExprNode::GreaterThan(lhs, rhs) => codegen_compare(
+        ExprNode::GreaterThan(lhs, rhs) => codegen_compare_and_set(
             allocator,
             ret_val,
             ComparisonOperation::GreaterThan,
@@ -161,9 +237,9 @@ fn codegen_expr(
             rhs,
         ),
         ExprNode::LessEqual(lhs, rhs) => {
-            codegen_compare(allocator, ret_val, ComparisonOperation::LessEqual, lhs, rhs)
+            codegen_compare_and_set(allocator, ret_val, ComparisonOperation::LessEqual, lhs, rhs)
         }
-        ExprNode::GreaterEqual(lhs, rhs) => codegen_compare(
+        ExprNode::GreaterEqual(lhs, rhs) => codegen_compare_and_set(
             allocator,
             ret_val,
             ComparisonOperation::GreaterEqual,
@@ -301,7 +377,7 @@ enum ComparisonOperation {
     NotEqual,
 }
 
-fn codegen_compare(
+fn codegen_compare_and_set(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
     comparison_op: ComparisonOperation,
@@ -338,6 +414,31 @@ fn codegen_compare(
         ]
         .into_iter()
         .flatten()
+        .collect()
+    })
+}
+
+fn codegen_compare_and_jmp(
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut SizedGeneralPurpose,
+    cond_true_id: BlockId,
+    cond_false_id: BlockId,
+) -> Vec<String> {
+    let operand_suffix = ret_val.operator_suffix();
+    allocator.allocate_then(|_, zero_val| {
+        vec![
+            format!("\tandq\t$0,{}\n", zero_val),
+            format!("\tcmp{}\t{}, {}\n", operand_suffix, ret_val, zero_val),
+            format!(
+                "\t{}\t{}\n",
+                "sete",
+                SizedGeneralPurpose::Byte(ret_val.id())
+            ),
+            format!("\tandq\t$255,{}\n", ret_val),
+            format!("\t{}\tL{}\n", "je", cond_true_id),
+        ]
+        .into_iter()
+        .chain(codegen_jump(cond_false_id).into_iter())
         .collect()
     })
 }
