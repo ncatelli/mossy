@@ -87,7 +87,7 @@ fn codegen_statements(
 
     stmts
         .into_iter()
-        .map(|stmt| codegen_statement(allocator, symboltable, stmt).map(|output| output.join("\n")))
+        .map(|stmt| codegen_statement(allocator, symboltable, stmt).map(|output| output.join("")))
         .collect::<Result<Vec<String>, _>>()
 }
 
