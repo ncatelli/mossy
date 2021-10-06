@@ -35,14 +35,14 @@ fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Com
             whitespace_wrapped(expect_character('}')),
         )),
     ))
-    .map(|stmts| CompoundStmts::new(stmts))
+    .map(CompoundStmts::new)
 }
 
 fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     expression_statement()
-        .or(|| declaration_statement())
-        .or(|| assignment_statement())
-        .or(|| if_statement())
+        .or(declaration_statement)
+        .or(assignment_statement)
+        .or(if_statement)
 }
 
 fn declaration_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -77,9 +77,7 @@ fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> 
             whitespace_wrapped(expect_str("else")).and_then(|_| compound_statements()),
         ),
     )
-    .map(|((cond, cond_true), cond_false)| {
-        StmtNode::If(cond, cond_true, cond_false.map(|stmts| stmts))
-    })
+    .map(|((cond, cond_true), cond_false)| StmtNode::If(cond, cond_true, cond_false))
 }
 
 fn if_head<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], (ExprNode, CompoundStmts)> {

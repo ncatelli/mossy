@@ -48,7 +48,7 @@ fn main() {
         .with_handler(|(inf, ouf)| {
             read_src_file(&inf)
                 .and_then(|input| compile(&input))
-                .and_then(|asm| write_dest_file(&ouf, &asm.as_bytes()))
+                .and_then(|asm| write_dest_file(&ouf, asm.as_bytes()))
         });
 
     let help_string = cmd.help();
