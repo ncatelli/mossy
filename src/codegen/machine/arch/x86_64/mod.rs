@@ -97,8 +97,12 @@ fn codegen_statement(
     input: ast::StmtNode,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     match input {
-        ast::StmtNode::Expression(expr) => allocator
-            .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
+        ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
+            Ok(vec![
+                codegen_expr(allocator, ret_val, expr),
+                codegen_printint(ret_val),
+            ])
+        }),
         ast::StmtNode::Declaration(identifier) => {
             symboltable.declare_global(&identifier);
             Ok(vec![codegen_global_symbol(&identifier)])
@@ -119,7 +123,9 @@ fn codegen_statement(
             codegen_if_statement(allocator, symboltable, cond, true_case, false_case)
                 .map(|insts| vec![insts])
         }
-        ast::StmtNode::While(_, _) => todo!(),
+        ast::StmtNode::While(cond, block) => {
+            codegen_while_statement(allocator, symboltable, cond, block).map(|insts| vec![insts])
+        }
     }
     .map(|insts| insts.into_iter().flatten().collect())
 }
@@ -155,6 +161,34 @@ fn codegen_if_statement(
             codegen_label(else_block_id),
             block_ctx,
             codegen_label(exit_block_id),
+        ]
+        .into_iter()
+        .flatten()
+        .collect())
+    })
+}
+
+fn codegen_while_statement(
+    allocator: &mut GPRegisterAllocator,
+    symboltable: &mut SymbolTable,
+    cond: crate::ast::ExprNode,
+    block: crate::ast::CompoundStmts,
+) -> Result<Vec<String>, codegen::CodeGenerationErr> {
+    allocator.allocate_then(|allocator, ret_val| {
+        let cond_ctx = codegen_expr(allocator, ret_val, cond);
+        let loop_cond_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+        let loop_start_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+        let loop_end_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+        let block_insts = codegen_statements(allocator, symboltable, block)?;
+
+        Ok(vec![
+            codegen_label(loop_cond_block_id),
+            cond_ctx,
+            codegen_compare_and_jmp(allocator, ret_val, loop_start_block_id, loop_end_block_id),
+            codegen_label(loop_start_block_id),
+            block_insts,
+            codegen_jump(loop_cond_block_id),
+            codegen_label(loop_end_block_id),
         ]
         .into_iter()
         .flatten()
