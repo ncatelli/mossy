@@ -119,6 +119,7 @@ fn codegen_statement(
             codegen_if_statement(allocator, symboltable, cond, true_case, false_case)
                 .map(|insts| vec![insts])
         }
+        ast::StmtNode::While(_, _) => todo!(),
     }
     .map(|insts| insts.into_iter().flatten().collect())
 }
