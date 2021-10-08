@@ -43,6 +43,7 @@ fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
         .or(declaration_statement)
         .or(assignment_statement)
         .or(if_statement)
+        .or(while_statement)
 }
 
 fn declaration_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -83,6 +84,12 @@ fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> 
 fn if_head<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], (ExprNode, CompoundStmts)> {
     whitespace_wrapped(expect_str("if"))
         .and_then(|_| parcel::join(parens_wrapped(expression()), compound_statements()))
+}
+
+fn while_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    whitespace_wrapped(expect_str("while"))
+        .and_then(|_| parcel::join(parens_wrapped(expression()), compound_statements()))
+        .map(|(cond, block)| StmtNode::While(cond, block))
 }
 
 fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {

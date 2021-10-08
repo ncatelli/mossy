@@ -28,7 +28,10 @@ pub enum StmtNode {
     Assignment(String, ExprNode),
     /// Represents a statement containing only a single expression.
     Expression(ExprNode),
+    /// Represents a conditional if statement with an optional else clause.
     If(ExprNode, CompoundStmts, Option<CompoundStmts>),
+    /// Represents a while loop.
+    While(ExprNode, CompoundStmts),
 }
 
 /// Represents a single expression in the ast.
