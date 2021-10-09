@@ -7,6 +7,12 @@ use std::io::prelude::*;
 
 type RuntimeResult<T> = Result<T, RuntimeError>;
 
+/// Represents an error that can return an exit code.
+trait ErrorWithExitCode {
+    /// Returns an exit status for a given error;
+    fn exit_code(&self) -> i32;
+}
+
 enum RuntimeError {
     FileUnreadable,
     Undefined(String),
@@ -17,6 +23,15 @@ impl fmt::Debug for RuntimeError {
         match self {
             Self::FileUnreadable => write!(f, "source file unreadable"),
             Self::Undefined(s) => write!(f, "{}", s),
+        }
+    }
+}
+
+impl ErrorWithExitCode for RuntimeError {
+    fn exit_code(&self) -> i32 {
+        match self {
+            Self::FileUnreadable => 1,
+            Self::Undefined(_) => 127,
         }
     }
 }
@@ -59,7 +74,10 @@ fn main() {
 
     match eval_res {
         Ok(_) => (),
-        Err(e) => println!("{}\n\n{}", &e.to_string(), &help_string),
+        Err(e) => {
+            println!("{}\n\n{}", &e.to_string(), &help_string);
+            std::process::exit(e.exit_code())
+        }
     }
 }
 
