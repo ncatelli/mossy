@@ -104,13 +104,13 @@ fn for_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode>
         .and_then(|_| {
             parcel::join(
                 parens_wrapped(parcel::join(
-                    semicolon_terminated_statement(preop_statement()),
+                    preop_statement(),
                     parcel::join(
                         parcel::left(parcel::join(
                             expression(),
                             whitespace_wrapped(expect_str(";")),
                         )),
-                        semicolon_terminated_statement(postop_statement()),
+                        postop_statement(),
                     ),
                 )),
                 compound_statements(),
