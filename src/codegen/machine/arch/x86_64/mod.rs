@@ -122,6 +122,7 @@ fn codegen_statement(
         ast::StmtNode::While(cond, block) => {
             codegen_while_statement(allocator, symboltable, cond, block).map(|insts| vec![insts])
         }
+        ast::StmtNode::For(_, _, _, _) => todo!(),
     }
     .map(|insts| insts.into_iter().flatten().collect())
 }

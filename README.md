@@ -14,6 +14,7 @@ statement:
         | assignment ";"
         | if_statement 
         | while_statement 
+        | for_statement
         ;
 
 declaration:   'int' identifier
@@ -32,13 +33,13 @@ while_statement: 'while' '(' expression ')' compound_statement
         ;
 
 for_statement: 'for' '(' preop_statement ';'
-                          true_false_expression ';'
+                          expression ';'
                           postop_statement ')' compound_statement  ;
 
-preop_statement: statement 
+preop_statement: assignment 
         ;
 
-postop_statement: statement
+postop_statement: expression
         ;
 
 

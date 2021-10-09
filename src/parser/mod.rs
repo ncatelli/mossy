@@ -44,6 +44,7 @@ fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
         .or(|| semicolon_terminated_statement(assignment()))
         .or(if_statement)
         .or(while_statement)
+        .or(for_statement)
 }
 
 fn semicolon_terminated_statement<'a, P>(
@@ -96,6 +97,36 @@ fn while_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNod
     whitespace_wrapped(expect_str("while"))
         .and_then(|_| parcel::join(parens_wrapped(expression()), compound_statements()))
         .map(|(cond, block)| StmtNode::While(cond, block))
+}
+
+fn for_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    whitespace_wrapped(expect_str("for"))
+        .and_then(|_| {
+            parcel::join(
+                parens_wrapped(parcel::join(
+                    semicolon_terminated_statement(preop_statement()),
+                    parcel::join(
+                        parcel::left(parcel::join(
+                            expression(),
+                            whitespace_wrapped(expect_str(";")),
+                        )),
+                        semicolon_terminated_statement(postop_statement()),
+                    ),
+                )),
+                compound_statements(),
+            )
+        })
+        .map(|((preop, (cond, postop)), block)| {
+            StmtNode::For(Box::new(preop), cond, Box::new(postop), block)
+        })
+}
+
+fn preop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    statement()
+}
+
+fn postop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    statement()
 }
 
 fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {

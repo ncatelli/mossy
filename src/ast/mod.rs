@@ -32,6 +32,7 @@ pub enum StmtNode {
     If(ExprNode, CompoundStmts, Option<CompoundStmts>),
     /// Represents a while loop.
     While(ExprNode, CompoundStmts),
+    For(Box<StmtNode>, ExprNode, Box<StmtNode>, CompoundStmts),
 }
 
 /// Represents a single expression in the ast.
