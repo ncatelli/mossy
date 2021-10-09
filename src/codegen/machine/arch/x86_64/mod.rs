@@ -122,6 +122,10 @@ fn codegen_statement(
         ast::StmtNode::While(cond, block) => {
             codegen_while_statement(allocator, symboltable, cond, block).map(|insts| vec![insts])
         }
+        ast::StmtNode::For(preop, cond, postop, block) => {
+            codegen_for_statement(allocator, symboltable, *preop, cond, *postop, block)
+                .map(|insts| vec![insts])
+        }
     }
     .map(|insts| insts.into_iter().flatten().collect())
 }
@@ -183,6 +187,40 @@ fn codegen_while_statement(
             codegen_compare_and_jmp(allocator, ret_val, loop_start_block_id, loop_end_block_id),
             codegen_label(loop_start_block_id),
             block_insts,
+            codegen_jump(loop_cond_block_id),
+            codegen_label(loop_end_block_id),
+        ]
+        .into_iter()
+        .flatten()
+        .collect())
+    })
+}
+
+fn codegen_for_statement(
+    allocator: &mut GPRegisterAllocator,
+    symboltable: &mut SymbolTable,
+    preop: crate::ast::StmtNode,
+    cond: crate::ast::ExprNode,
+    postop: crate::ast::StmtNode,
+    block: crate::ast::CompoundStmts,
+) -> Result<Vec<String>, codegen::CodeGenerationErr> {
+    allocator.allocate_then(|allocator, ret_val| {
+        let preop_ctx = codegen_statement(allocator, symboltable, preop)?;
+        let cond_ctx = codegen_expr(allocator, ret_val, cond);
+        let postop_ctx = codegen_statement(allocator, symboltable, postop)?;
+        let loop_cond_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+        let loop_start_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+        let loop_end_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+        let block_insts = codegen_statements(allocator, symboltable, block)?;
+
+        Ok(vec![
+            preop_ctx,
+            codegen_label(loop_cond_block_id),
+            cond_ctx,
+            codegen_compare_and_jmp(allocator, ret_val, loop_start_block_id, loop_end_block_id),
+            codegen_label(loop_start_block_id),
+            block_insts,
+            postop_ctx,
             codegen_jump(loop_cond_block_id),
             codegen_label(loop_end_block_id),
         ]

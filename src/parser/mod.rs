@@ -39,35 +39,42 @@ fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Com
 }
 
 fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    expression_statement()
-        .or(declaration_statement)
-        .or(assignment_statement)
+    semicolon_terminated_statement(expression().map(StmtNode::Expression))
+        .or(|| semicolon_terminated_statement(declaration()))
+        .or(|| semicolon_terminated_statement(assignment()))
         .or(if_statement)
         .or(while_statement)
+        .or(for_statement)
 }
 
-fn declaration_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+fn semicolon_terminated_statement<'a, P>(
+    term: P,
+) -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode>
+where
+    P: parcel::Parser<'a, &'a [(usize, char)], StmtNode> + 'a,
+{
     parcel::left(parcel::join(
-        parcel::right(parcel::join(
-            whitespace_wrapped(expect_str("int")),
-            whitespace_wrapped(identifier()),
-        )),
+        term,
         whitespace_wrapped(expect_character(';')),
+    ))
+}
+
+fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    parcel::right(parcel::join(
+        whitespace_wrapped(expect_str("int")),
+        whitespace_wrapped(identifier()),
     ))
     .map(StmtNode::Declaration)
 }
 
-fn assignment_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    parcel::left(parcel::join(
-        parcel::join(
-            whitespace_wrapped(identifier()),
-            parcel::right(parcel::join(
-                whitespace_wrapped(expect_character('=')),
-                whitespace_wrapped(expression()),
-            )),
-        ),
-        whitespace_wrapped(expect_character(';')),
-    ))
+fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    parcel::join(
+        whitespace_wrapped(identifier()),
+        parcel::right(parcel::join(
+            whitespace_wrapped(expect_character('=')),
+            whitespace_wrapped(expression()),
+        )),
+    )
     .map(|(ident, expr)| StmtNode::Assignment(ident, expr))
 }
 
@@ -92,12 +99,34 @@ fn while_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNod
         .map(|(cond, block)| StmtNode::While(cond, block))
 }
 
-fn expression_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    parcel::left(parcel::join(
-        whitespace_wrapped(expression()),
-        whitespace_wrapped(expect_character(';')),
-    ))
-    .map(StmtNode::Expression)
+fn for_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    whitespace_wrapped(expect_str("for"))
+        .and_then(|_| {
+            parcel::join(
+                parens_wrapped(parcel::join(
+                    preop_statement(),
+                    parcel::join(
+                        parcel::left(parcel::join(
+                            expression(),
+                            whitespace_wrapped(expect_str(";")),
+                        )),
+                        postop_statement(),
+                    ),
+                )),
+                compound_statements(),
+            )
+        })
+        .map(|((preop, (cond, postop)), block)| {
+            StmtNode::For(Box::new(preop), cond, Box::new(postop), block)
+        })
+}
+
+fn preop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    statement()
+}
+
+fn postop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    statement()
 }
 
 fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {

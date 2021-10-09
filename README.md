@@ -10,16 +10,17 @@ compound_statement: '{' '}'
 
 statement: 
         | expression ";"
-        | declaration
-        | assignment
+        | declaration ";"
+        | assignment ";"
         | if_statement 
         | while_statement 
+        | for_statement
         ;
 
-declaration:   'int' identifier ';'
+declaration:   'int' identifier
         ;
 
-assignent:   identifier '=' expression ';'`
+assignent:   identifier '=' expression 
         ;
 
 if_statement: if_head
@@ -30,6 +31,17 @@ if_head: 'if' '(' expression ')' compound_statement
 
 while_statement: 'while' '(' expression ')' compound_statement
         ;
+
+for_statement: 'for' '(' preop_statement ';'
+                          expression ';'
+                          postop_statement ')' compound_statement  ;
+
+preop_statement: assignment 
+        ;
+
+postop_statement: expression
+        ;
+
 
 expression: equality
         ;
