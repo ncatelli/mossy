@@ -115,10 +115,17 @@ fn codegen_statement(
                 })
             })
             .ok_or(CodeGenerationErr::UndefinedReference(identifier)),
-        ast::StmtNode::If(cond, true_case, false_case) => {
-            codegen_if_statement(allocator, symboltable, cond, true_case, false_case)
+        // with else case
+        ast::StmtNode::If(cond, true_case, Some(false_case)) => {
+            codegen_if_statement_with_else(allocator, symboltable, cond, true_case, false_case)
                 .map(|insts| vec![insts])
         }
+        // without else case
+        ast::StmtNode::If(cond, true_case, None) => {
+            codegen_if_statement_without_else(allocator, symboltable, cond, true_case)
+                .map(|insts| vec![insts])
+        }
+
         ast::StmtNode::While(cond, block) => {
             codegen_while_statement(allocator, symboltable, cond, block).map(|insts| vec![insts])
         }
@@ -130,29 +137,35 @@ fn codegen_statement(
     .map(|insts| insts.into_iter().flatten().collect())
 }
 
-fn codegen_if_statement(
+macro_rules! flattenable_instructions {
+    ($($instruction:expr,)*) => {
+        vec![
+            $(
+                $instruction,
+            )*
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    };
+}
+
+fn codegen_if_statement_with_else(
     allocator: &mut GPRegisterAllocator,
     symboltable: &mut SymbolTable,
     cond: crate::ast::ExprNode,
     true_case: crate::ast::CompoundStmts,
-    false_case: Option<crate::ast::CompoundStmts>,
+    false_case: crate::ast::CompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     allocator.allocate_then(|allocator, ret_val| {
         let cond_ctx = codegen_expr(allocator, ret_val, cond);
         let exit_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
         let true_case_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
         let tctx = codegen_statements(allocator, symboltable, true_case)?;
+        let else_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+        let block_ctx = codegen_statements(allocator, symboltable, false_case)?;
 
-        let (block_ctx, else_block_id) = if let Some(false_case_stmts) = false_case {
-            let false_case_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-            let fctx = codegen_statements(allocator, symboltable, false_case_stmts)?;
-
-            (fctx, false_case_block_id)
-        } else {
-            (vec![], exit_block_id)
-        };
-
-        Ok(vec![
+        Ok(flattenable_instructions!(
             cond_ctx,
             codegen_compare_and_jmp(allocator, ret_val, true_case_block_id, else_block_id),
             codegen_label(true_case_block_id),
@@ -161,10 +174,29 @@ fn codegen_if_statement(
             codegen_label(else_block_id),
             block_ctx,
             codegen_label(exit_block_id),
-        ]
-        .into_iter()
-        .flatten()
-        .collect())
+        ))
+    })
+}
+
+fn codegen_if_statement_without_else(
+    allocator: &mut GPRegisterAllocator,
+    symboltable: &mut SymbolTable,
+    cond: crate::ast::ExprNode,
+    true_case: crate::ast::CompoundStmts,
+) -> Result<Vec<String>, codegen::CodeGenerationErr> {
+    allocator.allocate_then(|allocator, ret_val| {
+        let cond_ctx = codegen_expr(allocator, ret_val, cond);
+        let exit_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+        let true_case_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+        let tctx = codegen_statements(allocator, symboltable, true_case)?;
+
+        Ok(flattenable_instructions!(
+            cond_ctx,
+            codegen_compare_and_jmp(allocator, ret_val, true_case_block_id, exit_block_id),
+            codegen_label(true_case_block_id),
+            tctx,
+            codegen_label(exit_block_id),
+        ))
     })
 }
 
@@ -181,7 +213,7 @@ fn codegen_while_statement(
         let loop_end_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
         let block_insts = codegen_statements(allocator, symboltable, block)?;
 
-        Ok(vec![
+        Ok(flattenable_instructions!(
             codegen_label(loop_cond_block_id),
             cond_ctx,
             codegen_compare_and_jmp(allocator, ret_val, loop_start_block_id, loop_end_block_id),
@@ -189,10 +221,7 @@ fn codegen_while_statement(
             block_insts,
             codegen_jump(loop_cond_block_id),
             codegen_label(loop_end_block_id),
-        ]
-        .into_iter()
-        .flatten()
-        .collect())
+        ))
     })
 }
 
@@ -213,7 +242,7 @@ fn codegen_for_statement(
         let loop_end_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
         let block_insts = codegen_statements(allocator, symboltable, block)?;
 
-        Ok(vec![
+        Ok(flattenable_instructions!(
             preop_ctx,
             codegen_label(loop_cond_block_id),
             cond_ctx,
@@ -223,10 +252,7 @@ fn codegen_for_statement(
             postop_ctx,
             codegen_jump(loop_cond_block_id),
             codegen_label(loop_end_block_id),
-        ]
-        .into_iter()
-        .flatten()
-        .collect())
+        ))
     })
 }
 
@@ -364,7 +390,7 @@ fn codegen_subtraction(
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
         let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
 
-        vec![
+        flattenable_instructions!(
             lhs_ctx,
             rhs_ctx,
             vec![format!(
@@ -373,10 +399,7 @@ fn codegen_subtraction(
                 ret_val,
                 rhs_retval
             )],
-        ]
-        .into_iter()
-        .flatten()
-        .collect()
+        )
     })
 }
 
@@ -390,7 +413,7 @@ fn codegen_multiplication(
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
         let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
 
-        vec![
+        flattenable_instructions!(
             lhs_ctx,
             rhs_ctx,
             vec![format!(
@@ -399,10 +422,7 @@ fn codegen_multiplication(
                 lhs_retval,
                 ret_val
             )],
-        ]
-        .into_iter()
-        .flatten()
-        .collect()
+        )
     })
 }
 
@@ -416,7 +436,8 @@ fn codegen_division(
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
         let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
         let operand_suffix = ret_val.operator_suffix();
-        vec![
+
+        flattenable_instructions!(
             lhs_ctx,
             rhs_ctx,
             vec![
@@ -425,10 +446,7 @@ fn codegen_division(
                 format!("\tidiv{}\t{}\n", operand_suffix, rhs_retval),
                 format!("\tmov{}\t%rax,{}\n", operand_suffix, ret_val),
             ],
-        ]
-        .into_iter()
-        .flatten()
-        .collect()
+        )
     })
 }
 
@@ -464,7 +482,7 @@ fn codegen_compare_and_set(
 
         let operand_suffix = ret_val.operator_suffix();
 
-        vec![
+        flattenable_instructions!(
             lhs_ctx,
             rhs_ctx,
             vec![
@@ -476,10 +494,7 @@ fn codegen_compare_and_set(
                 ),
                 format!("\tandq\t$255,{}\n", ret_val),
             ],
-        ]
-        .into_iter()
-        .flatten()
-        .collect()
+        )
     })
 }
 
