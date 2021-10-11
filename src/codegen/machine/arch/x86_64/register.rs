@@ -1,7 +1,7 @@
 use crate::codegen::register::{AddressWidth, Register};
+use std::sync::mpsc;
 
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)]
 pub enum SizedGeneralPurpose {
     QuadWord(&'static str),
     DoubleWord(&'static str),
@@ -57,15 +57,46 @@ impl std::fmt::Display for SizedGeneralPurpose {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
+struct RegisterAllocationGuard {
+    free_channel: std::sync::mpsc::Sender<SizedGeneralPurpose>,
+    reg: SizedGeneralPurpose,
+}
+
+impl RegisterAllocationGuard {
+    fn new(
+        free_channel: std::sync::mpsc::Sender<SizedGeneralPurpose>,
+        reg: SizedGeneralPurpose,
+    ) -> Self {
+        Self { free_channel, reg }
+    }
+}
+
+impl std::ops::Drop for RegisterAllocationGuard {
+    fn drop(&mut self) {
+        self.free_channel
+            .send(self.reg)
+            .expect("register allocation guard outlives allocator");
+    }
+}
+
+#[derive(Debug)]
 pub struct GPRegisterAllocator {
+    sender: mpsc::SyncSender<SizedGeneralPurpose>,
+    recv: mpsc::Receiver<SizedGeneralPurpose>,
     registers: Vec<SizedGeneralPurpose>,
 }
 
 impl GPRegisterAllocator {
     #[allow(dead_code)]
     pub fn new(registers: Vec<SizedGeneralPurpose>) -> Self {
-        Self { registers }
+        let (sender, recv) = mpsc::sync_channel(1);
+
+        Self {
+            sender,
+            recv,
+            registers,
+        }
     }
 
     /// Allocates a register for the duration of the life of closure.
@@ -86,7 +117,11 @@ impl GPRegisterAllocator {
 
 impl Default for GPRegisterAllocator {
     fn default() -> Self {
+        let (sender, recv) = mpsc::sync_channel(1);
+
         Self {
+            sender,
+            recv,
             registers: vec![
                 SizedGeneralPurpose::QuadWord("r8"),
                 SizedGeneralPurpose::QuadWord("r9"),
