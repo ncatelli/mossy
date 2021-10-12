@@ -11,8 +11,8 @@ pub enum ParseErr {
 
 /// parse expects a character slice as input and attempts to parse a valid
 /// expression, returning a parse error if it is invalid.
-pub fn parse(input: &[(usize, char)]) -> Result<CompoundStmts, ParseErr> {
-    compound_statements()
+pub fn parse(input: &[(usize, char)]) -> Result<Vec<FunctionDeclaration>, ParseErr> {
+    parcel::one_or_more(function_declaration())
         .parse(input)
         .map_err(ParseErr::UnexpectedToken)
         .and_then(|ms| match ms {
@@ -25,6 +25,20 @@ pub fn parse(input: &[(usize, char)]) -> Result<CompoundStmts, ParseErr> {
                 Err(ParseErr::Unspecified("not a valid expression".to_string()))
             }
         })
+}
+
+fn function_declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionDeclaration> {
+    parcel::join(
+        parcel::right(parcel::join(
+            whitespace_wrapped(expect_str("void")),
+            whitespace_wrapped(identifier()),
+        )),
+        parcel::right(parcel::join(
+            expect_character('(').and_then(|_| whitespace_wrapped(expect_character(')'))),
+            compound_statements(),
+        )),
+    )
+    .map(|(id, block)| FunctionDeclaration::new(id, block))
 }
 
 fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], CompoundStmts> {
@@ -380,7 +394,12 @@ mod tests {
     use crate::ast::*;
     #[test]
     fn should_parse_complex_expression() {
+        use parcel::Parser;
+
         let input: Vec<(usize, char)> = "{ 13 - 6 + 4 * 5 + 8 / 3; }".chars().enumerate().collect();
+        let res = crate::parser::compound_statements()
+            .parse(&input)
+            .map(|ms| ms.unwrap());
 
         assert_eq!(
             Ok(CompoundStmts::new(vec![StmtNode::Expression(term_expr!(
@@ -392,7 +411,7 @@ mod tests {
                 '+',
                 factor_expr!(primary_expr!(8), '/', primary_expr!(3))
             ))])),
-            crate::parser::parse(&input)
+            res
         )
     }
 }

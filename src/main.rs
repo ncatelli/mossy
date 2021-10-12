@@ -112,17 +112,19 @@ fn compile(source: &str) -> RuntimeResult<String> {
     let mut symbol_table = x86_64::SymbolTable::default();
 
     parser::parse(&input)
-        .map(|ast_node| x86_64::X86_64.generate(&mut symbol_table, ast_node))
+        .map(|ast_nodes| {
+            ast_nodes
+                .into_iter()
+                .map(|ast_node| x86_64::X86_64.generate(&mut symbol_table, ast_node))
+                .collect::<Result<Vec<Vec<String>>, _>>()
+        })
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
+        .map(|insts| insts.into_iter().flatten().collect())
         .map(|insts| {
-            vec![
-                x86_64::codegen_preamble(),
-                insts,
-                x86_64::codegen_postamble(),
-            ]
-            .into_iter()
-            .flatten()
-            .collect()
+            vec![x86_64::codegen_preamble(), insts]
+                .into_iter()
+                .flatten()
+                .collect()
         })
         .map(|insts: Vec<String>| insts.into_iter().collect::<String>())
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))
