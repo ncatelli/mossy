@@ -124,8 +124,7 @@ fn compile(source: &str) -> RuntimeResult<String> {
             vec![x86_64::codegen_preamble(), insts]
                 .into_iter()
                 .flatten()
-                .collect()
+                .collect::<String>()
         })
-        .map(|insts: Vec<String>| insts.into_iter().collect::<String>())
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))
 }
