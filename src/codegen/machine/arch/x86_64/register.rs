@@ -1,6 +1,7 @@
 use crate::codegen::register::{AddressWidth, Register};
 use std::sync::mpsc;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub enum SizedGeneralPurpose {
     QuadWord(&'static str),
@@ -58,45 +59,59 @@ impl std::fmt::Display for SizedGeneralPurpose {
 }
 
 #[derive(Debug)]
-struct RegisterAllocationGuard {
-    free_channel: std::sync::mpsc::Sender<SizedGeneralPurpose>,
-    reg: SizedGeneralPurpose,
+struct RegisterAllocationGuard<T: Clone> {
+    free_channel: std::sync::mpsc::Sender<T>,
+    reg: T,
 }
 
-impl RegisterAllocationGuard {
-    fn new(
-        free_channel: std::sync::mpsc::Sender<SizedGeneralPurpose>,
-        reg: SizedGeneralPurpose,
-    ) -> Self {
+impl<T: Clone> RegisterAllocationGuard<T> {
+    fn new(free_channel: std::sync::mpsc::Sender<T>, reg: T) -> Self {
         Self { free_channel, reg }
+    }
+
+    #[allow(dead_code)]
+    fn borrow_inner(&self) -> &T {
+        &self.reg
+    }
+
+    fn borrow_inner_mut(&mut self) -> &mut T {
+        &mut self.reg
     }
 }
 
-impl std::ops::Drop for RegisterAllocationGuard {
+impl<T: Clone> std::ops::Drop for RegisterAllocationGuard<T> {
     fn drop(&mut self) {
         self.free_channel
-            .send(self.reg)
+            .send(self.reg.clone())
             .expect("register allocation guard outlives allocator");
     }
 }
 
 #[derive(Debug)]
 pub struct GPRegisterAllocator {
-    sender: mpsc::SyncSender<SizedGeneralPurpose>,
-    recv: mpsc::Receiver<SizedGeneralPurpose>,
-    registers: Vec<SizedGeneralPurpose>,
+    freed: mpsc::Sender<SizedGeneralPurpose>,
+    available: mpsc::Receiver<SizedGeneralPurpose>,
 }
 
 impl GPRegisterAllocator {
     #[allow(dead_code)]
     pub fn new(registers: Vec<SizedGeneralPurpose>) -> Self {
-        let (sender, recv) = mpsc::sync_channel(1);
+        let (freed, available_registers) = mpsc::channel();
+
+        for register in registers {
+            freed.send(register).expect("cannot seed channel.");
+        }
 
         Self {
-            sender,
-            recv,
-            registers,
+            freed,
+            available: available_registers,
         }
+    }
+
+    fn allocate(&mut self) -> Option<RegisterAllocationGuard<SizedGeneralPurpose>> {
+        let reg = self.available.try_recv().ok()?;
+
+        Some(RegisterAllocationGuard::new(self.freed.clone(), reg))
     }
 
     /// Allocates a register for the duration of the life of closure.
@@ -104,35 +119,27 @@ impl GPRegisterAllocator {
     where
         F: FnOnce(&mut Self, &mut SizedGeneralPurpose) -> R,
     {
-        self.registers
-            .pop()
-            .map(|mut reg| {
-                let ret_val = f(self, &mut reg);
-                self.registers.push(reg);
+        self.allocate()
+            .map(|mut guard| {
+                let ret_val = f(self, guard.borrow_inner_mut());
                 ret_val
             })
-            .unwrap()
+            .expect("unable to allocate register")
     }
 }
 
 impl Default for GPRegisterAllocator {
     fn default() -> Self {
-        let (sender, recv) = mpsc::sync_channel(1);
-
-        Self {
-            sender,
-            recv,
-            registers: vec![
-                SizedGeneralPurpose::QuadWord("r8"),
-                SizedGeneralPurpose::QuadWord("r9"),
-                SizedGeneralPurpose::QuadWord("r10"),
-                SizedGeneralPurpose::QuadWord("r11"),
-                SizedGeneralPurpose::QuadWord("r12"),
-                SizedGeneralPurpose::QuadWord("r13"),
-                SizedGeneralPurpose::QuadWord("r14"),
-                SizedGeneralPurpose::QuadWord("r15"),
-            ],
-        }
+        Self::new(vec![
+            SizedGeneralPurpose::QuadWord("r15"),
+            SizedGeneralPurpose::QuadWord("r14"),
+            SizedGeneralPurpose::QuadWord("r13"),
+            SizedGeneralPurpose::QuadWord("r12"),
+            SizedGeneralPurpose::QuadWord("r11"),
+            SizedGeneralPurpose::QuadWord("r10"),
+            SizedGeneralPurpose::QuadWord("r9"),
+            SizedGeneralPurpose::QuadWord("r8"),
+        ])
     }
 }
 
@@ -154,13 +161,17 @@ mod tests {
     #[test]
     fn should_free_allocations_on_scope_exit() {
         let mut allocator = x86_64::GPRegisterAllocator::default();
-        let initial_len = allocator.registers.len();
+        let mut guards = Vec::new();
 
-        // allocator pool should decrease by 1 while allocated in scope.
-        allocator
-            .allocate_then(|allocator, _| assert_eq!(initial_len - 1, allocator.registers.len()));
+        for _ in 0..9 {
+            guards.push(allocator.allocate());
+        }
 
-        // register should be freed on scope exit.
-        assert_eq!(initial_len, allocator.registers.len());
+        // pool should be empty
+        assert!(allocator.allocate().is_none());
+
+        // should free up register leases.
+        drop(guards);
+        assert!(allocator.allocate().is_some());
     }
 }
