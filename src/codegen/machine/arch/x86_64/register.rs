@@ -59,30 +59,33 @@ impl std::fmt::Display for SizedGeneralPurpose {
 }
 
 #[derive(Debug)]
-struct RegisterAllocationGuard<T: Clone> {
-    free_channel: std::sync::mpsc::Sender<T>,
-    reg: T,
+struct RegisterAllocationGuard {
+    free_channel: std::sync::mpsc::Sender<SizedGeneralPurpose>,
+    reg: SizedGeneralPurpose,
 }
 
-impl<T: Clone> RegisterAllocationGuard<T> {
-    fn new(free_channel: std::sync::mpsc::Sender<T>, reg: T) -> Self {
+impl RegisterAllocationGuard {
+    fn new(
+        free_channel: std::sync::mpsc::Sender<SizedGeneralPurpose>,
+        reg: SizedGeneralPurpose,
+    ) -> Self {
         Self { free_channel, reg }
     }
 
     #[allow(dead_code)]
-    fn borrow_inner(&self) -> &T {
+    fn borrow_inner(&self) -> &SizedGeneralPurpose {
         &self.reg
     }
 
-    fn borrow_inner_mut(&mut self) -> &mut T {
+    fn borrow_inner_mut(&mut self) -> &mut SizedGeneralPurpose {
         &mut self.reg
     }
 }
 
-impl<T: Clone> std::ops::Drop for RegisterAllocationGuard<T> {
+impl std::ops::Drop for RegisterAllocationGuard {
     fn drop(&mut self) {
         self.free_channel
-            .send(self.reg.clone())
+            .send(self.reg)
             .expect("register allocation guard outlives allocator");
     }
 }
@@ -108,7 +111,7 @@ impl GPRegisterAllocator {
         }
     }
 
-    fn allocate(&mut self) -> Option<RegisterAllocationGuard<SizedGeneralPurpose>> {
+    fn allocate(&mut self) -> Option<RegisterAllocationGuard> {
         let reg = self.available.try_recv().ok()?;
 
         Some(RegisterAllocationGuard::new(self.freed.clone(), reg))
