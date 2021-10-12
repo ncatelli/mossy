@@ -4,6 +4,12 @@ An (irresponsibly) experimental C compiler for the first-principles of computing
 ## Grammar
 ```
 
+program: function_declaration*
+        ;
+
+function_declaration: 'void' identifier '(' ')' compound_statement
+        ;
+
 compound_statement: '{' '}'
         |    '{' statement* '}'
         ;
