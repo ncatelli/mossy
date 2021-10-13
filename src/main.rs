@@ -42,6 +42,54 @@ impl fmt::Display for RuntimeError {
     }
 }
 
+fn read_src_file(filename: &str) -> RuntimeResult<String> {
+    let mut f = File::open(filename).map_err(|_| RuntimeError::FileUnreadable)?;
+
+    let mut contents = String::new();
+    match f.read_to_string(&mut contents) {
+        Ok(_) => Ok(contents),
+        Err(e) => Err(RuntimeError::Undefined(e.to_string())),
+    }
+}
+
+fn write_dest_file(filename: &str, data: &[u8]) -> RuntimeResult<()> {
+    let mut f = OpenOptions::new()
+        .truncate(true)
+        .create(true)
+        .write(true)
+        .open(filename)
+        .map_err(|_| RuntimeError::FileUnreadable)?;
+
+    match f.write_all(data) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(RuntimeError::Undefined(e.to_string())),
+    }
+}
+
+fn compile(source: &str) -> RuntimeResult<String> {
+    use mossy::codegen::machine::arch::x86_64;
+    use mossy::codegen::{CodeGenerationErr, CodeGenerator};
+    let input: Vec<(usize, char)> = source.chars().enumerate().collect();
+    let mut symbol_table = x86_64::SymbolTable::default();
+
+    parser::parse(&input)
+        .map(|ast_nodes| {
+            ast_nodes
+                .into_iter()
+                .map(|ast_node| x86_64::X86_64.generate(&mut symbol_table, ast_node))
+                .collect::<Result<Vec<Vec<String>>, CodeGenerationErr>>()
+        })
+        .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
+        .map(|insts| {
+            vec![x86_64::codegen_preamble()]
+                .into_iter()
+                .chain(insts.into_iter())
+                .flatten()
+                .collect::<String>()
+        })
+        .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))
+}
+
 fn main() {
     let raw_args: Vec<String> = env::args().into_iter().collect::<Vec<String>>();
     let args = raw_args.iter().map(|a| a.as_str()).collect::<Vec<&str>>();
@@ -79,52 +127,4 @@ fn main() {
             std::process::exit(e.exit_code())
         }
     }
-}
-
-fn read_src_file(filename: &str) -> RuntimeResult<String> {
-    let mut f = File::open(filename).map_err(|_| RuntimeError::FileUnreadable)?;
-
-    let mut contents = String::new();
-    match f.read_to_string(&mut contents) {
-        Ok(_) => Ok(contents),
-        Err(e) => Err(RuntimeError::Undefined(e.to_string())),
-    }
-}
-
-fn write_dest_file(filename: &str, data: &[u8]) -> RuntimeResult<()> {
-    let mut f = OpenOptions::new()
-        .truncate(true)
-        .create(true)
-        .write(true)
-        .open(filename)
-        .map_err(|_| RuntimeError::FileUnreadable)?;
-
-    match f.write_all(data) {
-        Ok(_) => Ok(()),
-        Err(e) => Err(RuntimeError::Undefined(e.to_string())),
-    }
-}
-
-fn compile(source: &str) -> RuntimeResult<String> {
-    use mossy::codegen::machine::arch::x86_64;
-    use mossy::codegen::CodeGenerator;
-    let input: Vec<(usize, char)> = source.chars().enumerate().collect();
-    let mut symbol_table = x86_64::SymbolTable::default();
-
-    parser::parse(&input)
-        .map(|ast_nodes| {
-            ast_nodes
-                .into_iter()
-                .map(|ast_node| x86_64::X86_64.generate(&mut symbol_table, ast_node))
-                .collect::<Result<Vec<Vec<String>>, _>>()
-        })
-        .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
-        .map(|insts| insts.into_iter().flatten().collect())
-        .map(|insts| {
-            vec![x86_64::codegen_preamble(), insts]
-                .into_iter()
-                .flatten()
-                .collect::<String>()
-        })
-        .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))
 }
