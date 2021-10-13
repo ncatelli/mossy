@@ -49,23 +49,33 @@ printint:
     call	printf@PLT
     nop
     leave
-    ret
-	
-    .globl  main
-    .type   main, @function
-main:
-    pushq   %rbp
-    movq	%rsp, %rbp\n";
-
-/// Defines a constant postamble to be appended to any compiled binaries.
-pub const CG_POSTAMBLE: &str = "\tmovl	$0, %eax
-    popq	%rbp
-    ret\n";
+    ret\n\n";
 
 use crate::ast;
 use crate::codegen;
 use crate::codegen::machine;
 use crate::codegen::CodeGenerator;
+
+impl CodeGenerator<SymbolTable, ast::FunctionDeclaration> for X86_64 {
+    fn generate(
+        &self,
+        symboltable: &mut SymbolTable,
+        input: ast::FunctionDeclaration,
+    ) -> Result<Vec<String>, CodeGenerationErr> {
+        let mut allocator = GPRegisterAllocator::default();
+        let (id, block) = (input.id, input.block);
+
+        codegen_statements(&mut allocator, symboltable, block)
+            .map(|block| {
+                vec![
+                    codegen_function_preamble(id),
+                    block,
+                    codegen_function_postamble(),
+                ]
+            })
+            .map(|output| output.into_iter().flatten().collect())
+    }
+}
 
 impl CodeGenerator<SymbolTable, ast::CompoundStmts> for X86_64 {
     fn generate(
@@ -97,8 +107,12 @@ fn codegen_statement(
     input: ast::StmtNode,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     match input {
-        ast::StmtNode::Expression(expr) => allocator
-            .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
+        ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
+            Ok(vec![
+                codegen_expr(allocator, ret_val, expr),
+                codegen_printint(ret_val),
+            ])
+        }),
         ast::StmtNode::Declaration(identifier) => {
             symboltable.declare_global(&identifier);
             Ok(vec![codegen_global_symbol(&identifier)])
@@ -261,9 +275,24 @@ pub fn codegen_preamble() -> Vec<String> {
     vec![String::from(machine::arch::x86_64::CG_PREAMBLE)]
 }
 
-/// Returns a vector-wrapped binary postamble
-pub fn codegen_postamble() -> Vec<String> {
-    vec![String::from(machine::arch::x86_64::CG_POSTAMBLE)]
+pub fn codegen_function_preamble(identifier: String) -> Vec<String> {
+    vec![format!(
+        "\t.text
+    .globl  {name}
+    .type   {name}, @function
+{name}:
+    pushq   %rbp
+    movq	%rsp, %rbp\n",
+        name = identifier
+    )]
+}
+
+pub fn codegen_function_postamble() -> Vec<String> {
+    vec![String::from(
+        "\tmovl $0, %eax
+    popq     %rbp
+    ret\n\n",
+    )]
 }
 
 fn codegen_global_symbol(identifier: &str) -> Vec<String> {

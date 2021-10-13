@@ -1,6 +1,18 @@
 pub type Span = std::ops::Range<usize>;
 
 #[derive(PartialEq, Debug, Clone)]
+pub struct FunctionDeclaration {
+    pub id: String,
+    pub block: CompoundStmts,
+}
+
+impl FunctionDeclaration {
+    pub fn new(id: String, block: CompoundStmts) -> Self {
+        Self { id, block }
+    }
+}
+
+#[derive(PartialEq, Debug, Clone)]
 pub struct CompoundStmts {
     inner: Vec<StmtNode>,
 }
