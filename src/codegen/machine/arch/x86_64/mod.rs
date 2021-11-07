@@ -116,12 +116,8 @@ fn codegen_statement(
     input: ast::StmtNode,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     match input {
-        ast::StmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
-            Ok(vec![
-                codegen_expr(allocator, ret_val, expr),
-                codegen_printint(ret_val),
-            ])
-        }),
+        ast::StmtNode::Expression(expr) => allocator
+            .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
         ast::StmtNode::Declaration(kind, identifier) => {
             symboltable.declare_global(kind, &identifier);
             Ok(vec![codegen_global_symbol(kind, &identifier)])
@@ -305,12 +301,12 @@ pub fn codegen_function_postamble() -> Vec<String> {
 }
 
 fn codegen_global_symbol(kind: Kind, identifier: &str) -> Vec<String> {
+    const ALIGNMENT: usize = 16;
     let reserve_bytes = kind.size();
-    let alignment = 8;
 
     vec![format!(
         "\t.comm\t{},{},{}\n",
-        identifier, reserve_bytes, alignment
+        identifier, reserve_bytes, ALIGNMENT
     )]
 }
 
