@@ -74,11 +74,11 @@ where
 }
 
 fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    parcel::right(parcel::join(
-        whitespace_wrapped(expect_str("int")),
+    parcel::join(
+        whitespace_wrapped(expect_str("int")).map(|_| Kind::Int8),
         whitespace_wrapped(identifier()),
-    ))
-    .map(StmtNode::Declaration)
+    )
+    .map(|(kind, id)| StmtNode::Declaration(kind, id))
 }
 
 fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {

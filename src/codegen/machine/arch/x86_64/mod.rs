@@ -1,6 +1,9 @@
 use crate::codegen::machine::arch::TargetArchitecture;
 use crate::codegen::register::Register;
-use crate::{ast::ExprNode, codegen::CodeGenerationErr};
+use crate::{
+    ast::{ByteSized, ExprNode, Kind},
+    codegen::CodeGenerationErr,
+};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 static BLOCK_ID: AtomicUsize = AtomicUsize::new(0);
@@ -17,19 +20,25 @@ impl TargetArchitecture for X86_64 {}
 /// declared. For the time being, this only tracks global symbols.
 #[derive(Default, Debug, Clone)]
 pub struct SymbolTable {
-    globals: std::collections::HashSet<String>,
+    globals: std::collections::HashMap<String, Kind>,
 }
 
 impl SymbolTable {
     /// Marks a global variable as having been declared.
-    pub fn declare_global(&mut self, identifier: &str) {
-        self.globals.insert(identifier.to_string());
+    pub fn declare_global(&mut self, kind: Kind, identifier: &str) {
+        self.globals.insert(identifier.to_string(), kind);
+    }
+
+    /// Returns a boolean representing if a global variable has already been
+    /// declared.
+    pub fn has_global(&mut self, identifier: &str) -> bool {
+        self.globals.contains_key(identifier)
     }
 
     /// Returns a boolian representing if a global variable has already been
     /// declared.
-    pub fn has_global(&mut self, identifier: &str) -> bool {
-        self.globals.contains(identifier)
+    pub fn kind_of(&mut self, identifier: &str) -> Option<&Kind> {
+        self.globals.get(identifier)
     }
 }
 
@@ -113,9 +122,9 @@ fn codegen_statement(
                 codegen_printint(ret_val),
             ])
         }),
-        ast::StmtNode::Declaration(identifier) => {
-            symboltable.declare_global(&identifier);
-            Ok(vec![codegen_global_symbol(&identifier)])
+        ast::StmtNode::Declaration(kind, identifier) => {
+            symboltable.declare_global(kind, &identifier);
+            Ok(vec![codegen_global_symbol(kind, &identifier)])
         }
         ast::StmtNode::Assignment(identifier, expr) => symboltable
             .has_global(&identifier)
@@ -295,8 +304,14 @@ pub fn codegen_function_postamble() -> Vec<String> {
     )]
 }
 
-fn codegen_global_symbol(identifier: &str) -> Vec<String> {
-    vec![format!("\t.comm\t{},1,8\n", identifier)]
+fn codegen_global_symbol(kind: Kind, identifier: &str) -> Vec<String> {
+    let reserve_bytes = kind.size();
+    let alignment = 8;
+
+    vec![format!(
+        "\t.comm\t{},{},{}\n",
+        identifier, reserve_bytes, alignment
+    )]
 }
 
 fn codegen_store_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {

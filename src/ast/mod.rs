@@ -34,7 +34,7 @@ impl From<CompoundStmts> for Vec<StmtNode> {
 pub enum StmtNode {
     /// Declaration represents a global declaration statement with the
     /// enclosed string representing the Id of the variable.
-    Declaration(String),
+    Declaration(Kind, String),
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.
     Assignment(String, ExprNode),
@@ -81,5 +81,27 @@ pub struct Uint8(pub u8);
 impl std::fmt::Display for Uint8 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+/// Represents an object that contains a representable size in bytes.
+pub trait ByteSized {
+    fn size(&self) -> usize;
+}
+
+/// Represents valid primitive types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    Int8,
+    Char,
+    Void,
+}
+
+impl ByteSized for Kind {
+    fn size(&self) -> usize {
+        match self {
+            Kind::Int8 | Kind::Char => 1,
+            Kind::Void => 0,
+        }
     }
 }
