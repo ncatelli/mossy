@@ -50,28 +50,38 @@ pub enum StmtNode {
 /// Represents a single expression in the ast.
 #[derive(PartialEq, Debug, Clone)]
 pub enum ExprNode {
-    Primary(Primary),
+    Primary(Kind, Primary),
 
     // Comparative
-    Equal(Box<ExprNode>, Box<ExprNode>),
-    NotEqual(Box<ExprNode>, Box<ExprNode>),
-    LessThan(Box<ExprNode>, Box<ExprNode>),
-    GreaterThan(Box<ExprNode>, Box<ExprNode>),
-    LessEqual(Box<ExprNode>, Box<ExprNode>),
-    GreaterEqual(Box<ExprNode>, Box<ExprNode>),
+    Equal(Kind, Box<ExprNode>, Box<ExprNode>),
+    NotEqual(Kind, Box<ExprNode>, Box<ExprNode>),
+    LessThan(Kind, Box<ExprNode>, Box<ExprNode>),
+    GreaterThan(Kind, Box<ExprNode>, Box<ExprNode>),
+    LessEqual(Kind, Box<ExprNode>, Box<ExprNode>),
+    GreaterEqual(Kind, Box<ExprNode>, Box<ExprNode>),
 
     // Arithmetic
-    Subtraction(Box<ExprNode>, Box<ExprNode>),
-    Division(Box<ExprNode>, Box<ExprNode>),
-    Addition(Box<ExprNode>, Box<ExprNode>),
-    Multiplication(Box<ExprNode>, Box<ExprNode>),
+    Subtraction(Kind, Box<ExprNode>, Box<ExprNode>),
+    Division(Kind, Box<ExprNode>, Box<ExprNode>),
+    Addition(Kind, Box<ExprNode>, Box<ExprNode>),
+    Multiplication(Kind, Box<ExprNode>, Box<ExprNode>),
 }
 
 /// Primary represents a primitive type within the ast.
 #[derive(PartialEq, Debug, Clone)]
 pub enum Primary {
     Uint8(Uint8),
-    Identifier(String),
+    Identifier(Option<Kind>, String),
+}
+
+impl Kinded for Primary {
+    fn kind(&self) -> Kind {
+        match self {
+            Primary::Uint8(_) => Kind::Uint8,
+            Primary::Identifier(Some(kind), _) => *kind,
+            Primary::Identifier(None, id) => panic!("unidentified variable: {}", id),
+        }
+    }
 }
 
 /// represents an 8-bit unsigned integer.
@@ -84,15 +94,32 @@ impl std::fmt::Display for Uint8 {
     }
 }
 
+impl Kinded for Uint8 {
+    fn kind(&self) -> Kind {
+        Kind::Uint8
+    }
+}
+
 /// Represents an object that contains a representable size in bytes.
 pub trait ByteSized {
     fn size(&self) -> usize;
 }
 
+pub enum CompatibilityResult {
+    Equivalent,
+    WidenTo(Kind),
+    Incompatible,
+}
+
+/// Represents an object that contains a representable size in bytes.
+pub trait Kinded {
+    fn kind(&self) -> Kind;
+}
+
 /// Represents valid primitive types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
-    Int8,
+    Uint8,
     Char,
     Void,
 }
@@ -100,8 +127,17 @@ pub enum Kind {
 impl ByteSized for Kind {
     fn size(&self) -> usize {
         match self {
-            Kind::Int8 | Kind::Char => 1,
+            Kind::Uint8 | Kind::Char => 1,
             Kind::Void => 0,
         }
+    }
+}
+
+pub(crate) fn type_compatible(left: Kind, right: Kind, flow_left: bool) -> CompatibilityResult {
+    match (left, right) {
+        _ if left == right => CompatibilityResult::Equivalent,
+        (Kind::Uint8, Kind::Char) => CompatibilityResult::WidenTo(Kind::Uint8),
+        (Kind::Char, Kind::Uint8) if !flow_left => CompatibilityResult::WidenTo(Kind::Uint8),
+        _ => CompatibilityResult::Incompatible,
     }
 }

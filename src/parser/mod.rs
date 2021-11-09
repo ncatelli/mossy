@@ -75,7 +75,7 @@ where
 
 fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     parcel::join(
-        whitespace_wrapped(expect_str("int")).map(|_| Kind::Int8),
+        whitespace_wrapped(expect_str("int")).map(|_| Kind::Uint8),
         whitespace_wrapped(identifier()),
     )
     .map(|(kind, id)| StmtNode::Declaration(kind, id))
@@ -171,9 +171,21 @@ fn equality<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
         operators
             .into_iter()
             .zip(operands.into_iter())
-            .fold(first_expr, |lhs, (operator, rhs)| match operator {
-                EqualityExprOp::Equal => ExprNode::Equal(Box::new(lhs), Box::new(rhs)),
-                EqualityExprOp::NotEqual => ExprNode::NotEqual(Box::new(lhs), Box::new(rhs)),
+            .fold(first_expr, |lhs, (operator, rhs)| {
+                let (lhs_kind, rhs_kind) = (Kind::Uint8, Kind::Uint8);
+
+                let kind = match type_compatible(lhs_kind, rhs_kind, false) {
+                    CompatibilityResult::Equivalent => lhs_kind,
+                    CompatibilityResult::WidenTo(widen_to_kind) => widen_to_kind,
+                    CompatibilityResult::Incompatible => panic!("incompatible types"),
+                };
+
+                match operator {
+                    EqualityExprOp::Equal => ExprNode::Equal(kind, Box::new(lhs), Box::new(rhs)),
+                    EqualityExprOp::NotEqual => {
+                        ExprNode::NotEqual(kind, Box::new(lhs), Box::new(rhs))
+                    }
+                }
             })
     })
     .or(|| relational())
@@ -207,14 +219,28 @@ fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
         operators
             .into_iter()
             .zip(operands.into_iter())
-            .fold(first_expr, |lhs, (operator, rhs)| match operator {
-                RelationalExprOp::LessThan => ExprNode::LessThan(Box::new(lhs), Box::new(rhs)),
-                RelationalExprOp::LessEqual => ExprNode::LessEqual(Box::new(lhs), Box::new(rhs)),
-                RelationalExprOp::GreaterThan => {
-                    ExprNode::GreaterThan(Box::new(lhs), Box::new(rhs))
-                }
-                RelationalExprOp::GreaterEqual => {
-                    ExprNode::GreaterEqual(Box::new(lhs), Box::new(rhs))
+            .fold(first_expr, |lhs, (operator, rhs)| {
+                let (lhs_kind, rhs_kind) = (Kind::Uint8, Kind::Uint8);
+
+                let kind = match type_compatible(lhs_kind, rhs_kind, false) {
+                    CompatibilityResult::Equivalent => lhs_kind,
+                    CompatibilityResult::WidenTo(widen_to_kind) => widen_to_kind,
+                    CompatibilityResult::Incompatible => panic!("incompatible types"),
+                };
+
+                match operator {
+                    RelationalExprOp::LessThan => {
+                        ExprNode::LessThan(kind, Box::new(lhs), Box::new(rhs))
+                    }
+                    RelationalExprOp::LessEqual => {
+                        ExprNode::LessEqual(kind, Box::new(lhs), Box::new(rhs))
+                    }
+                    RelationalExprOp::GreaterThan => {
+                        ExprNode::GreaterThan(kind, Box::new(lhs), Box::new(rhs))
+                    }
+                    RelationalExprOp::GreaterEqual => {
+                        ExprNode::GreaterEqual(kind, Box::new(lhs), Box::new(rhs))
+                    }
                 }
             })
     })
@@ -245,9 +271,20 @@ fn addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
         operators
             .into_iter()
             .zip(operands.into_iter())
-            .fold(first_expr, |lhs, (operator, rhs)| match operator {
-                AdditionExprOp::Plus => ExprNode::Addition(Box::new(lhs), Box::new(rhs)),
-                AdditionExprOp::Minus => ExprNode::Subtraction(Box::new(lhs), Box::new(rhs)),
+            .fold(first_expr, |lhs, (operator, rhs)| {
+                let (lhs_kind, rhs_kind) = (Kind::Uint8, Kind::Uint8);
+
+                let kind = match type_compatible(lhs_kind, rhs_kind, false) {
+                    CompatibilityResult::Equivalent => lhs_kind,
+                    CompatibilityResult::WidenTo(widen_to_kind) => widen_to_kind,
+                    CompatibilityResult::Incompatible => panic!("incompatible types"),
+                };
+                match operator {
+                    AdditionExprOp::Plus => ExprNode::Addition(kind, Box::new(lhs), Box::new(rhs)),
+                    AdditionExprOp::Minus => {
+                        ExprNode::Subtraction(kind, Box::new(lhs), Box::new(rhs))
+                    }
+                }
             })
     })
     .or(|| multiplication())
@@ -277,11 +314,23 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
         operators
             .into_iter()
             .zip(operands.into_iter())
-            .fold(first_expr, |lhs, (operator, rhs)| match operator {
-                MultiplicationExprOp::Star => {
-                    ExprNode::Multiplication(Box::new(lhs), Box::new(rhs))
+            .fold(first_expr, |lhs, (operator, rhs)| {
+                let (lhs_kind, rhs_kind) = (Kind::Uint8, Kind::Uint8);
+
+                let kind = match type_compatible(lhs_kind, rhs_kind, false) {
+                    CompatibilityResult::Equivalent => lhs_kind,
+                    CompatibilityResult::WidenTo(widen_to_kind) => widen_to_kind,
+                    CompatibilityResult::Incompatible => panic!("incompatible types"),
+                };
+
+                match operator {
+                    MultiplicationExprOp::Star => {
+                        ExprNode::Multiplication(kind, Box::new(lhs), Box::new(rhs))
+                    }
+                    MultiplicationExprOp::Slash => {
+                        ExprNode::Division(kind, Box::new(lhs), Box::new(rhs))
+                    }
                 }
-                MultiplicationExprOp::Slash => ExprNode::Division(Box::new(lhs), Box::new(rhs)),
             })
     })
     .or(|| primary())
@@ -290,8 +339,8 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
 #[allow(clippy::redundant_closure)]
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     identifier()
-        .map(|id| ExprNode::Primary(Primary::Identifier(id)))
-        .or(|| number().map(|num| ExprNode::Primary(Primary::Uint8(num))))
+        .map(|id| ExprNode::Primary(Kind::Uint8, Primary::Identifier(Some(Kind::Uint8), id)))
+        .or(|| number().map(|num| ExprNode::Primary(Kind::Uint8, Primary::Uint8(num))))
 }
 
 #[allow(clippy::redundant_closure)]
@@ -369,25 +418,41 @@ fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
 mod tests {
     macro_rules! term_expr {
         ($lhs:expr, '+', $rhs:expr) => {
-            $crate::ast::ExprNode::Addition(Box::new($lhs), Box::new($rhs))
+            $crate::ast::ExprNode::Addition(
+                $crate::ast::Kind::Uint8,
+                Box::new($lhs),
+                Box::new($rhs),
+            )
         };
         ($lhs:expr, '-', $rhs:expr) => {
-            $crate::ast::ExprNode::Subtraction(Box::new($lhs), Box::new($rhs))
+            $crate::ast::ExprNode::Subtraction(
+                $crate::ast::Kind::Uint8,
+                Box::new($lhs),
+                Box::new($rhs),
+            )
         };
     }
 
     macro_rules! factor_expr {
         ($lhs:expr, '*', $rhs:expr) => {
-            $crate::ast::ExprNode::Multiplication(Box::new($lhs), Box::new($rhs))
+            $crate::ast::ExprNode::Multiplication(
+                $crate::ast::Kind::Uint8,
+                Box::new($lhs),
+                Box::new($rhs),
+            )
         };
         ($lhs:expr, '/', $rhs:expr) => {
-            $crate::ast::ExprNode::Division(Box::new($lhs), Box::new($rhs))
+            $crate::ast::ExprNode::Division(
+                $crate::ast::Kind::Uint8,
+                Box::new($lhs),
+                Box::new($rhs),
+            )
         };
     }
 
     macro_rules! primary_expr {
         ($value:expr) => {
-            $crate::ast::ExprNode::Primary(Primary::Uint8(Uint8($value)))
+            $crate::ast::ExprNode::Primary($crate::ast::Kind::Uint8, Primary::Uint8(Uint8($value)))
         };
     }
 

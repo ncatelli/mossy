@@ -346,31 +346,31 @@ fn codegen_expr(
     use crate::ast::Primary;
 
     match expr {
-        ExprNode::Primary(Primary::Uint8(ast::Uint8(uc))) => codegen_constant_u8(ret_val, uc),
-        ExprNode::Primary(Primary::Identifier(identifier)) => {
+        ExprNode::Primary(_, Primary::Uint8(ast::Uint8(uc))) => codegen_constant_u8(ret_val, uc),
+        ExprNode::Primary(_, Primary::Identifier(_, identifier)) => {
             codegen_load_global(ret_val, &identifier)
         }
 
-        ExprNode::Equal(lhs, rhs) => {
+        ExprNode::Equal(_, lhs, rhs) => {
             codegen_compare_and_set(allocator, ret_val, ComparisonOperation::Equal, lhs, rhs)
         }
-        ExprNode::NotEqual(lhs, rhs) => {
+        ExprNode::NotEqual(_, lhs, rhs) => {
             codegen_compare_and_set(allocator, ret_val, ComparisonOperation::NotEqual, lhs, rhs)
         }
-        ExprNode::LessThan(lhs, rhs) => {
+        ExprNode::LessThan(_, lhs, rhs) => {
             codegen_compare_and_set(allocator, ret_val, ComparisonOperation::LessThan, lhs, rhs)
         }
-        ExprNode::GreaterThan(lhs, rhs) => codegen_compare_and_set(
+        ExprNode::GreaterThan(_, lhs, rhs) => codegen_compare_and_set(
             allocator,
             ret_val,
             ComparisonOperation::GreaterThan,
             lhs,
             rhs,
         ),
-        ExprNode::LessEqual(lhs, rhs) => {
+        ExprNode::LessEqual(_, lhs, rhs) => {
             codegen_compare_and_set(allocator, ret_val, ComparisonOperation::LessEqual, lhs, rhs)
         }
-        ExprNode::GreaterEqual(lhs, rhs) => codegen_compare_and_set(
+        ExprNode::GreaterEqual(_, lhs, rhs) => codegen_compare_and_set(
             allocator,
             ret_val,
             ComparisonOperation::GreaterEqual,
@@ -378,10 +378,12 @@ fn codegen_expr(
             rhs,
         ),
 
-        ExprNode::Addition(lhs, rhs) => codegen_addition(allocator, ret_val, lhs, rhs),
-        ExprNode::Subtraction(lhs, rhs) => codegen_subtraction(allocator, ret_val, lhs, rhs),
-        ExprNode::Multiplication(lhs, rhs) => codegen_multiplication(allocator, ret_val, lhs, rhs),
-        ExprNode::Division(lhs, rhs) => codegen_division(allocator, ret_val, lhs, rhs),
+        ExprNode::Addition(_, lhs, rhs) => codegen_addition(allocator, ret_val, lhs, rhs),
+        ExprNode::Subtraction(_, lhs, rhs) => codegen_subtraction(allocator, ret_val, lhs, rhs),
+        ExprNode::Multiplication(_, lhs, rhs) => {
+            codegen_multiplication(allocator, ret_val, lhs, rhs)
+        }
+        ExprNode::Division(_, lhs, rhs) => codegen_division(allocator, ret_val, lhs, rhs),
     }
 }
 
