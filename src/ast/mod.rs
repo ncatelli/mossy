@@ -1,3 +1,5 @@
+pub mod kinded;
+
 pub type Span = std::ops::Range<usize>;
 
 #[derive(PartialEq, Debug, Clone)]
@@ -34,7 +36,7 @@ impl From<CompoundStmts> for Vec<StmtNode> {
 pub enum StmtNode {
     /// Declaration represents a global declaration statement with the
     /// enclosed string representing the Id of the variable.
-    Declaration(Kind, String),
+    Declaration(String),
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.
     Assignment(String, ExprNode),
@@ -50,38 +52,28 @@ pub enum StmtNode {
 /// Represents a single expression in the ast.
 #[derive(PartialEq, Debug, Clone)]
 pub enum ExprNode {
-    Primary(Kind, Primary),
+    Primary(Primary),
 
     // Comparative
-    Equal(Kind, Box<ExprNode>, Box<ExprNode>),
-    NotEqual(Kind, Box<ExprNode>, Box<ExprNode>),
-    LessThan(Kind, Box<ExprNode>, Box<ExprNode>),
-    GreaterThan(Kind, Box<ExprNode>, Box<ExprNode>),
-    LessEqual(Kind, Box<ExprNode>, Box<ExprNode>),
-    GreaterEqual(Kind, Box<ExprNode>, Box<ExprNode>),
+    Equal(Box<ExprNode>, Box<ExprNode>),
+    NotEqual(Box<ExprNode>, Box<ExprNode>),
+    LessThan(Box<ExprNode>, Box<ExprNode>),
+    GreaterThan(Box<ExprNode>, Box<ExprNode>),
+    LessEqual(Box<ExprNode>, Box<ExprNode>),
+    GreaterEqual(Box<ExprNode>, Box<ExprNode>),
 
     // Arithmetic
-    Subtraction(Kind, Box<ExprNode>, Box<ExprNode>),
-    Division(Kind, Box<ExprNode>, Box<ExprNode>),
-    Addition(Kind, Box<ExprNode>, Box<ExprNode>),
-    Multiplication(Kind, Box<ExprNode>, Box<ExprNode>),
+    Subtraction(Box<ExprNode>, Box<ExprNode>),
+    Division(Box<ExprNode>, Box<ExprNode>),
+    Addition(Box<ExprNode>, Box<ExprNode>),
+    Multiplication(Box<ExprNode>, Box<ExprNode>),
 }
 
 /// Primary represents a primitive type within the ast.
 #[derive(PartialEq, Debug, Clone)]
 pub enum Primary {
     Uint8(Uint8),
-    Identifier(Option<Kind>, String),
-}
-
-impl Kinded for Primary {
-    fn kind(&self) -> Kind {
-        match self {
-            Primary::Uint8(_) => Kind::Uint8,
-            Primary::Identifier(Some(kind), _) => *kind,
-            Primary::Identifier(None, id) => panic!("unidentified variable: {}", id),
-        }
-    }
+    Identifier(String),
 }
 
 /// represents an 8-bit unsigned integer.
@@ -91,53 +83,5 @@ pub struct Uint8(pub u8);
 impl std::fmt::Display for Uint8 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-impl Kinded for Uint8 {
-    fn kind(&self) -> Kind {
-        Kind::Uint8
-    }
-}
-
-/// Represents an object that contains a representable size in bytes.
-pub trait ByteSized {
-    fn size(&self) -> usize;
-}
-
-pub enum CompatibilityResult {
-    Equivalent,
-    WidenTo(Kind),
-    Incompatible,
-}
-
-/// Represents an object that contains a representable size in bytes.
-pub trait Kinded {
-    fn kind(&self) -> Kind;
-}
-
-/// Represents valid primitive types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Kind {
-    Uint8,
-    Char,
-    Void,
-}
-
-impl ByteSized for Kind {
-    fn size(&self) -> usize {
-        match self {
-            Kind::Uint8 | Kind::Char => 1,
-            Kind::Void => 0,
-        }
-    }
-}
-
-pub(crate) fn type_compatible(left: Kind, right: Kind, flow_left: bool) -> CompatibilityResult {
-    match (left, right) {
-        _ if left == right => CompatibilityResult::Equivalent,
-        (Kind::Uint8, Kind::Char) => CompatibilityResult::WidenTo(Kind::Uint8),
-        (Kind::Char, Kind::Uint8) if !flow_left => CompatibilityResult::WidenTo(Kind::Uint8),
-        _ => CompatibilityResult::Incompatible,
     }
 }

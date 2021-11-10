@@ -1,7 +1,10 @@
 use crate::codegen::machine::arch::TargetArchitecture;
 use crate::codegen::register::Register;
 use crate::{
-    ast::{ByteSized, ExprNode, Kind},
+    ast::{
+        kinded::{ByteSized, Kind},
+        ExprNode,
+    },
     codegen::CodeGenerationErr,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -118,9 +121,9 @@ fn codegen_statement(
     match input {
         ast::StmtNode::Expression(expr) => allocator
             .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
-        ast::StmtNode::Declaration(kind, identifier) => {
-            symboltable.declare_global(kind, &identifier);
-            Ok(vec![codegen_global_symbol(kind, &identifier)])
+        ast::StmtNode::Declaration(identifier) => {
+            symboltable.declare_global(Kind::Uint8, &identifier);
+            Ok(vec![codegen_global_symbol(Kind::Uint8, &identifier)])
         }
         ast::StmtNode::Assignment(identifier, expr) => symboltable
             .has_global(&identifier)
@@ -346,31 +349,31 @@ fn codegen_expr(
     use crate::ast::Primary;
 
     match expr {
-        ExprNode::Primary(_, Primary::Uint8(ast::Uint8(uc))) => codegen_constant_u8(ret_val, uc),
-        ExprNode::Primary(_, Primary::Identifier(_, identifier)) => {
+        ExprNode::Primary(Primary::Uint8(ast::Uint8(uc))) => codegen_constant_u8(ret_val, uc),
+        ExprNode::Primary(Primary::Identifier(identifier)) => {
             codegen_load_global(ret_val, &identifier)
         }
 
-        ExprNode::Equal(_, lhs, rhs) => {
+        ExprNode::Equal(lhs, rhs) => {
             codegen_compare_and_set(allocator, ret_val, ComparisonOperation::Equal, lhs, rhs)
         }
-        ExprNode::NotEqual(_, lhs, rhs) => {
+        ExprNode::NotEqual(lhs, rhs) => {
             codegen_compare_and_set(allocator, ret_val, ComparisonOperation::NotEqual, lhs, rhs)
         }
-        ExprNode::LessThan(_, lhs, rhs) => {
+        ExprNode::LessThan(lhs, rhs) => {
             codegen_compare_and_set(allocator, ret_val, ComparisonOperation::LessThan, lhs, rhs)
         }
-        ExprNode::GreaterThan(_, lhs, rhs) => codegen_compare_and_set(
+        ExprNode::GreaterThan(lhs, rhs) => codegen_compare_and_set(
             allocator,
             ret_val,
             ComparisonOperation::GreaterThan,
             lhs,
             rhs,
         ),
-        ExprNode::LessEqual(_, lhs, rhs) => {
+        ExprNode::LessEqual(lhs, rhs) => {
             codegen_compare_and_set(allocator, ret_val, ComparisonOperation::LessEqual, lhs, rhs)
         }
-        ExprNode::GreaterEqual(_, lhs, rhs) => codegen_compare_and_set(
+        ExprNode::GreaterEqual(lhs, rhs) => codegen_compare_and_set(
             allocator,
             ret_val,
             ComparisonOperation::GreaterEqual,
@@ -378,12 +381,10 @@ fn codegen_expr(
             rhs,
         ),
 
-        ExprNode::Addition(_, lhs, rhs) => codegen_addition(allocator, ret_val, lhs, rhs),
-        ExprNode::Subtraction(_, lhs, rhs) => codegen_subtraction(allocator, ret_val, lhs, rhs),
-        ExprNode::Multiplication(_, lhs, rhs) => {
-            codegen_multiplication(allocator, ret_val, lhs, rhs)
-        }
-        ExprNode::Division(_, lhs, rhs) => codegen_division(allocator, ret_val, lhs, rhs),
+        ExprNode::Addition(lhs, rhs) => codegen_addition(allocator, ret_val, lhs, rhs),
+        ExprNode::Subtraction(lhs, rhs) => codegen_subtraction(allocator, ret_val, lhs, rhs),
+        ExprNode::Multiplication(lhs, rhs) => codegen_multiplication(allocator, ret_val, lhs, rhs),
+        ExprNode::Division(lhs, rhs) => codegen_division(allocator, ret_val, lhs, rhs),
     }
 }
 
