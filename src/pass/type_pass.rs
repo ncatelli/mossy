@@ -1,5 +1,5 @@
+use super::TreePass;
 use crate::ast::{self, type_compatible, Typed};
-use crate::codegen::TreePass;
 use crate::env::ScopeStack;
 use crate::parser::ast::ExprNode;
 
