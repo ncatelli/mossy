@@ -67,8 +67,9 @@ fn write_dest_file(filename: &str, data: &[u8]) -> RuntimeResult<()> {
 
 fn compile(source: &str) -> RuntimeResult<String> {
     use mossy::codegen::machine::arch::x86_64;
-    use mossy::codegen::{type_pass, CodeGenerationErr, CodeGenerator, TreePass};
+    use mossy::codegen::{CodeGenerationErr, CodeGenerator, TreePass};
     use mossy::parser;
+    use mossy::pass::type_pass;
 
     let input: Vec<(usize, char)> = source.chars().enumerate().collect();
 
