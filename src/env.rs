@@ -1,35 +1,43 @@
-use crate::ast::kinded::Kind;
-type Scope = std::collections::HashMap<String, Kind>;
+use crate::ast::typing::Type;
+
+pub type Scope = std::collections::HashMap<String, Type>;
 
 #[derive(Default)]
-pub struct Scopes {
+pub struct ScopeStack {
     scopes: Vec<Scope>,
 }
 
-impl Scopes {
+impl ScopeStack {
     pub fn new() -> Self {
-        Self { scopes: vec![] }
-    }
-
-    pub fn push(mut self, scope: Scope) -> Scopes {
-        self.scopes.push(scope);
-        self
+        Self {
+            scopes: vec![Scope::new()],
+        }
     }
 
     pub fn push_mut(&mut self, scope: Scope) {
         self.scopes.push(scope);
     }
 
-    pub fn define_mut(&mut self, id: String, kind: Kind) {
-        self.scopes.last_mut().map(|scope| scope.insert(id, kind));
+    pub fn push_new_scope_mut(&mut self) {
+        self.scopes.push(Scope::new());
     }
 
-    pub fn lookup(&self, id: String) -> Option<Kind> {
+    pub fn pop_scope_mut(&mut self) {
+        self.scopes.pop();
+    }
+
+    pub fn define_mut(&mut self, id: &str, ty: Type) {
+        self.scopes
+            .last_mut()
+            .map(|scope| scope.insert(id.to_string(), ty));
+    }
+
+    pub fn lookup(&self, id: &str) -> Option<Type> {
         self.scopes
             .iter()
             .rev()
-            .find(|scope| scope.get(&id).is_some())
-            .and_then(|scope| scope.get(&id))
+            .find(|scope| scope.get(id).is_some())
+            .and_then(|scope| scope.get(id))
             .copied()
     }
 }

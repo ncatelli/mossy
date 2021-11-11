@@ -1,4 +1,4 @@
-pub mod kinded;
+pub mod typing;
 
 pub type Span = std::ops::Range<usize>;
 
@@ -36,7 +36,7 @@ impl From<CompoundStmts> for Vec<StmtNode> {
 pub enum StmtNode {
     /// Declaration represents a global declaration statement with the
     /// enclosed string representing the Id of the variable.
-    Declaration(String),
+    Declaration(typing::Type, String),
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.
     Assignment(String, ExprNode),

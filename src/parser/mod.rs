@@ -2,6 +2,8 @@ use crate::ast::*;
 use parcel::parsers::character::*;
 use parcel::prelude::v1::*;
 
+pub mod type_pass;
+
 /// ParseErr represents a parser response that doesn't return a correct AstNode.
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParseErr {
@@ -74,11 +76,11 @@ where
 }
 
 fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    parcel::right(parcel::join(
-        whitespace_wrapped(expect_str("int")),
+    parcel::join(
+        whitespace_wrapped(expect_str("int").map(|_| typing::Type::Uint8)),
         whitespace_wrapped(identifier()),
-    ))
-    .map(StmtNode::Declaration)
+    )
+    .map(|(ty, id)| StmtNode::Declaration(ty, id))
 }
 
 fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {

@@ -1,4 +1,3 @@
-use mossy::parser;
 use scrap::prelude::v1::*;
 use std::env;
 use std::fmt;
@@ -68,11 +67,21 @@ fn write_dest_file(filename: &str, data: &[u8]) -> RuntimeResult<()> {
 
 fn compile(source: &str) -> RuntimeResult<String> {
     use mossy::codegen::machine::arch::x86_64;
-    use mossy::codegen::{CodeGenerationErr, CodeGenerator};
+    use mossy::codegen::{CodeGenerationErr, CodeGenerator, TreePass};
+    use mossy::parser::{self, type_pass};
+
     let input: Vec<(usize, char)> = source.chars().enumerate().collect();
     let mut symbol_table = x86_64::SymbolTable::default();
 
     parser::parse(&input)
+        .map(|ast_nodes| {
+            let mut type_checker = type_pass::TypeAnalysis::new();
+            ast_nodes
+                .into_iter()
+                .map(|ast_node| type_checker.analyze(ast_node))
+                .collect::<Result<Vec<mossy::ast::typing::TypedFunctionDeclaration>, String>>()
+        })
+        .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
         .map(|ast_nodes| {
             ast_nodes
                 .into_iter()
