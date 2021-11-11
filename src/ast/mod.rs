@@ -89,7 +89,7 @@ impl Typed for TypedExprNode {
             | TypedExprNode::Subtraction(t, _, _)
             | TypedExprNode::Division(t, _, _)
             | TypedExprNode::Addition(t, _, _)
-            | TypedExprNode::Multiplication(t, _, _) => *t,
+            | TypedExprNode::Multiplication(t, _, _) => t.clone(),
         }
     }
 }
@@ -113,7 +113,7 @@ impl Typed for Primary {
                 width: IntegerWidth::Eight,
                 value: _,
             } => Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
-            Primary::Identifier(kind, _) => *kind,
+            Primary::Identifier(ty, _) => ty.clone(),
             _ => panic!("unknown type"),
         }
     }
@@ -155,11 +155,12 @@ impl ByteSized for IntegerWidth {
 }
 
 /// Represents valid primitive types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Integer(Signed, IntegerWidth),
     Char,
     Void,
+    Func { return_type: Box<Type> },
 }
 
 impl ByteSized for Type {
@@ -168,13 +169,14 @@ impl ByteSized for Type {
             Type::Integer(_, iw) => iw.size(),
             Type::Char => 1,
             Type::Void => 0,
+            &Type::Func { .. } => (usize::BITS / 8) as usize,
         }
     }
 }
 
 pub(crate) fn type_compatible(left: Type, right: Type, flow_left: bool) -> CompatibilityResult {
     match (left, right) {
-        _ if left == right => CompatibilityResult::Equivalent,
+        (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,
         (Type::Integer(sign, width), Type::Char) => {
             CompatibilityResult::WidenTo(Type::Integer(sign, width))
         }

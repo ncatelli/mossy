@@ -36,6 +36,6 @@ impl ScopeStack {
             .rev()
             .find(|scope| scope.get(id).is_some())
             .and_then(|scope| scope.get(id))
-            .copied()
+            .cloned()
     }
 }

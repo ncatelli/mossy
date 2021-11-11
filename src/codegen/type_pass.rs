@@ -27,7 +27,12 @@ impl TreePass<crate::parser::ast::FunctionDeclaration, ast::TypedFunctionDeclara
         input: crate::parser::ast::FunctionDeclaration,
     ) -> Result<ast::TypedFunctionDeclaration, Self::Error> {
         let (id, block) = (input.id, input.block);
-        self.scopes.define_mut(&id, ast::Type::Void);
+        self.scopes.define_mut(
+            &id,
+            ast::Type::Func {
+                return_type: Box::new(ast::Type::Void),
+            },
+        );
 
         self.analyze_block(block)
             .map(|typed_block| ast::TypedFunctionDeclaration::new(id, typed_block))
@@ -61,7 +66,7 @@ impl TypeAnalysis {
                 .analyze_expression(expr)
                 .map(ast::TypedStmtNode::Expression),
             crate::parser::ast::StmtNode::Declaration(ty, id) => {
-                self.scopes.define_mut(&id, ty);
+                self.scopes.define_mut(&id, ty.clone());
                 Ok(ast::TypedStmtNode::Declaration(ty, id))
             }
             crate::parser::ast::StmtNode::Assignment(id, expr) => {
@@ -147,7 +152,7 @@ impl TypeAnalysis {
                 .lookup(&identifier)
                 .map(|r#type| {
                     ast::TypedExprNode::Primary(
-                        r#type,
+                        r#type.clone(),
                         ast::Primary::Identifier(r#type, identifier),
                     )
                 })
