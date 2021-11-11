@@ -10,8 +10,8 @@ pub enum CodeGenerationErr {
     Unspecified(String),
 }
 
-impl std::fmt::Debug for CodeGenerationErr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Debug for CodeGenerationErr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             CodeGenerationErr::Unspecified(e) => {
                 write!(f, "unspecified code generation err: {}", e)
@@ -25,6 +25,8 @@ impl std::fmt::Debug for CodeGenerationErr {
 
 /// CodeGenerator defines the generate method, returning a string representation
 /// of all generated instructions or an error.
-pub trait CodeGenerator<S, I> {
-    fn generate(&self, symboltable: &mut S, input: I) -> Result<Vec<String>, CodeGenerationErr>;
+pub trait CodeGenerator<I> {
+    type Error;
+
+    fn generate(&self, input: I) -> Result<Vec<String>, Self::Error>;
 }

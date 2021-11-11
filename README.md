@@ -7,7 +7,7 @@ An (irresponsibly) experimental C compiler for the first-principles of computing
 program: function_declaration*
         ;
 
-function_declaration: 'void' identifier '(' ')' compound_statement
+function_declaration: type identifier '(' ')' compound_statement
         ;
 
 compound_statement: '{' '}'
@@ -23,14 +23,15 @@ statement:
         | for_statement
         ;
 
-declaration:   'int' identifier
+declaration:   type identifier
         ;
 
 assignent:   identifier '=' expression 
         ;
 
 if_statement: if_head
-        | if_head 'else' compound_statement  ;
+        | if_head 'else' compound_statement 
+        ;
 
 if_head: 'if' '(' expression ')' compound_statement 
         ;
@@ -47,7 +48,6 @@ preop_statement: assignment
 
 postop_statement: expression
         ;
-
 
 expression: equality
         ;
@@ -66,12 +66,23 @@ multiplication: primary ( ( "/" | "*" ) primary )*
 
 primary: identifier
         | uint8
+        | char
         ;
 
 uint8:  [0-255]
         ;
 
+char:   alphabetic
+        ;
+
+
+
 identifier: alphabetic+
+        ;
+
+type:   'char'
+        | 'int'
+        | 'void'
         ;
 
 alphabetic: [a-zA-Z]+

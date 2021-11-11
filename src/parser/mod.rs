@@ -1,6 +1,10 @@
-use crate::ast::*;
 use parcel::parsers::character::*;
 use parcel::prelude::v1::*;
+
+use crate::ast::{IntegerWidth, Signed};
+
+pub mod ast;
+use ast::*;
 
 /// ParseErr represents a parser response that doesn't return a correct AstNode.
 #[derive(Debug, Clone, PartialEq)]
@@ -74,11 +78,18 @@ where
 }
 
 fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    parcel::right(parcel::join(
-        whitespace_wrapped(expect_str("int")),
+    use crate::ast::Type;
+
+    parcel::join(
+        whitespace_wrapped(
+            expect_str("int")
+                .map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Eight))
+                .or(|| expect_str("char").map(|_| Type::Char))
+                .or(|| expect_str("void").map(|_| Type::Void)),
+        ),
         whitespace_wrapped(identifier()),
-    ))
-    .map(StmtNode::Declaration)
+    )
+    .map(|(ty, id)| StmtNode::Declaration(ty, id))
 }
 
 fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -291,12 +302,16 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     identifier()
         .map(|id| ExprNode::Primary(Primary::Identifier(id)))
-        .or(|| number().map(|num| ExprNode::Primary(Primary::Uint8(num))))
+        .or(|| number().map(ExprNode::Primary))
 }
 
 #[allow(clippy::redundant_closure)]
-fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Uint8> {
-    dec_u8().map(|num| Uint8(num))
+fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
+    dec_u8().map(|num| Primary::Integer {
+        sign: Signed::Unsigned,
+        width: IntegerWidth::Eight,
+        value: u64::from(num),
+    })
 }
 
 #[allow(clippy::redundant_closure)]
@@ -369,29 +384,33 @@ fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
 mod tests {
     macro_rules! term_expr {
         ($lhs:expr, '+', $rhs:expr) => {
-            $crate::ast::ExprNode::Addition(Box::new($lhs), Box::new($rhs))
+            $crate::parser::ast::ExprNode::Addition(Box::new($lhs), Box::new($rhs))
         };
         ($lhs:expr, '-', $rhs:expr) => {
-            $crate::ast::ExprNode::Subtraction(Box::new($lhs), Box::new($rhs))
+            $crate::parser::ast::ExprNode::Subtraction(Box::new($lhs), Box::new($rhs))
         };
     }
 
     macro_rules! factor_expr {
         ($lhs:expr, '*', $rhs:expr) => {
-            $crate::ast::ExprNode::Multiplication(Box::new($lhs), Box::new($rhs))
+            $crate::parser::ast::ExprNode::Multiplication(Box::new($lhs), Box::new($rhs))
         };
         ($lhs:expr, '/', $rhs:expr) => {
-            $crate::ast::ExprNode::Division(Box::new($lhs), Box::new($rhs))
+            $crate::parser::ast::ExprNode::Division(Box::new($lhs), Box::new($rhs))
         };
     }
 
     macro_rules! primary_expr {
         ($value:expr) => {
-            $crate::ast::ExprNode::Primary(Primary::Uint8(Uint8($value)))
+            $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+                sign: crate::ast::Signed::Unsigned,
+                width: crate::ast::IntegerWidth::Eight,
+                value: $value,
+            })
         };
     }
 
-    use crate::ast::*;
+    use crate::parser::ast::*;
     #[test]
     fn should_parse_complex_expression() {
         use parcel::Parser;

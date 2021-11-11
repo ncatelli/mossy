@@ -44,8 +44,8 @@ impl SizedGeneralPurpose {
     }
 }
 
-impl std::fmt::Display for SizedGeneralPurpose {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for SizedGeneralPurpose {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let repr = self.id();
         let register_suffix = match self {
             SizedGeneralPurpose::QuadWord(_) => "",
@@ -82,7 +82,7 @@ impl RegisterAllocationGuard {
     }
 }
 
-impl std::ops::Drop for RegisterAllocationGuard {
+impl core::ops::Drop for RegisterAllocationGuard {
     fn drop(&mut self) {
         self.free_channel
             .send(self.reg)
