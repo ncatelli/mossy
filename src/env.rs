@@ -1,4 +1,4 @@
-use crate::ast::typing::Type;
+use crate::ast::Type;
 
 pub type Scope = std::collections::HashMap<String, Type>;
 

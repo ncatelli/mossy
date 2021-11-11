@@ -1,7 +1,7 @@
 use crate::codegen::machine::arch::TargetArchitecture;
 use crate::codegen::register::Register;
 use crate::{
-    ast::typing::{ByteSized, Type},
+    ast::{ByteSized, Type},
     codegen::CodeGenerationErr,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -65,13 +65,13 @@ use crate::codegen;
 use crate::codegen::machine;
 use crate::codegen::CodeGenerator;
 
-impl CodeGenerator<SymbolTable, ast::typing::TypedFunctionDeclaration> for X86_64 {
+impl CodeGenerator<SymbolTable, ast::TypedFunctionDeclaration> for X86_64 {
     type Error = CodeGenerationErr;
 
     fn generate(
         &self,
         symboltable: &mut SymbolTable,
-        input: ast::typing::TypedFunctionDeclaration,
+        input: ast::TypedFunctionDeclaration,
     ) -> Result<Vec<String>, CodeGenerationErr> {
         let mut allocator = GPRegisterAllocator::default();
         let (id, block) = (input.id, input.block);
@@ -88,13 +88,13 @@ impl CodeGenerator<SymbolTable, ast::typing::TypedFunctionDeclaration> for X86_6
     }
 }
 
-impl CodeGenerator<SymbolTable, ast::typing::TypedCompoundStmts> for X86_64 {
+impl CodeGenerator<SymbolTable, ast::TypedCompoundStmts> for X86_64 {
     type Error = CodeGenerationErr;
 
     fn generate(
         &self,
         symboltable: &mut SymbolTable,
-        input: ast::typing::TypedCompoundStmts,
+        input: ast::TypedCompoundStmts,
     ) -> Result<Vec<String>, CodeGenerationErr> {
         let mut allocator = GPRegisterAllocator::default();
         codegen_statements(&mut allocator, symboltable, input)
@@ -104,9 +104,9 @@ impl CodeGenerator<SymbolTable, ast::typing::TypedCompoundStmts> for X86_64 {
 fn codegen_statements(
     allocator: &mut GPRegisterAllocator,
     symboltable: &mut SymbolTable,
-    input: ast::typing::TypedCompoundStmts,
+    input: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, CodeGenerationErr> {
-    let stmts = Vec::<ast::typing::TypedStmtNode>::from(input);
+    let stmts = Vec::<ast::TypedStmtNode>::from(input);
 
     stmts
         .into_iter()
@@ -117,16 +117,16 @@ fn codegen_statements(
 fn codegen_statement(
     allocator: &mut GPRegisterAllocator,
     symboltable: &mut SymbolTable,
-    input: ast::typing::TypedStmtNode,
+    input: ast::TypedStmtNode,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     match input {
-        ast::typing::TypedStmtNode::Expression(expr) => allocator
+        ast::TypedStmtNode::Expression(expr) => allocator
             .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
-        ast::typing::TypedStmtNode::Declaration(_, identifier) => {
+        ast::TypedStmtNode::Declaration(_, identifier) => {
             symboltable.declare_global(Type::Uint8, &identifier);
             Ok(vec![codegen_global_symbol(Type::Uint8, &identifier)])
         }
-        ast::typing::TypedStmtNode::Assignment(identifier, expr) => symboltable
+        ast::TypedStmtNode::Assignment(identifier, expr) => symboltable
             .has_global(&identifier)
             .then(|| ())
             .map(|_| {
@@ -139,20 +139,20 @@ fn codegen_statement(
             })
             .ok_or(CodeGenerationErr::UndefinedReference(identifier)),
         // with else case
-        ast::typing::TypedStmtNode::If(cond, true_case, Some(false_case)) => {
+        ast::TypedStmtNode::If(cond, true_case, Some(false_case)) => {
             codegen_if_statement_with_else(allocator, symboltable, cond, true_case, false_case)
                 .map(|insts| vec![insts])
         }
         // without else case
-        ast::typing::TypedStmtNode::If(cond, true_case, None) => {
+        ast::TypedStmtNode::If(cond, true_case, None) => {
             codegen_if_statement_without_else(allocator, symboltable, cond, true_case)
                 .map(|insts| vec![insts])
         }
 
-        ast::typing::TypedStmtNode::While(cond, block) => {
+        ast::TypedStmtNode::While(cond, block) => {
             codegen_while_statement(allocator, symboltable, cond, block).map(|insts| vec![insts])
         }
-        ast::typing::TypedStmtNode::For(preop, cond, postop, block) => {
+        ast::TypedStmtNode::For(preop, cond, postop, block) => {
             codegen_for_statement(allocator, symboltable, *preop, cond, *postop, block)
                 .map(|insts| vec![insts])
         }
@@ -176,9 +176,9 @@ macro_rules! flattenable_instructions {
 fn codegen_if_statement_with_else(
     allocator: &mut GPRegisterAllocator,
     symboltable: &mut SymbolTable,
-    cond: crate::ast::typing::TypedExprNode,
-    true_case: crate::ast::typing::TypedCompoundStmts,
-    false_case: crate::ast::typing::TypedCompoundStmts,
+    cond: crate::ast::TypedExprNode,
+    true_case: crate::ast::TypedCompoundStmts,
+    false_case: crate::ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     allocator.allocate_then(|allocator, ret_val| {
         let cond_ctx = codegen_expr(allocator, ret_val, cond);
@@ -204,8 +204,8 @@ fn codegen_if_statement_with_else(
 fn codegen_if_statement_without_else(
     allocator: &mut GPRegisterAllocator,
     symboltable: &mut SymbolTable,
-    cond: crate::ast::typing::TypedExprNode,
-    true_case: crate::ast::typing::TypedCompoundStmts,
+    cond: crate::ast::TypedExprNode,
+    true_case: crate::ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     allocator.allocate_then(|allocator, ret_val| {
         let cond_ctx = codegen_expr(allocator, ret_val, cond);
@@ -226,8 +226,8 @@ fn codegen_if_statement_without_else(
 fn codegen_while_statement(
     allocator: &mut GPRegisterAllocator,
     symboltable: &mut SymbolTable,
-    cond: crate::ast::typing::TypedExprNode,
-    block: crate::ast::typing::TypedCompoundStmts,
+    cond: crate::ast::TypedExprNode,
+    block: crate::ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     allocator.allocate_then(|allocator, ret_val| {
         let cond_ctx = codegen_expr(allocator, ret_val, cond);
@@ -251,10 +251,10 @@ fn codegen_while_statement(
 fn codegen_for_statement(
     allocator: &mut GPRegisterAllocator,
     symboltable: &mut SymbolTable,
-    preop: crate::ast::typing::TypedStmtNode,
-    cond: crate::ast::typing::TypedExprNode,
-    postop: crate::ast::typing::TypedStmtNode,
-    block: crate::ast::typing::TypedCompoundStmts,
+    preop: crate::ast::TypedStmtNode,
+    cond: crate::ast::TypedExprNode,
+    postop: crate::ast::TypedStmtNode,
+    block: crate::ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     allocator.allocate_then(|allocator, ret_val| {
         let preop_ctx = codegen_statement(allocator, symboltable, preop)?;
@@ -345,12 +345,12 @@ fn codegen_jump(block_id: BlockId) -> Vec<String> {
 fn codegen_expr(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
-    expr: crate::ast::typing::TypedExprNode,
+    expr: crate::ast::TypedExprNode,
 ) -> Vec<String> {
-    use crate::ast::typing::{Primary, TypedExprNode};
+    use crate::ast::{Primary, TypedExprNode};
 
     match expr {
-        TypedExprNode::Primary(_, Primary::Uint8(ast::typing::Uint8(uc))) => {
+        TypedExprNode::Primary(_, Primary::Uint8(ast::Uint8(uc))) => {
             codegen_constant_u8(ret_val, uc)
         }
         TypedExprNode::Primary(_, Primary::Identifier(_, identifier)) => {
@@ -407,8 +407,8 @@ fn codegen_constant_u8(ret_val: &mut SizedGeneralPurpose, constant: u8) -> Vec<S
 fn codegen_addition(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
-    lhs: Box<ast::typing::TypedExprNode>,
-    rhs: Box<ast::typing::TypedExprNode>,
+    lhs: Box<ast::TypedExprNode>,
+    rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
     allocator.allocate_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
@@ -433,8 +433,8 @@ fn codegen_addition(
 fn codegen_subtraction(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
-    lhs: Box<ast::typing::TypedExprNode>,
-    rhs: Box<ast::typing::TypedExprNode>,
+    lhs: Box<ast::TypedExprNode>,
+    rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
     allocator.allocate_then(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
@@ -456,8 +456,8 @@ fn codegen_subtraction(
 fn codegen_multiplication(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
-    lhs: Box<ast::typing::TypedExprNode>,
-    rhs: Box<ast::typing::TypedExprNode>,
+    lhs: Box<ast::TypedExprNode>,
+    rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
     allocator.allocate_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
@@ -479,8 +479,8 @@ fn codegen_multiplication(
 fn codegen_division(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
-    lhs: Box<ast::typing::TypedExprNode>,
-    rhs: Box<ast::typing::TypedExprNode>,
+    lhs: Box<ast::TypedExprNode>,
+    rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
     allocator.allocate_then(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
@@ -514,8 +514,8 @@ fn codegen_compare_and_set(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
     comparison_op: ComparisonOperation,
-    lhs: Box<ast::typing::TypedExprNode>,
-    rhs: Box<ast::typing::TypedExprNode>,
+    lhs: Box<ast::TypedExprNode>,
+    rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
     allocator.allocate_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);

@@ -79,7 +79,7 @@ fn compile(source: &str) -> RuntimeResult<String> {
             ast_nodes
                 .into_iter()
                 .map(|ast_node| type_checker.analyze(ast_node))
-                .collect::<Result<Vec<mossy::ast::typing::TypedFunctionDeclaration>, String>>()
+                .collect::<Result<Vec<mossy::ast::TypedFunctionDeclaration>, String>>()
         })
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
         .map(|ast_nodes| {

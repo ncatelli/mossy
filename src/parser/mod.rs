@@ -1,6 +1,8 @@
-use crate::ast::*;
 use parcel::parsers::character::*;
 use parcel::prelude::v1::*;
+
+pub mod ast;
+use ast::*;
 
 /// ParseErr represents a parser response that doesn't return a correct AstNode.
 #[derive(Debug, Clone, PartialEq)]
@@ -74,12 +76,14 @@ where
 }
 
 fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    use crate::ast::Type;
+
     parcel::join(
         whitespace_wrapped(
             expect_str("int")
-                .map(|_| typing::Type::Uint8)
-                .or(|| expect_str("char").map(|_| typing::Type::Char))
-                .or(|| expect_str("void").map(|_| typing::Type::Void)),
+                .map(|_| Type::Uint8)
+                .or(|| expect_str("char").map(|_| Type::Char))
+                .or(|| expect_str("void").map(|_| Type::Void)),
         ),
         whitespace_wrapped(identifier()),
     )
@@ -374,29 +378,31 @@ fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
 mod tests {
     macro_rules! term_expr {
         ($lhs:expr, '+', $rhs:expr) => {
-            $crate::ast::ExprNode::Addition(Box::new($lhs), Box::new($rhs))
+            $crate::parser::ast::ExprNode::Addition(Box::new($lhs), Box::new($rhs))
         };
         ($lhs:expr, '-', $rhs:expr) => {
-            $crate::ast::ExprNode::Subtraction(Box::new($lhs), Box::new($rhs))
+            $crate::parser::ast::ExprNode::Subtraction(Box::new($lhs), Box::new($rhs))
         };
     }
 
     macro_rules! factor_expr {
         ($lhs:expr, '*', $rhs:expr) => {
-            $crate::ast::ExprNode::Multiplication(Box::new($lhs), Box::new($rhs))
+            $crate::parser::ast::ExprNode::Multiplication(Box::new($lhs), Box::new($rhs))
         };
         ($lhs:expr, '/', $rhs:expr) => {
-            $crate::ast::ExprNode::Division(Box::new($lhs), Box::new($rhs))
+            $crate::parser::ast::ExprNode::Division(Box::new($lhs), Box::new($rhs))
         };
     }
 
     macro_rules! primary_expr {
         ($value:expr) => {
-            $crate::ast::ExprNode::Primary(Primary::Uint8(Uint8($value)))
+            $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Uint8(
+                crate::parser::ast::Uint8($value),
+            ))
         };
     }
 
-    use crate::ast::*;
+    use crate::parser::ast::*;
     #[test]
     fn should_parse_complex_expression() {
         use parcel::Parser;
