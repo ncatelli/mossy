@@ -9,9 +9,7 @@ pub struct ScopeStack {
 
 impl ScopeStack {
     pub fn new() -> Self {
-        Self {
-            scopes: vec![Scope::new()],
-        }
+        Self { scopes: vec![] }
     }
 
     pub fn push_mut(&mut self, scope: Scope) {

@@ -1,10 +1,7 @@
 use crate::codegen::machine::arch::TargetArchitecture;
 use crate::codegen::register::Register;
 use crate::{
-    ast::{
-        typing::{ByteSized, Type},
-        ExprNode,
-    },
+    ast::typing::{ByteSized, Type},
     codegen::CodeGenerationErr,
 };
 use std::sync::atomic::{AtomicUsize, Ordering};

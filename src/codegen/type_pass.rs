@@ -3,15 +3,17 @@ use crate::ast::{self, ExprNode};
 use crate::codegen::TreePass;
 use crate::env::ScopeStack;
 
+#[derive(Default)]
 pub struct TypeAnalysis {
     scopes: ScopeStack,
 }
 
 impl TypeAnalysis {
     pub fn new() -> Self {
-        Self {
-            scopes: ScopeStack::new(),
-        }
+        let mut scopes = ScopeStack::new();
+        scopes.push_new_scope_mut();
+
+        Self { scopes }
     }
 }
 
@@ -215,8 +217,6 @@ impl TypeAnalysis {
         ast::typing::TypedExprNode,
         ast::typing::TypedExprNode,
     )> {
-        use ast::typing::type_compatible;
-
         let lhs = self.analyze_expression(lhs).unwrap();
         let rhs = self.analyze_expression(rhs).unwrap();
 
