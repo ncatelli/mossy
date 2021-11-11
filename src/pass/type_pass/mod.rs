@@ -1,13 +1,20 @@
+//! The Type Pass module handles walking the raw parser ADT, performing
+//! additional type checking and enrichment.
+
 use super::TreePass;
 use crate::ast::{self, type_compatible, Typed};
-use crate::env::ScopeStack;
 
+mod scopes;
+use scopes::ScopeStack;
+
+/// TypeAnalysis stores a scope stack for maintaining local variables.
 #[derive(Default)]
 pub struct TypeAnalysis {
     scopes: ScopeStack,
 }
 
 impl TypeAnalysis {
+    /// Initializes a new TypeAnalysis pass with a global scope.
     pub fn new() -> Self {
         let mut scopes = ScopeStack::new();
         scopes.push_new_scope_mut();

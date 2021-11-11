@@ -1,3 +1,4 @@
+/// A typed function declaration
 #[derive(PartialEq, Debug, Clone)]
 pub struct TypedFunctionDeclaration {
     pub id: String,
@@ -10,6 +11,7 @@ impl TypedFunctionDeclaration {
     }
 }
 
+/// A typed block of statements
 #[derive(PartialEq, Debug, Clone)]
 pub struct TypedCompoundStmts {
     inner: Vec<TypedStmtNode>,
@@ -133,12 +135,14 @@ pub trait Typed {
     fn r#type(&self) -> Type;
 }
 
+/// Marks signed/unsigned integers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Signed {
     Signed,
     Unsigned,
 }
 
+/// Represents valid integer bit widths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntegerWidth {
     Eight,
@@ -172,6 +176,7 @@ impl ByteSized for Type {
     }
 }
 
+/// Evaluates type compatiblity for a given binary pair of types.
 pub(crate) fn type_compatible(left: Type, right: Type, flow_left: bool) -> CompatibilityResult {
     match (left, right) {
         (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,

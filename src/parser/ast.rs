@@ -2,6 +2,7 @@ use crate::ast::{IntegerWidth, Signed};
 
 pub type Span = core::ops::Range<usize>;
 
+/// A new fuction declaration wrapping a string and block.
 #[derive(PartialEq, Debug, Clone)]
 pub struct FunctionDeclaration {
     pub id: String,
@@ -14,6 +15,7 @@ impl FunctionDeclaration {
     }
 }
 
+/// A compound block of statements.
 #[derive(PartialEq, Debug, Clone)]
 pub struct CompoundStmts {
     inner: Vec<StmtNode>,
