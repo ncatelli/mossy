@@ -1,6 +1,8 @@
 use parcel::parsers::character::*;
 use parcel::prelude::v1::*;
 
+use crate::ast::{IntegerWidth, Signed};
+
 pub mod ast;
 use ast::*;
 
@@ -81,7 +83,7 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     parcel::join(
         whitespace_wrapped(
             expect_str("int")
-                .map(|_| Type::Uint8)
+                .map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Eight))
                 .or(|| expect_str("char").map(|_| Type::Char))
                 .or(|| expect_str("void").map(|_| Type::Void)),
         ),
@@ -300,12 +302,16 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     identifier()
         .map(|id| ExprNode::Primary(Primary::Identifier(id)))
-        .or(|| number().map(|num| ExprNode::Primary(Primary::Uint8(num))))
+        .or(|| number().map(ExprNode::Primary))
 }
 
 #[allow(clippy::redundant_closure)]
-fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Uint8> {
-    dec_u8().map(|num| Uint8(num))
+fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
+    dec_u8().map(|num| Primary::Integer {
+        sign: Signed::Unsigned,
+        width: IntegerWidth::Eight,
+        value: u64::from(num),
+    })
 }
 
 #[allow(clippy::redundant_closure)]
@@ -396,9 +402,11 @@ mod tests {
 
     macro_rules! primary_expr {
         ($value:expr) => {
-            $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Uint8(
-                crate::parser::ast::Uint8($value),
-            ))
+            $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+                sign: crate::ast::Signed::Unsigned,
+                width: crate::ast::IntegerWidth::Eight,
+                value: $value,
+            })
         };
     }
 

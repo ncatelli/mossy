@@ -1,3 +1,5 @@
+use crate::ast::{IntegerWidth, Signed};
+
 pub type Span = std::ops::Range<usize>;
 
 #[derive(PartialEq, Debug, Clone)]
@@ -70,16 +72,10 @@ pub enum ExprNode {
 /// Primary represents a primitive type within the ast.
 #[derive(PartialEq, Debug, Clone)]
 pub enum Primary {
-    Uint8(Uint8),
+    Integer {
+        sign: Signed,
+        width: IntegerWidth,
+        value: u64,
+    },
     Identifier(String),
-}
-
-/// represents an 8-bit unsigned integer.
-#[derive(PartialEq, Debug, Clone)]
-pub struct Uint8(pub u8);
-
-impl std::fmt::Display for Uint8 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
 }

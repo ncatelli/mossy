@@ -121,10 +121,27 @@ impl TypeAnalysis {
     ) -> Result<ast::TypedExprNode, String> {
         use crate::parser::ast::Primary;
 
+        use crate::ast::{IntegerWidth, Signed};
+
         match expr {
-            ExprNode::Primary(Primary::Uint8(crate::parser::ast::Uint8(uc))) => Ok(
-                ast::TypedExprNode::Primary(ast::Type::Uint8, ast::Primary::Uint8(ast::Uint8(uc))),
-            ),
+            ExprNode::Primary(Primary::Integer {
+                sign: Signed::Unsigned,
+                width: IntegerWidth::Eight,
+                value,
+            }) => {
+                let sign = Signed::Unsigned;
+                let width = IntegerWidth::Eight;
+
+                Ok(ast::TypedExprNode::Primary(
+                    ast::Type::Integer(sign, width),
+                    crate::ast::Primary::Integer { sign, width, value },
+                ))
+            }
+            ExprNode::Primary(Primary::Integer {
+                sign: Signed::Signed,
+                width: _,
+                value: _,
+            }) => Err("unimplemented: signed integers".to_string()),
             ExprNode::Primary(Primary::Identifier(identifier)) => self
                 .scopes
                 .lookup(&identifier)

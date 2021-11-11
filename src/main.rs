@@ -71,7 +71,6 @@ fn compile(source: &str) -> RuntimeResult<String> {
     use mossy::parser;
 
     let input: Vec<(usize, char)> = source.chars().enumerate().collect();
-    let mut symbol_table = x86_64::SymbolTable::default();
 
     parser::parse(&input)
         .map(|ast_nodes| {
@@ -85,7 +84,7 @@ fn compile(source: &str) -> RuntimeResult<String> {
         .map(|ast_nodes| {
             ast_nodes
                 .into_iter()
-                .map(|ast_node| x86_64::X86_64.generate(&mut symbol_table, ast_node))
+                .map(|ast_node| x86_64::X86_64.generate(ast_node))
                 .collect::<Result<Vec<Vec<String>>, CodeGenerationErr>>()
         })
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
@@ -131,9 +130,14 @@ fn main() {
 
     match eval_res {
         Ok(_) => (),
-        Err(e) => {
-            println!("{}\n\n{}", &e.to_string(), &help_string);
-            std::process::exit(e.exit_code())
+        Err(RuntimeError::FileUnreadable) => {
+            println!("unknown input file\n{}", &help_string);
+            std::process::exit(1)
+        }
+
+        Err(RuntimeError::Undefined(e)) => {
+            println!("{}\n{}", e, &help_string);
+            std::process::exit(RuntimeError::Undefined(e).exit_code())
         }
     }
 }

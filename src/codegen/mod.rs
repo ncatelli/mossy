@@ -32,8 +32,8 @@ pub trait TreePass<I, O> {
 
 /// CodeGenerator defines the generate method, returning a string representation
 /// of all generated instructions or an error.
-pub trait CodeGenerator<S, I> {
+pub trait CodeGenerator<I> {
     type Error;
 
-    fn generate(&self, symboltable: &mut S, input: I) -> Result<Vec<String>, Self::Error>;
+    fn generate(&self, input: I) -> Result<Vec<String>, Self::Error>;
 }

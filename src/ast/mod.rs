@@ -97,32 +97,25 @@ impl Typed for TypedExprNode {
 /// Primary represents a primitive type within the ast.
 #[derive(PartialEq, Debug, Clone)]
 pub enum Primary {
-    Uint8(Uint8),
+    Integer {
+        sign: Signed,
+        width: IntegerWidth,
+        value: u64,
+    },
     Identifier(Type, String),
 }
 
 impl Typed for Primary {
     fn r#type(&self) -> Type {
         match self {
-            Primary::Uint8(_) => Type::Uint8,
+            Primary::Integer {
+                sign: Signed::Unsigned,
+                width: IntegerWidth::Eight,
+                value: _,
+            } => Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
             Primary::Identifier(kind, _) => *kind,
+            _ => panic!("unknown type"),
         }
-    }
-}
-
-/// represents an 8-bit unsigned integer.
-#[derive(PartialEq, Debug, Clone)]
-pub struct Uint8(pub u8);
-
-impl std::fmt::Display for Uint8 {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl Typed for Uint8 {
-    fn r#type(&self) -> Type {
-        Type::Uint8
     }
 }
 
@@ -142,10 +135,29 @@ pub trait Typed {
     fn r#type(&self) -> Type;
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Signed {
+    Signed,
+    Unsigned,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntegerWidth {
+    Eight,
+}
+
+impl ByteSized for IntegerWidth {
+    fn size(&self) -> usize {
+        match self {
+            Self::Eight => 1,
+        }
+    }
+}
+
 /// Represents valid primitive types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Type {
-    Uint8,
+    Integer(Signed, IntegerWidth),
     Char,
     Void,
 }
@@ -153,7 +165,8 @@ pub enum Type {
 impl ByteSized for Type {
     fn size(&self) -> usize {
         match self {
-            Type::Uint8 | Type::Char => 1,
+            Type::Integer(_, iw) => iw.size(),
+            Type::Char => 1,
             Type::Void => 0,
         }
     }
@@ -162,8 +175,12 @@ impl ByteSized for Type {
 pub(crate) fn type_compatible(left: Type, right: Type, flow_left: bool) -> CompatibilityResult {
     match (left, right) {
         _ if left == right => CompatibilityResult::Equivalent,
-        (Type::Uint8, Type::Char) => CompatibilityResult::WidenTo(Type::Uint8),
-        (Type::Char, Type::Uint8) if !flow_left => CompatibilityResult::WidenTo(Type::Uint8),
+        (Type::Integer(sign, width), Type::Char) => {
+            CompatibilityResult::WidenTo(Type::Integer(sign, width))
+        }
+        (Type::Char, Type::Integer(sign, width)) if !flow_left => {
+            CompatibilityResult::WidenTo(Type::Integer(sign, width))
+        }
         _ => CompatibilityResult::Incompatible,
     }
 }
