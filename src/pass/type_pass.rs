@@ -1,7 +1,6 @@
 use super::TreePass;
 use crate::ast::{self, type_compatible, Typed};
 use crate::env::ScopeStack;
-use crate::parser::ast::ExprNode;
 
 #[derive(Default)]
 pub struct TypeAnalysis {
@@ -124,6 +123,7 @@ impl TypeAnalysis {
         &self,
         expr: crate::parser::ast::ExprNode,
     ) -> Result<ast::TypedExprNode, String> {
+        use crate::parser::ast::ExprNode;
         use crate::parser::ast::Primary;
 
         use crate::ast::{IntegerWidth, Signed};
@@ -223,8 +223,8 @@ impl TypeAnalysis {
 
     fn analyze_binary_expr(
         &self,
-        lhs: ExprNode,
-        rhs: ExprNode,
+        lhs: crate::parser::ast::ExprNode,
+        rhs: crate::parser::ast::ExprNode,
     ) -> Option<(ast::Type, ast::TypedExprNode, ast::TypedExprNode)> {
         let lhs = self.analyze_expression(lhs).unwrap();
         let rhs = self.analyze_expression(rhs).unwrap();
