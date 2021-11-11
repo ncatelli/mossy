@@ -2,7 +2,6 @@ use crate::ast::typing::{type_compatible, Typed};
 use crate::ast::{self, ExprNode};
 use crate::codegen::TreePass;
 use crate::env::ScopeStack;
-use crate::parser::identifier;
 
 pub struct TypeAnalysis {
     scopes: ScopeStack,

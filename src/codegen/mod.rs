@@ -1,5 +1,6 @@
 pub mod machine;
 mod register;
+pub mod type_pass;
 
 /// CodeGenerationErr represents an error stemming from the CodeGenerator's
 /// `generate` method, capturing any potential point of breakdown withing the
