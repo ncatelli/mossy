@@ -168,10 +168,10 @@ pub enum Type {
 impl ByteSized for Type {
     fn size(&self) -> usize {
         match self {
-            Type::Integer(_, iw) => iw.size(),
-            Type::Char => 1,
-            Type::Void => 0,
-            &Type::Func { .. } => (usize::BITS / 8) as usize,
+            Self::Integer(_, iw) => iw.size(),
+            Self::Char => 1,
+            Self::Void => 0,
+            Self::Func { .. } => (usize::BITS / 8) as usize,
         }
     }
 }
