@@ -4,7 +4,7 @@ use crate::{
     ast::{ByteSized, Type},
     codegen::CodeGenerationErr,
 };
-use std::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 static BLOCK_ID: AtomicUsize = AtomicUsize::new(0);
 
@@ -318,7 +318,7 @@ fn codegen_expr(
                 value,
             },
         ) => {
-            let uc = std::convert::TryFrom::try_from(value)
+            let uc = core::convert::TryFrom::try_from(value)
                 .expect("value exceeds unsigned 8-bit integer");
             codegen_constant_u8(ret_val, uc)
         }

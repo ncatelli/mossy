@@ -1,6 +1,6 @@
 use crate::ast::{IntegerWidth, Signed};
 
-pub type Span = std::ops::Range<usize>;
+pub type Span = core::ops::Range<usize>;
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct FunctionDeclaration {

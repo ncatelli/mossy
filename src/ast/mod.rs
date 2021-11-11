@@ -1,5 +1,3 @@
-pub type Span = std::ops::Range<usize>;
-
 #[derive(PartialEq, Debug, Clone)]
 pub struct TypedFunctionDeclaration {
     pub id: String,
