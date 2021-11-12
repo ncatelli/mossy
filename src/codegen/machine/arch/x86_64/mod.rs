@@ -87,12 +87,8 @@ fn codegen_statement(
     input: ast::TypedStmtNode,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     match input {
-        ast::TypedStmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
-            Ok(vec![
-                codegen_expr(allocator, ret_val, expr),
-                codegen_printint(ret_val),
-            ])
-        }),
+        ast::TypedStmtNode::Expression(expr) => allocator
+            .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
         ast::TypedStmtNode::Declaration(t, identifier) => {
             Ok(vec![codegen_global_symbol(t, &identifier)])
         }
