@@ -138,6 +138,19 @@ impl TypeAnalysis {
         match expr {
             ExprNode::Primary(Primary::Integer {
                 sign: Signed::Unsigned,
+                width: IntegerWidth::ThirtyTwo,
+                value,
+            }) => {
+                let sign = Signed::Unsigned;
+                let width = IntegerWidth::ThirtyTwo;
+
+                Ok(ast::TypedExprNode::Primary(
+                    ast::Type::Integer(sign, width),
+                    crate::ast::Primary::Integer { sign, width, value },
+                ))
+            }
+            ExprNode::Primary(Primary::Integer {
+                sign: Signed::Unsigned,
                 width: IntegerWidth::Eight,
                 value,
             }) => {

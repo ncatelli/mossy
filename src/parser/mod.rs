@@ -83,8 +83,10 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     parcel::join(
         whitespace_wrapped(
             expect_str("int")
-                .map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Eight))
-                .or(|| expect_str("char").map(|_| Type::Char))
+                .map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::ThirtyTwo))
+                .or(|| {
+                    expect_str("char").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Eight))
+                })
                 .or(|| expect_str("void").map(|_| Type::Void)),
         ),
         whitespace_wrapped(identifier()),
@@ -307,16 +309,56 @@ fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
 
 #[allow(clippy::redundant_closure)]
 fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
-    dec_u8().map(|num| Primary::Integer {
-        sign: Signed::Unsigned,
-        width: IntegerWidth::Eight,
-        value: u64::from(num),
-    })
+    parcel::one_of(vec![
+        dec_u8().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::Eight,
+            value: u64::from(num),
+        }),
+        dec_u32().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::ThirtyTwo,
+            value: u64::from(num),
+        }),
+    ])
 }
 
 #[allow(clippy::redundant_closure)]
 fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
     parcel::one_or_more(alphabetic()).map(|chars| chars.into_iter().collect())
+}
+
+fn dec_u32<'a>() -> impl Parser<'a, &'a [(usize, char)], u32> {
+    move |input: &'a [(usize, char)]| {
+        let preparsed_input = input;
+        let res = parcel::one_or_more(digit(10))
+            .map(|digits| {
+                let vd: String = digits.into_iter().collect();
+                vd.parse::<u32>()
+            })
+            .parse(input);
+
+        match res {
+            Ok(MatchStatus::Match {
+                span,
+                remainder,
+                inner: Ok(u),
+            }) => Ok(MatchStatus::Match {
+                span,
+                remainder,
+                inner: u,
+            }),
+
+            Ok(MatchStatus::Match {
+                span: _,
+                remainder: _,
+                inner: Err(_),
+            }) => Ok(MatchStatus::NoMatch(preparsed_input)),
+
+            Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
+            Err(e) => Err(e),
+        }
+    }
 }
 
 fn dec_u8<'a>() -> impl Parser<'a, &'a [(usize, char)], u8> {
