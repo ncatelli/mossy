@@ -80,9 +80,14 @@ char:   alphabetic
 identifier: alphabetic+
         ;
 
-type:   'char'
-        | 'int'
+type:   integer_type
         | 'void'
+        ;
+
+integer_type:
+        'char'
+        | 'int'
+        | 'long'
         ;
 
 alphabetic: [a-zA-Z]+

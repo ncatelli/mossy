@@ -147,6 +147,7 @@ pub enum Signed {
 pub enum IntegerWidth {
     Eight,
     ThirtyTwo,
+    SixtyFour,
 }
 
 impl ByteSized for IntegerWidth {
@@ -154,6 +155,7 @@ impl ByteSized for IntegerWidth {
         match self {
             Self::Eight => 1,
             Self::ThirtyTwo => 4,
+            Self::SixtyFour => 8,
         }
     }
 }

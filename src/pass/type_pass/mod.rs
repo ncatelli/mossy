@@ -133,29 +133,15 @@ impl TypeAnalysis {
         use crate::parser::ast::ExprNode;
         use crate::parser::ast::Primary;
 
-        use crate::ast::{IntegerWidth, Signed};
+        use crate::ast::Signed;
 
         match expr {
             ExprNode::Primary(Primary::Integer {
                 sign: Signed::Unsigned,
-                width: IntegerWidth::ThirtyTwo,
+                width,
                 value,
             }) => {
                 let sign = Signed::Unsigned;
-                let width = IntegerWidth::ThirtyTwo;
-
-                Ok(ast::TypedExprNode::Primary(
-                    ast::Type::Integer(sign, width),
-                    crate::ast::Primary::Integer { sign, width, value },
-                ))
-            }
-            ExprNode::Primary(Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Eight,
-                value,
-            }) => {
-                let sign = Signed::Unsigned;
-                let width = IntegerWidth::Eight;
 
                 Ok(ast::TypedExprNode::Primary(
                     ast::Type::Integer(sign, width),

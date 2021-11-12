@@ -314,6 +314,14 @@ fn codegen_expr(
             _,
             Primary::Integer {
                 sign: Signed::Unsigned,
+                width: IntegerWidth::SixtyFour,
+                value,
+            },
+        ) => codegen_constant_u64(ret_val, value),
+        TypedExprNode::Primary(
+            _,
+            Primary::Integer {
+                sign: Signed::Unsigned,
                 width: IntegerWidth::ThirtyTwo,
                 value,
             },
@@ -384,6 +392,15 @@ fn codegen_expr(
         }
         TypedExprNode::Division(_, lhs, rhs) => codegen_division(allocator, ret_val, lhs, rhs),
     }
+}
+
+fn codegen_constant_u64(ret_val: &mut SizedGeneralPurpose, constant: u64) -> Vec<String> {
+    vec![format!(
+        "\tmov{}\t${}, {}\n",
+        ret_val.operator_suffix(),
+        constant,
+        ret_val
+    )]
 }
 
 fn codegen_constant_u32(ret_val: &mut SizedGeneralPurpose, constant: u32) -> Vec<String> {
