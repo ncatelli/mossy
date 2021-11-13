@@ -28,7 +28,7 @@ impl CompilationStage<crate::parser::ast::FunctionDeclaration, ast::TypedFunctio
 {
     type Error = String;
 
-    fn analyze(
+    fn apply(
         &mut self,
         input: crate::parser::ast::FunctionDeclaration,
     ) -> Result<ast::TypedFunctionDeclaration, Self::Error> {

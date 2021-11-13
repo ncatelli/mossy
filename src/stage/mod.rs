@@ -6,5 +6,5 @@ pub mod type_check;
 pub trait CompilationStage<I, O> {
     type Error;
 
-    fn analyze(&mut self, input: I) -> Result<O, Self::Error>;
+    fn apply(&mut self, input: I) -> Result<O, Self::Error>;
 }

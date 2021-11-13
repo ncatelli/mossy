@@ -78,7 +78,7 @@ fn compile(source: &str) -> RuntimeResult<String> {
             let mut type_checker = type_check::TypeAnalysis::new();
             ast_nodes
                 .into_iter()
-                .map(|ast_node| type_checker.analyze(ast_node))
+                .map(|ast_node| type_checker.apply(ast_node))
                 .collect::<Result<Vec<mossy::ast::TypedFunctionDeclaration>, String>>()
         })
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
