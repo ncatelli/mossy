@@ -1,7 +1,7 @@
 //! The Type Pass module handles walking the raw parser ADT, performing
 //! additional type checking and enrichment.
 
-use super::TreePass;
+use super::CompilationStage;
 use crate::ast::{self, type_compatible, Typed};
 
 mod scopes;
@@ -23,7 +23,7 @@ impl TypeAnalysis {
     }
 }
 
-impl TreePass<crate::parser::ast::FunctionDeclaration, ast::TypedFunctionDeclaration>
+impl CompilationStage<crate::parser::ast::FunctionDeclaration, ast::TypedFunctionDeclaration>
     for TypeAnalysis
 {
     type Error = String;

@@ -1,9 +1,6 @@
-use crate::codegen::machine::arch::TargetArchitecture;
-use crate::codegen::register::Register;
-use crate::{
-    ast::{ByteSized, Type},
-    codegen::CodeGenerationErr,
-};
+use crate::ast::{self, ByteSized, Type};
+use crate::stage::codegen::machine::arch::TargetArchitecture;
+use crate::stage::codegen::{self, machine, register::Register, CodeGenerationErr, CodeGenerator};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 static BLOCK_ID: AtomicUsize = AtomicUsize::new(0);
@@ -33,11 +30,6 @@ printint:
     nop
     leave
     ret\n\n";
-
-use crate::ast;
-use crate::codegen;
-use crate::codegen::machine;
-use crate::codegen::CodeGenerator;
 
 impl CodeGenerator<ast::TypedFunctionDeclaration> for X86_64 {
     type Error = CodeGenerationErr;

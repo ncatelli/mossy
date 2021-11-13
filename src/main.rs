@@ -66,10 +66,10 @@ fn write_dest_file(filename: &str, data: &[u8]) -> RuntimeResult<()> {
 }
 
 fn compile(source: &str) -> RuntimeResult<String> {
-    use mossy::codegen::machine::arch::x86_64;
-    use mossy::codegen::{CodeGenerationErr, CodeGenerator};
     use mossy::parser;
-    use mossy::pass::{type_pass, TreePass};
+    use mossy::stage::codegen::machine::arch::x86_64;
+    use mossy::stage::codegen::{CodeGenerationErr, CodeGenerator};
+    use mossy::stage::{type_pass, CompilationStage};
 
     let input: Vec<(usize, char)> = source.chars().enumerate().collect();
 
