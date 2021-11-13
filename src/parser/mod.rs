@@ -84,6 +84,7 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
         whitespace_wrapped(parcel::one_of(vec![
             expect_str("long").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour)),
             expect_str("int").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::ThirtyTwo)),
+            expect_str("short").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Sixteen)),
             expect_str("char").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Eight)),
             expect_str("void").map(|_| Type::Void),
         ])),

@@ -86,6 +86,7 @@ type:   integer_type
 
 integer_type:
         'char'
+        | 'short'
         | 'int'
         | 'long'
         ;

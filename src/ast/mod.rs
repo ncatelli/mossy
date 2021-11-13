@@ -146,6 +146,7 @@ pub enum Signed {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub enum IntegerWidth {
     Eight,
+    Sixteen,
     ThirtyTwo,
     SixtyFour,
 }
@@ -154,6 +155,7 @@ impl ByteSized for IntegerWidth {
     fn size(&self) -> usize {
         match self {
             Self::Eight => 1,
+            Self::Sixteen => 2,
             Self::ThirtyTwo => 4,
             Self::SixtyFour => 8,
         }
