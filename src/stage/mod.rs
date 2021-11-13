@@ -31,6 +31,7 @@ where
     }
 }
 
+/// Provides a compilation stage that is provided on heap.
 pub struct BoxedCompilationStage<'a, I, O, E> {
     stage: Box<dyn CompilationStage<I, O, E> + 'a>,
 }
@@ -52,6 +53,9 @@ impl<'a, I, O, E> CompilationStage<I, O, E> for BoxedCompilationStage<'a, I, O, 
     }
 }
 
+/// Joins two compilation stages, executing them in sequential order. This will
+/// execute `S1` then `S2` if `S1` returns an `Ok` response. otherwise a
+/// failure in any stage will result in an error return.
 #[derive(Debug)]
 pub struct AndThen<S1, S2, S1I, S1O, S2O, E> {
     input: PhantomData<S1I>,
