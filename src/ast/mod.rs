@@ -143,15 +143,21 @@ pub enum Signed {
 }
 
 /// Represents valid integer bit widths.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub enum IntegerWidth {
     Eight,
+    Sixteen,
+    ThirtyTwo,
+    SixtyFour,
 }
 
 impl ByteSized for IntegerWidth {
     fn size(&self) -> usize {
         match self {
             Self::Eight => 1,
+            Self::Sixteen => 2,
+            Self::ThirtyTwo => 4,
+            Self::SixtyFour => 8,
         }
     }
 }
@@ -160,7 +166,6 @@ impl ByteSized for IntegerWidth {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Integer(Signed, IntegerWidth),
-    Char,
     Void,
     Func { return_type: Box<Type> },
 }
@@ -169,7 +174,6 @@ impl ByteSized for Type {
     fn size(&self) -> usize {
         match self {
             Self::Integer(_, iw) => iw.size(),
-            Self::Char => 1,
             Self::Void => 0,
             Self::Func { .. } => (usize::BITS / 8) as usize,
         }
@@ -180,11 +184,17 @@ impl ByteSized for Type {
 pub(crate) fn type_compatible(left: Type, right: Type, flow_left: bool) -> CompatibilityResult {
     match (left, right) {
         (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,
-        (Type::Integer(sign, width), Type::Char) => {
-            CompatibilityResult::WidenTo(Type::Integer(sign, width))
+        (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width))
+            if l_width != r_width && l_sign == r_sign =>
+        {
+            let widen_to_width = if l_width > r_width { l_width } else { r_width };
+            CompatibilityResult::WidenTo(Type::Integer(l_sign, widen_to_width))
         }
-        (Type::Char, Type::Integer(sign, width)) if !flow_left => {
-            CompatibilityResult::WidenTo(Type::Integer(sign, width))
+        (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width))
+            if l_width >= r_width && l_sign == r_sign && !flow_left =>
+        {
+            let widen_to_width = if l_width > r_width { l_width } else { r_width };
+            CompatibilityResult::WidenTo(Type::Integer(l_sign, widen_to_width))
         }
         _ => CompatibilityResult::Incompatible,
     }

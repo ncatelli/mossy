@@ -87,12 +87,8 @@ fn codegen_statement(
     input: ast::TypedStmtNode,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     match input {
-        ast::TypedStmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
-            Ok(vec![
-                codegen_expr(allocator, ret_val, expr),
-                codegen_printint(ret_val),
-            ])
-        }),
+        ast::TypedStmtNode::Expression(expr) => allocator
+            .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
         ast::TypedStmtNode::Declaration(t, identifier) => {
             Ok(vec![codegen_global_symbol(t, &identifier)])
         }
@@ -314,6 +310,38 @@ fn codegen_expr(
             _,
             Primary::Integer {
                 sign: Signed::Unsigned,
+                width: IntegerWidth::SixtyFour,
+                value,
+            },
+        ) => codegen_constant_u64(ret_val, value),
+        TypedExprNode::Primary(
+            _,
+            Primary::Integer {
+                sign: Signed::Unsigned,
+                width: IntegerWidth::ThirtyTwo,
+                value,
+            },
+        ) => {
+            let uc = core::convert::TryFrom::try_from(value)
+                .expect("value exceeds unsigned 32-bit integer");
+            codegen_constant_u32(ret_val, uc)
+        }
+        TypedExprNode::Primary(
+            _,
+            Primary::Integer {
+                sign: Signed::Unsigned,
+                width: IntegerWidth::Sixteen,
+                value,
+            },
+        ) => {
+            let uc = core::convert::TryFrom::try_from(value)
+                .expect("value exceeds unsigned 32-bit integer");
+            codegen_constant_u16(ret_val, uc)
+        }
+        TypedExprNode::Primary(
+            _,
+            Primary::Integer {
+                sign: Signed::Unsigned,
                 width: IntegerWidth::Eight,
                 value,
             },
@@ -326,7 +354,7 @@ fn codegen_expr(
             _,
             Primary::Integer {
                 sign: Signed::Signed,
-                width: IntegerWidth::Eight,
+                width: _,
                 value: _,
             },
         ) => {
@@ -372,6 +400,33 @@ fn codegen_expr(
         }
         TypedExprNode::Division(_, lhs, rhs) => codegen_division(allocator, ret_val, lhs, rhs),
     }
+}
+
+fn codegen_constant_u64(ret_val: &mut SizedGeneralPurpose, constant: u64) -> Vec<String> {
+    vec![format!(
+        "\tmov{}\t${}, {}\n",
+        ret_val.operator_suffix(),
+        constant,
+        ret_val
+    )]
+}
+
+fn codegen_constant_u32(ret_val: &mut SizedGeneralPurpose, constant: u32) -> Vec<String> {
+    vec![format!(
+        "\tmov{}\t${}, {}\n",
+        ret_val.operator_suffix(),
+        constant,
+        ret_val
+    )]
+}
+
+fn codegen_constant_u16(ret_val: &mut SizedGeneralPurpose, constant: u16) -> Vec<String> {
+    vec![format!(
+        "\tmov{}\t${}, {}\n",
+        ret_val.operator_suffix(),
+        constant,
+        ret_val
+    )]
 }
 
 fn codegen_constant_u8(ret_val: &mut SizedGeneralPurpose, constant: u8) -> Vec<String> {
