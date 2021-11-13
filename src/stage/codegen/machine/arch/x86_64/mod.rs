@@ -1,6 +1,7 @@
 use crate::ast::{self, ByteSized, Type};
 use crate::stage::codegen::machine::arch::TargetArchitecture;
-use crate::stage::codegen::{self, machine, register::Register, CodeGenerationErr, CodeGenerator};
+use crate::stage::codegen::{self, machine, register::Register, CodeGenerationErr};
+use crate::stage::CompilationStage;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 static BLOCK_ID: AtomicUsize = AtomicUsize::new(0);
@@ -31,10 +32,8 @@ printint:
     leave
     ret\n\n";
 
-impl CodeGenerator<ast::TypedProgram> for X86_64 {
-    type Error = CodeGenerationErr;
-
-    fn generate(&self, input: ast::TypedProgram) -> Result<Vec<String>, CodeGenerationErr> {
+impl CompilationStage<ast::TypedProgram, Vec<String>, String> for X86_64 {
+    fn apply(&mut self, input: ast::TypedProgram) -> Result<Vec<String>, String> {
         input
             .defs
             .into_iter()
@@ -53,14 +52,13 @@ impl CodeGenerator<ast::TypedProgram> for X86_64 {
                     .map(|output| output.into_iter().flatten().collect())
             })
             .collect::<Result<Vec<String>, CodeGenerationErr>>()
+            .map_err(|e| format!("{:?}", e))
     }
 }
 
-impl CodeGenerator<ast::TypedFunctionDeclaration> for X86_64 {
-    type Error = CodeGenerationErr;
-
-    fn generate(
-        &self,
+impl CompilationStage<ast::TypedFunctionDeclaration, Vec<String>, CodeGenerationErr> for X86_64 {
+    fn apply(
+        &mut self,
         input: ast::TypedFunctionDeclaration,
     ) -> Result<Vec<String>, CodeGenerationErr> {
         let mut allocator = GPRegisterAllocator::default();
@@ -78,10 +76,8 @@ impl CodeGenerator<ast::TypedFunctionDeclaration> for X86_64 {
     }
 }
 
-impl CodeGenerator<ast::TypedCompoundStmts> for X86_64 {
-    type Error = CodeGenerationErr;
-
-    fn generate(&self, input: ast::TypedCompoundStmts) -> Result<Vec<String>, CodeGenerationErr> {
+impl CompilationStage<ast::TypedCompoundStmts, Vec<String>, CodeGenerationErr> for X86_64 {
+    fn apply(&mut self, input: ast::TypedCompoundStmts) -> Result<Vec<String>, CodeGenerationErr> {
         let mut allocator = GPRegisterAllocator::default();
         codegen_statements(&mut allocator, input)
     }

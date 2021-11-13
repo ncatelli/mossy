@@ -4,20 +4,21 @@ pub mod codegen;
 pub mod type_check;
 
 /// CompilationStage represents a transformation pass on the ADT. Taking an
-/// `Input` and `Output` type for the pass.
+/// `Input` and `Output` type for the stage.
 pub trait CompilationStage<I, O, E> {
     fn apply(&mut self, input: I) -> Result<O, E>;
 
-    fn and_then<'a, F, O2>(self, thunk: F) -> BoxedCompilationStage<'a, I, O2, E>
+    fn and_then<'a, F, Next, O2>(self, next: F) -> BoxedCompilationStage<'a, I, O2, E>
     where
         Self: Sized + 'a,
         I: 'a,
         O: 'a,
         O2: 'a,
         E: 'a,
-        F: Fn(O) -> Result<O2, E> + 'a,
+        Next: CompilationStage<O, O2, E> + 'a,
+        F: Fn() -> Next,
     {
-        BoxedCompilationStage::new(AndThen::new(self, thunk))
+        BoxedCompilationStage::new(AndThen::new(self, next()))
     }
 }
 

@@ -68,17 +68,16 @@ fn write_dest_file(filename: &str, data: &[u8]) -> RuntimeResult<()> {
 fn compile(source: &str) -> RuntimeResult<String> {
     use mossy::parser;
     use mossy::stage::codegen::machine::arch::x86_64;
-    use mossy::stage::codegen::CodeGenerator;
     use mossy::stage::{type_check, CompilationStage};
 
     let input: Vec<(usize, char)> = source.chars().enumerate().collect();
-    let mut type_checker = type_check::TypeAnalysis::new();
-    let cg_backend = x86_64::X86_64;
 
     parser::parse(&input)
-        .map(|program| type_checker.apply(program))
-        .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
-        .map(|typed_program| cg_backend.generate(typed_program))
+        .map(|program| {
+            type_check::TypeAnalysis::new()
+                .and_then(|| x86_64::X86_64)
+                .apply(program)
+        })
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
         .map(|insts| {
             x86_64::codegen_preamble()
