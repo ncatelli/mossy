@@ -31,6 +31,31 @@ printint:
     leave
     ret\n\n";
 
+impl CodeGenerator<ast::TypedProgram> for X86_64 {
+    type Error = CodeGenerationErr;
+
+    fn generate(&self, input: ast::TypedProgram) -> Result<Vec<String>, CodeGenerationErr> {
+        input
+            .defs
+            .into_iter()
+            .map(|f| {
+                let mut allocator = GPRegisterAllocator::default();
+                let (id, block) = (f.id, f.block);
+
+                codegen_statements(&mut allocator, block)
+                    .map(|block| {
+                        vec![
+                            codegen_function_preamble(id),
+                            block,
+                            codegen_function_postamble(),
+                        ]
+                    })
+                    .map(|output| output.into_iter().flatten().collect())
+            })
+            .collect::<Result<Vec<String>, CodeGenerationErr>>()
+    }
+}
+
 impl CodeGenerator<ast::TypedFunctionDeclaration> for X86_64 {
     type Error = CodeGenerationErr;
 

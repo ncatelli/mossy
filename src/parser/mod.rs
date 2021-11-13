@@ -15,7 +15,7 @@ pub enum ParseErr {
 
 /// parse expects a character slice as input and attempts to parse a valid
 /// expression, returning a parse error if it is invalid.
-pub fn parse(input: &[(usize, char)]) -> Result<Vec<FunctionDeclaration>, ParseErr> {
+pub fn parse(input: &[(usize, char)]) -> Result<Program, ParseErr> {
     parcel::one_or_more(function_declaration())
         .parse(input)
         .map_err(ParseErr::UnexpectedToken)
@@ -29,6 +29,7 @@ pub fn parse(input: &[(usize, char)]) -> Result<Vec<FunctionDeclaration>, ParseE
                 Err(ParseErr::Unspecified("not a valid expression".to_string()))
             }
         })
+        .map(Program::new)
 }
 
 fn function_declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionDeclaration> {

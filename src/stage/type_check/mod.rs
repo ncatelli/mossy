@@ -23,15 +23,25 @@ impl TypeAnalysis {
     }
 }
 
-impl CompilationStage<crate::parser::ast::FunctionDeclaration, ast::TypedFunctionDeclaration>
+impl CompilationStage<crate::parser::ast::Program, ast::TypedProgram, String> for TypeAnalysis {
+    fn apply(&mut self, input: crate::parser::ast::Program) -> Result<ast::TypedProgram, String> {
+        input
+            .defs
+            .into_iter()
+            .map(|ast_node| self.apply(ast_node))
+            .collect::<Result<Vec<ast::TypedFunctionDeclaration>, String>>()
+            .map(ast::TypedProgram::new)
+    }
+}
+
+impl
+    CompilationStage<crate::parser::ast::FunctionDeclaration, ast::TypedFunctionDeclaration, String>
     for TypeAnalysis
 {
-    type Error = String;
-
     fn apply(
         &mut self,
         input: crate::parser::ast::FunctionDeclaration,
-    ) -> Result<ast::TypedFunctionDeclaration, Self::Error> {
+    ) -> Result<ast::TypedFunctionDeclaration, String> {
         let (id, block) = (input.id, input.block);
         self.scopes.define_mut(
             &id,

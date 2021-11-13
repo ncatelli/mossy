@@ -2,6 +2,17 @@ use crate::ast::{IntegerWidth, Signed};
 
 pub type Span = core::ops::Range<usize>;
 
+#[derive(Debug)]
+pub struct Program {
+    pub defs: Vec<FunctionDeclaration>,
+}
+
+impl Program {
+    pub fn new(defs: Vec<FunctionDeclaration>) -> Self {
+        Self { defs }
+    }
+}
+
 /// A new fuction declaration wrapping a string and block.
 #[derive(PartialEq, Debug, Clone)]
 pub struct FunctionDeclaration {

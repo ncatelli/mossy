@@ -1,3 +1,14 @@
+#[derive(Debug)]
+pub struct TypedProgram {
+    pub defs: Vec<TypedFunctionDeclaration>,
+}
+
+impl TypedProgram {
+    pub fn new(defs: Vec<TypedFunctionDeclaration>) -> Self {
+        Self { defs }
+    }
+}
+
 /// A typed function declaration
 #[derive(PartialEq, Debug, Clone)]
 pub struct TypedFunctionDeclaration {
