@@ -69,13 +69,13 @@ fn compile(source: &str) -> RuntimeResult<String> {
     use mossy::parser;
     use mossy::stage::codegen::machine::arch::x86_64;
     use mossy::stage::codegen::{CodeGenerationErr, CodeGenerator};
-    use mossy::stage::{type_pass, CompilationStage};
+    use mossy::stage::{type_check, CompilationStage};
 
     let input: Vec<(usize, char)> = source.chars().enumerate().collect();
 
     parser::parse(&input)
         .map(|ast_nodes| {
-            let mut type_checker = type_pass::TypeAnalysis::new();
+            let mut type_checker = type_check::TypeAnalysis::new();
             ast_nodes
                 .into_iter()
                 .map(|ast_node| type_checker.analyze(ast_node))

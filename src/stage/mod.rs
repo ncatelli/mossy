@@ -1,5 +1,5 @@
 pub mod codegen;
-pub mod type_pass;
+pub mod type_check;
 
 /// TreePass represents a transformation pass on the ADT. Taking an input and
 /// Output type for the pass.
