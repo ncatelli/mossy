@@ -66,34 +66,23 @@ fn write_dest_file(filename: &str, data: &[u8]) -> RuntimeResult<()> {
 }
 
 fn compile(source: &str) -> RuntimeResult<String> {
-    use mossy::codegen::machine::arch::x86_64;
-    use mossy::codegen::{CodeGenerationErr, CodeGenerator};
     use mossy::parser;
-    use mossy::pass::{type_pass, TreePass};
+    use mossy::stage::codegen::machine::arch::x86_64;
+    use mossy::stage::{type_check, CompilationStage};
 
     let input: Vec<(usize, char)> = source.chars().enumerate().collect();
 
     parser::parse(&input)
-        .map(|ast_nodes| {
-            let mut type_checker = type_pass::TypeAnalysis::new();
-            ast_nodes
-                .into_iter()
-                .map(|ast_node| type_checker.analyze(ast_node))
-                .collect::<Result<Vec<mossy::ast::TypedFunctionDeclaration>, String>>()
-        })
-        .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
-        .map(|ast_nodes| {
-            ast_nodes
-                .into_iter()
-                .map(|ast_node| x86_64::X86_64.generate(ast_node))
-                .collect::<Result<Vec<Vec<String>>, CodeGenerationErr>>()
+        .map(|program| {
+            type_check::TypeAnalysis::new()
+                .and_then(|| x86_64::X86_64)
+                .apply(program)
         })
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
         .map(|insts| {
-            vec![x86_64::codegen_preamble()]
+            x86_64::codegen_preamble()
                 .into_iter()
                 .chain(insts.into_iter())
-                .flatten()
                 .collect::<String>()
         })
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))

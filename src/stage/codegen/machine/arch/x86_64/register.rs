@@ -1,4 +1,4 @@
-use crate::codegen::register::{AddressWidth, Register};
+use crate::stage::codegen::register::{AddressWidth, Register};
 use std::sync::mpsc;
 
 #[allow(dead_code)]
@@ -21,7 +21,7 @@ impl AddressWidth for SizedGeneralPurpose {
     }
 }
 
-impl crate::codegen::register::Register<u64> for SizedGeneralPurpose {
+impl Register<u64> for SizedGeneralPurpose {
     /// returns the string representation of the register.
     fn id(&self) -> &'static str {
         match self {
@@ -148,8 +148,8 @@ impl Default for GPRegisterAllocator {
 
 #[cfg(test)]
 mod tests {
-    use crate::codegen::machine::arch::x86_64;
-    use crate::codegen::register::Register;
+    use crate::stage::codegen::machine::arch::x86_64;
+    use crate::stage::codegen::register::Register;
 
     #[test]
     fn should_allocate_a_register_from_an_unutilized_pool() {

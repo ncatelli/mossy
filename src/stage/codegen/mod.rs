@@ -22,11 +22,3 @@ impl core::fmt::Debug for CodeGenerationErr {
         }
     }
 }
-
-/// CodeGenerator defines the generate method, returning a string representation
-/// of all generated instructions or an error.
-pub trait CodeGenerator<I> {
-    type Error;
-
-    fn generate(&self, input: I) -> Result<Vec<String>, Self::Error>;
-}
