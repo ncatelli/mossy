@@ -66,6 +66,7 @@ pub enum StmtNode {
 #[derive(PartialEq, Debug, Clone)]
 pub enum ExprNode {
     Primary(Primary),
+    FuncCall(String, Box<ExprNode>),
 
     // Comparative
     Equal(Box<ExprNode>, Box<ExprNode>),

@@ -64,20 +64,18 @@ addition: multiplication ( ( "-" | "+" ) multiplication )*
 multiplication: primary ( ( "/" | "*" ) primary )* 
         ;
 
-primary: identifier
-        | uint8
-        | char
-        ;
-
-uint8:  [0-255]
+primary: call
+        | identifier
+        | integer
         ;
 
 char:   alphabetic
         ;
 
-
-
 identifier: alphabetic+
+        ;
+
+call: identifier "(" expression ")"
         ;
 
 type:   integer_type
@@ -91,5 +89,8 @@ integer_type:
         | 'long'
         ;
 
-alphabetic: [a-zA-Z]+
+
+integer:  [0-9]*;
+
+alphabetic: [a-zA-Z]+;
 ```

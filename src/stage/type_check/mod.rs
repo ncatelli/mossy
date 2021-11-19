@@ -173,6 +173,9 @@ impl TypeAnalysis {
                     )
                 })
                 .ok_or_else(|| "invalid type".to_string()),
+
+            ExprNode::FuncCall(_, _) => todo!(),
+
             ExprNode::Equal(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
