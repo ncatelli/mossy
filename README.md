@@ -2,8 +2,8 @@
 An (irresponsibly) experimental C compiler for the first-principles of computing project.
 
 ## Grammar
-```
 
+```
 program: function_declaration*
         ;
 
