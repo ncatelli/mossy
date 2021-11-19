@@ -106,7 +106,18 @@ fn main() {
                 .optional()
                 .with_default("a.s".to_string()),
         )
-        .with_handler(|(inf, ouf)| {
+        .with_flag(
+            scrap::Flag::with_choices(
+                "backend",
+                "b",
+                "a target architecture backend.",
+                ["x86_64".to_string()],
+                scrap::StringValue,
+            )
+            .optional()
+            .with_default("x86_64".to_string()),
+        )
+        .with_handler(|((inf, ouf), _)| {
             read_src_file(&inf)
                 .and_then(|input| compile(&input))
                 .and_then(|asm| write_dest_file(&ouf, asm.as_bytes()))
