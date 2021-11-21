@@ -71,7 +71,7 @@ pub enum TypedStmtNode {
 #[derive(PartialEq, Debug, Clone)]
 pub enum TypedExprNode {
     Primary(Type, Primary),
-    FuncCall(Type, String, Box<TypedExprNode>),
+    FuncCall(Type, String),
 
     // Comparative
     Equal(Type, Box<TypedExprNode>, Box<TypedExprNode>),
@@ -92,7 +92,7 @@ impl Typed for TypedExprNode {
     fn r#type(&self) -> Type {
         match self {
             TypedExprNode::Primary(t, _)
-            | TypedExprNode::FuncCall(t, _, _)
+            | TypedExprNode::FuncCall(t, _)
             | TypedExprNode::Equal(t, _, _)
             | TypedExprNode::NotEqual(t, _, _)
             | TypedExprNode::LessThan(t, _, _)

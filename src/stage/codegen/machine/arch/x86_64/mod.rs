@@ -377,7 +377,7 @@ fn codegen_expr(
             codegen_load_global(ret_val, &identifier)
         }
 
-        TypedExprNode::FuncCall(_, _, _) => todo!(),
+        TypedExprNode::FuncCall(_, _) => todo!(),
 
         TypedExprNode::Equal(_, lhs, rhs) => {
             codegen_compare_and_set(allocator, ret_val, ComparisonOperation::Equal, lhs, rhs)

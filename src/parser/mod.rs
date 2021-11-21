@@ -275,14 +275,14 @@ enum MultiplicationExprOp {
 #[allow(clippy::redundant_closure)]
 fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
-        primary(),
+        call(),
         parcel::zero_or_more(parcel::join(
             whitespace_wrapped(
                 expect_character('*')
                     .map(|_| MultiplicationExprOp::Star)
                     .or(|| expect_character('/').map(|_| MultiplicationExprOp::Slash)),
             ),
-            whitespace_wrapped(primary()),
+            whitespace_wrapped(call()),
         ))
         .map(unzip),
     )
@@ -297,7 +297,19 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
                 MultiplicationExprOp::Slash => ExprNode::Division(Box::new(lhs), Box::new(rhs)),
             })
     })
-    .or(|| primary())
+    .or(|| call())
+}
+
+fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+    parcel::left(parcel::join(
+        identifier(),
+        parcel::join(
+            whitespace_wrapped(expect_character('(')),
+            whitespace_wrapped(expect_character(')')),
+        ),
+    ))
+    .map(ExprNode::FuncCall)
+    .or(primary)
 }
 
 #[allow(clippy::redundant_closure)]
