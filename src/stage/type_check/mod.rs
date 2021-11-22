@@ -174,7 +174,16 @@ impl TypeAnalysis {
                 })
                 .ok_or_else(|| "invalid type".to_string()),
 
-            ExprNode::FunctionCall(_, _) => todo!(),
+            ExprNode::FunctionCall(identifier, args) => {
+                let args = args.map(|arg| self.analyze_expression(*arg).unwrap());
+
+                self.scopes
+                    .lookup(&identifier)
+                    .map(|r#type| {
+                        ast::TypedExprNode::FunctionCall(r#type, identifier, args.map(Box::new))
+                    })
+                    .ok_or_else(|| "invalid type".to_string())
+            }
 
             ExprNode::Equal(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
