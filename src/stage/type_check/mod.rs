@@ -2,7 +2,7 @@
 //! additional type checking and enrichment.
 
 use super::CompilationStage;
-use crate::ast::{self, type_compatible, Typed};
+use crate::ast::{self, type_compatible, FuncProto, Typed};
 
 mod scopes;
 use scopes::ScopeStack;
@@ -10,6 +10,7 @@ use scopes::ScopeStack;
 /// TypeAnalysis stores a scope stack for maintaining local variables.
 #[derive(Default)]
 pub struct TypeAnalysis {
+    in_func: Option<ast::FuncProto>,
     scopes: ScopeStack,
 }
 
@@ -19,7 +20,10 @@ impl TypeAnalysis {
         let mut scopes = ScopeStack::new();
         scopes.push_new_scope_mut();
 
-        Self { scopes }
+        Self {
+            scopes,
+            in_func: None,
+        }
     }
 }
 
@@ -43,20 +47,48 @@ impl
         input: crate::parser::ast::FunctionDeclaration,
     ) -> Result<ast::TypedFunctionDeclaration, String> {
         let (id, block) = (input.id, input.block);
-        self.scopes.define_mut(
-            &id,
-            ast::Type::Func {
-                return_type: Box::new(ast::Type::Void),
-                args: vec![],
-            },
-        );
 
-        self.analyze_block(block)
+        let proto = FuncProto::new(Box::new(input.return_type), vec![]);
+        self.scopes.define_mut(&id, ast::Type::Func(proto.clone()));
+
+        self.analyze_function_body(proto, block)
             .map(|typed_block| ast::TypedFunctionDeclaration::new(id, typed_block))
     }
 }
 
 impl TypeAnalysis {
+    fn analyze_function_body(
+        &mut self,
+        func_proto: FuncProto,
+        block: crate::parser::ast::CompoundStmts,
+    ) -> Result<ast::TypedCompoundStmts, String> {
+        let old_body = self.in_func.replace(func_proto.clone());
+        self.scopes.push_new_scope_mut();
+
+        let stmts = Vec::from(block);
+        let mut typed_stmts = vec![];
+
+        for stmt in stmts {
+            let typed_stmt = self.analyze_statement(stmt)?;
+            typed_stmts.push(typed_stmt)
+        }
+
+        let expected_ret_type = func_proto.return_type.as_ref();
+        typed_stmts
+            .last()
+            .and_then(|last_stmt| match last_stmt {
+                ast::TypedStmtNode::Return(rt, _) if expected_ret_type == rt => Some(rt),
+                _ => None,
+            })
+            .ok_or_else(|| "invalid return type".to_string())?;
+
+        // reset scope
+        self.scopes.pop_scope_mut();
+        self.in_func = old_body;
+
+        Ok(ast::TypedCompoundStmts::new(typed_stmts))
+    }
+
     fn analyze_block(
         &mut self,
         block: crate::parser::ast::CompoundStmts,
@@ -86,11 +118,35 @@ impl TypeAnalysis {
                 self.scopes.define_mut(&id, ty.clone());
                 Ok(ast::TypedStmtNode::Declaration(ty, id))
             }
+            crate::parser::ast::StmtNode::Return(Some(rt_expr)) => {
+                if let Some(proto) = self.in_func.as_ref() {
+                    let typed_expr = self.analyze_expression(rt_expr)?;
+                    let expr_t = typed_expr.r#type();
+
+                    let rt_type = match type_compatible(proto.return_type.as_ref(), &expr_t, true) {
+                        ast::CompatibilityResult::Equivalent => {
+                            Ok(proto.return_type.as_ref().clone())
+                        }
+                        ast::CompatibilityResult::WidenTo(new_type) => Ok(new_type),
+                        ast::CompatibilityResult::Incompatible => Err(format!(
+                            "function type and return type are incompatible: {:?}",
+                            proto.return_type.as_ref()
+                        )),
+                    }?;
+
+                    Ok(ast::TypedStmtNode::Return(rt_type, Some(typed_expr)))
+                } else {
+                    Err("invalid use of return: not in function".to_string())
+                }
+            }
+            crate::parser::ast::StmtNode::Return(None) => {
+                Ok(ast::TypedStmtNode::Return(ast::Type::Void, None))
+            }
             crate::parser::ast::StmtNode::Assignment(id, expr) => {
                 let expr = self.analyze_expression(expr)?;
                 self.scopes
                     .lookup(&id)
-                    .map(|var_type| type_compatible(var_type, expr.r#type(), true))
+                    .map(|var_type| type_compatible(&var_type, &expr.r#type(), true))
                     .and_then(|type_compat| match type_compat {
                         ast::CompatibilityResult::Equivalent
                         | ast::CompatibilityResult::WidenTo(_) => Some(()),
@@ -258,7 +314,7 @@ impl TypeAnalysis {
         let lhs = self.analyze_expression(lhs).unwrap();
         let rhs = self.analyze_expression(rhs).unwrap();
 
-        match type_compatible(lhs.r#type(), rhs.r#type(), false) {
+        match type_compatible(&lhs.r#type(), &rhs.r#type(), false) {
             ast::CompatibilityResult::Equivalent => Some((lhs.r#type(), lhs, rhs)),
             ast::CompatibilityResult::WidenTo(t) => Some((t, lhs, rhs)),
             ast::CompatibilityResult::Incompatible => None,

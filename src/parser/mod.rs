@@ -61,6 +61,7 @@ fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
         .or(if_statement)
         .or(while_statement)
         .or(for_statement)
+        .or(|| semicolon_terminated_statement(return_statement()))
 }
 
 fn semicolon_terminated_statement<'a, P>(
@@ -140,6 +141,14 @@ fn preop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNod
 
 fn postop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     statement()
+}
+
+fn return_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+    parcel::right(parcel::join(
+        whitespace_wrapped(expect_str("return")),
+        expression().optional(),
+    ))
+    .map(StmtNode::Return)
 }
 
 fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {

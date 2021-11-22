@@ -55,6 +55,8 @@ pub enum StmtNode {
     /// Declaration represents a global declaration statement with the
     /// enclosed string representing the Id of the variable.
     Declaration(crate::ast::Type, String),
+    /// A block return statement.
+    Return(Option<ExprNode>),
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.
     Assignment(String, ExprNode),

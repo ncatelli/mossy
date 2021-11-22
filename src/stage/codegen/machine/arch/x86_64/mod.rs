@@ -105,6 +105,7 @@ fn codegen_statement(
         ast::TypedStmtNode::Declaration(t, identifier) => {
             Ok(vec![codegen_global_symbol(t, &identifier)])
         }
+        ast::TypedStmtNode::Return(_, _) => todo!(),
         ast::TypedStmtNode::Assignment(identifier, expr) => {
             allocator.allocate_then(|allocator, ret_val| {
                 Ok(vec![
