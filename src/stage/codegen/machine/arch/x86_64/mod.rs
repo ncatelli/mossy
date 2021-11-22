@@ -100,8 +100,12 @@ fn codegen_statement(
     input: ast::TypedStmtNode,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     match input {
-        ast::TypedStmtNode::Expression(expr) => allocator
-            .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
+        ast::TypedStmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
+            Ok(vec![
+                codegen_expr(allocator, ret_val, expr),
+                codegen_printint(ret_val),
+            ])
+        }),
         ast::TypedStmtNode::Declaration(t, identifier) => {
             Ok(vec![codegen_global_symbol(t, &identifier)])
         }
@@ -377,7 +381,7 @@ fn codegen_expr(
             codegen_load_global(ret_val, &identifier)
         }
 
-        TypedExprNode::FuncCall(_, _) => todo!(),
+        TypedExprNode::FunctionCall(_, _) => todo!(),
 
         TypedExprNode::Equal(_, lhs, rhs) => {
             codegen_compare_and_set(allocator, ret_val, ComparisonOperation::Equal, lhs, rhs)

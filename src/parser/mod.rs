@@ -157,7 +157,7 @@ fn postop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNo
 }
 
 fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
-    equality()
+    equality().map(|e| e)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -301,14 +301,14 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
 }
 
 fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
-    parcel::left(parcel::join(
+    parcel::join(
         identifier(),
-        parcel::join(
-            whitespace_wrapped(expect_character('(')),
+        parcel::left(parcel::join(
+            whitespace_wrapped(expect_character('(')).and_then(|_| expression().optional()),
             whitespace_wrapped(expect_character(')')),
-        ),
-    ))
-    .map(ExprNode::FuncCall)
+        )),
+    )
+    .map(|(id, expr)| ExprNode::FunctionCall(id, expr.map(Box::new)))
     .or(primary)
 }
 

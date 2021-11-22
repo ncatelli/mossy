@@ -75,7 +75,7 @@ char:   alphabetic
 identifier: alphabetic+
         ;
 
-call: identifier "(" ")"
+call: identifier "(" expression? ")"
         ;
 
 type:   integer_type
