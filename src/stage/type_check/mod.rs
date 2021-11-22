@@ -47,6 +47,7 @@ impl
             &id,
             ast::Type::Func {
                 return_type: Box::new(ast::Type::Void),
+                args: vec![],
             },
         );
 

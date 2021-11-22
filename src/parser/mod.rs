@@ -34,16 +34,13 @@ pub fn parse(input: &[(usize, char)]) -> Result<Program, ParseErr> {
 
 fn function_declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionDeclaration> {
     parcel::join(
-        parcel::right(parcel::join(
-            whitespace_wrapped(expect_str("void")),
-            whitespace_wrapped(identifier()),
-        )),
+        parcel::join(r#type(), whitespace_wrapped(identifier())),
         parcel::right(parcel::join(
             expect_character('(').and_then(|_| whitespace_wrapped(expect_character(')'))),
             compound_statements(),
         )),
     )
-    .map(|(id, block)| FunctionDeclaration::new(id, block))
+    .map(|((ty, id), block)| FunctionDeclaration::new(id, ty, block))
 }
 
 fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], CompoundStmts> {
@@ -79,19 +76,8 @@ where
 }
 
 fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    use crate::ast::Type;
-
-    parcel::join(
-        whitespace_wrapped(parcel::one_of(vec![
-            expect_str("long").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour)),
-            expect_str("int").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::ThirtyTwo)),
-            expect_str("short").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Sixteen)),
-            expect_str("char").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Eight)),
-            expect_str("void").map(|_| Type::Void),
-        ])),
-        whitespace_wrapped(identifier()),
-    )
-    .map(|(ty, id)| StmtNode::Declaration(ty, id))
+    parcel::join(r#type(), whitespace_wrapped(identifier()))
+        .map(|(ty, id)| StmtNode::Declaration(ty, id))
 }
 
 fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -312,14 +298,12 @@ fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     .or(primary)
 }
 
-#[allow(clippy::redundant_closure)]
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     identifier()
         .map(|id| ExprNode::Primary(Primary::Identifier(id)))
         .or(|| number().map(ExprNode::Primary))
 }
 
-#[allow(clippy::redundant_closure)]
 fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
     parcel::one_of(vec![
         dec_u8().map(|num| Primary::Integer {
@@ -340,9 +324,21 @@ fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
     ])
 }
 
-#[allow(clippy::redundant_closure)]
 fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
     parcel::one_or_more(alphabetic()).map(|chars| chars.into_iter().collect())
+}
+
+#[allow(clippy::redundant_closure)]
+fn r#type<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::ast::Type> {
+    use crate::ast::Type;
+
+    whitespace_wrapped(parcel::one_of(vec![
+        expect_str("long").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour)),
+        expect_str("int").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::ThirtyTwo)),
+        expect_str("short").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Sixteen)),
+        expect_str("char").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Eight)),
+        expect_str("void").map(|_| Type::Void),
+    ]))
 }
 
 fn dec_u64<'a>() -> impl Parser<'a, &'a [(usize, char)], u64> {

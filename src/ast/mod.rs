@@ -180,7 +180,10 @@ impl ByteSized for IntegerWidth {
 pub enum Type {
     Integer(Signed, IntegerWidth),
     Void,
-    Func { return_type: Box<Type> },
+    Func {
+        return_type: Box<Type>,
+        args: Vec<Type>,
+    },
 }
 
 impl ByteSized for Type {

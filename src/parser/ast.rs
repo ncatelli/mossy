@@ -17,12 +17,17 @@ impl Program {
 #[derive(PartialEq, Debug, Clone)]
 pub struct FunctionDeclaration {
     pub id: String,
+    pub return_type: crate::ast::Type,
     pub block: CompoundStmts,
 }
 
 impl FunctionDeclaration {
-    pub fn new(id: String, block: CompoundStmts) -> Self {
-        Self { id, block }
+    pub fn new(id: String, return_type: crate::ast::Type, block: CompoundStmts) -> Self {
+        Self {
+            id,
+            return_type,
+            block,
+        }
     }
 }
 
