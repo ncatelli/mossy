@@ -49,7 +49,7 @@ pub enum TypedStmtNode {
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.
     /// A block return statement.
-    Return(Type, Option<TypedExprNode>),
+    Return(Type, String, Option<TypedExprNode>),
     Assignment(String, TypedExprNode),
     /// Represents a statement containing only a single expression.
     Expression(TypedExprNode),

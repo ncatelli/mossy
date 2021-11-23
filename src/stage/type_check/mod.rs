@@ -10,7 +10,7 @@ use scopes::ScopeStack;
 /// TypeAnalysis stores a scope stack for maintaining local variables.
 #[derive(Default)]
 pub struct TypeAnalysis {
-    in_func: Option<ast::FuncProto>,
+    in_func: Option<(String, ast::FuncProto)>,
     scopes: ScopeStack,
 }
 
@@ -51,18 +51,19 @@ impl
         let proto = FuncProto::new(Box::new(input.return_type), vec![]);
         self.scopes.define_mut(&id, ast::Type::Func(proto.clone()));
 
-        self.analyze_function_body(proto, block)
-            .map(|typed_block| ast::TypedFunctionDeclaration::new(id, typed_block))
+        self.analyze_function_body(id.clone(), proto, block)
+            .map(|typed_block| ast::TypedFunctionDeclaration::new(id.clone(), typed_block))
     }
 }
 
 impl TypeAnalysis {
     fn analyze_function_body(
         &mut self,
+        id: String,
         func_proto: FuncProto,
         block: crate::parser::ast::CompoundStmts,
     ) -> Result<ast::TypedCompoundStmts, String> {
-        let old_body = self.in_func.replace(func_proto.clone());
+        let old_body = self.in_func.replace((id, func_proto.clone()));
         self.scopes.push_new_scope_mut();
 
         let stmts = Vec::from(block);
@@ -77,7 +78,7 @@ impl TypeAnalysis {
         typed_stmts
             .last()
             .and_then(|last_stmt| match last_stmt {
-                ast::TypedStmtNode::Return(rt, _) if expected_ret_type == rt => Some(rt),
+                ast::TypedStmtNode::Return(rt, _, _) if expected_ret_type == rt => Some(rt),
                 _ => None,
             })
             .ok_or_else(|| "invalid return type".to_string())?;
@@ -119,7 +120,7 @@ impl TypeAnalysis {
                 Ok(ast::TypedStmtNode::Declaration(ty, id))
             }
             crate::parser::ast::StmtNode::Return(Some(rt_expr)) => {
-                if let Some(proto) = self.in_func.as_ref() {
+                if let Some((id, proto)) = self.in_func.as_ref() {
                     let typed_expr = self.analyze_expression(rt_expr)?;
                     let expr_t = typed_expr.r#type();
 
@@ -134,26 +135,40 @@ impl TypeAnalysis {
                         )),
                     }?;
 
-                    Ok(ast::TypedStmtNode::Return(rt_type, Some(typed_expr)))
+                    Ok(ast::TypedStmtNode::Return(
+                        rt_type,
+                        id.to_owned(),
+                        Some(typed_expr),
+                    ))
                 } else {
                     Err("invalid use of return: not in function".to_string())
                 }
             }
             crate::parser::ast::StmtNode::Return(None) => {
-                Ok(ast::TypedStmtNode::Return(ast::Type::Void, None))
+                if let Some((id, _)) = self.in_func.as_ref() {
+                    Ok(ast::TypedStmtNode::Return(
+                        ast::Type::Void,
+                        id.to_owned(),
+                        None,
+                    ))
+                } else {
+                    Err("invalid use of return: not in function".to_string())
+                }
             }
             crate::parser::ast::StmtNode::Assignment(id, expr) => {
                 let expr = self.analyze_expression(expr)?;
                 self.scopes
                     .lookup(&id)
                     .map(|var_type| type_compatible(&var_type, &expr.r#type(), true))
+                    .ok_or(format!("symbol {} undefined", &id))
                     .and_then(|type_compat| match type_compat {
-                        ast::CompatibilityResult::Equivalent
-                        | ast::CompatibilityResult::WidenTo(_) => Some(()),
-                        ast::CompatibilityResult::Incompatible => None,
+                        ast::CompatibilityResult::Equivalent => Ok(expr.r#type()),
+                        ast::CompatibilityResult::WidenTo(t) => Ok(t),
+                        ast::CompatibilityResult::Incompatible => {
+                            Err(format!("invalid type: ({:?})", expr.r#type()))
+                        }
                     })
                     .map(|_| ast::TypedStmtNode::Assignment(id, expr))
-                    .ok_or_else(|| "invalid type".to_string())
             }
             crate::parser::ast::StmtNode::If(cond, t_case, f_case) => {
                 let typed_cond = self.analyze_expression(cond)?;
@@ -236,10 +251,20 @@ impl TypeAnalysis {
 
                 self.scopes
                     .lookup(&identifier)
-                    .map(|r#type| {
-                        ast::TypedExprNode::FunctionCall(r#type, identifier, args.map(Box::new))
+                    .ok_or_else(|| format!("undefined_function: {}", &identifier))
+                    .and_then(|r#type| match r#type {
+                        ast::Type::Func(FuncProto {
+                            return_type,
+                            args: func_args,
+                        }) if args.is_none() && func_args.is_empty() => {
+                            Ok(ast::TypedExprNode::FunctionCall(
+                                *return_type,
+                                identifier,
+                                args.map(Box::new),
+                            ))
+                        }
+                        _ => Err(format!("type mismatch: {:?}", &r#type)),
                     })
-                    .ok_or_else(|| "invalid type".to_string())
             }
 
             ExprNode::Equal(lhs, rhs) => self
