@@ -44,9 +44,9 @@ impl CompilationStage<ast::TypedProgram, Vec<String>, String> for X86_64 {
                 codegen_statements(&mut allocator, block)
                     .map(|block| {
                         vec![
-                            codegen_function_preamble(id),
+                            codegen_function_preamble(&id),
                             block,
-                            codegen_function_postamble(),
+                            codegen_function_postamble(&id),
                         ]
                     })
                     .map(|output| output.into_iter().flatten().collect())
@@ -67,9 +67,9 @@ impl CompilationStage<ast::TypedFunctionDeclaration, Vec<String>, CodeGeneration
         codegen_statements(&mut allocator, block)
             .map(|block| {
                 vec![
-                    codegen_function_preamble(id),
+                    codegen_function_preamble(&id),
                     block,
-                    codegen_function_postamble(),
+                    codegen_function_postamble(&id),
                 ]
             })
             .map(|output| output.into_iter().flatten().collect())
@@ -105,6 +105,18 @@ fn codegen_statement(
         ast::TypedStmtNode::Declaration(t, identifier) => {
             Ok(vec![codegen_global_symbol(t, &identifier)])
         }
+        ast::TypedStmtNode::Return(_, id, arg) => allocator.allocate_then(|allocator, ret_val| {
+            let res: Vec<String> = if let Some(expr) = arg {
+                codegen_expr(allocator, ret_val, expr)
+            } else {
+                vec![]
+            }
+            .into_iter()
+            .chain(codegen_return(ret_val, &id))
+            .collect();
+
+            Ok(vec![res])
+        }),
         ast::TypedStmtNode::Assignment(identifier, expr) => {
             allocator.allocate_then(|allocator, ret_val| {
                 Ok(vec![
@@ -253,7 +265,7 @@ pub fn codegen_preamble() -> Vec<String> {
     vec![String::from(machine::arch::x86_64::CG_PREAMBLE)]
 }
 
-pub fn codegen_function_preamble(identifier: String) -> Vec<String> {
+pub fn codegen_function_preamble(identifier: &str) -> Vec<String> {
     vec![format!(
         "\t.text
     .globl  {name}
@@ -265,12 +277,16 @@ pub fn codegen_function_preamble(identifier: String) -> Vec<String> {
     )]
 }
 
-pub fn codegen_function_postamble() -> Vec<String> {
-    vec![String::from(
-        "\tmovl $0, %eax
-    popq     %rbp
-    ret\n\n",
-    )]
+pub fn codegen_function_postamble(identifier: &str) -> Vec<String> {
+    codegen_label(format!("func_{}_ret", identifier))
+        .into_iter()
+        .chain(
+            vec!["\tpopq     %rbp
+    ret\n\n"
+                .to_string()]
+            .into_iter(),
+        )
+        .collect()
 }
 
 fn codegen_global_symbol(kind: Type, identifier: &str) -> Vec<String> {
@@ -303,11 +319,17 @@ fn codegen_load_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<S
 
 type BlockId = usize;
 
-fn codegen_label(block_id: BlockId) -> Vec<String> {
+fn codegen_label<T>(block_id: T) -> Vec<String>
+where
+    T: core::fmt::Display,
+{
     vec![format!("L{}:\n", block_id)]
 }
 
-fn codegen_jump(block_id: BlockId) -> Vec<String> {
+fn codegen_jump<T>(block_id: T) -> Vec<String>
+where
+    T: core::fmt::Display,
+{
     vec![format!("\tjmp\tL{}\n", block_id)]
 }
 
@@ -375,6 +397,10 @@ fn codegen_expr(
         }
         TypedExprNode::Primary(_, Primary::Identifier(_, identifier)) => {
             codegen_load_global(ret_val, &identifier)
+        }
+
+        TypedExprNode::FunctionCall(_, func_name, optional_arg) => {
+            codegen_call(allocator, ret_val, &func_name, optional_arg)
         }
 
         TypedExprNode::Equal(_, lhs, rhs) => {
@@ -618,6 +644,48 @@ fn codegen_compare_and_jmp(
         .chain(codegen_jump(cond_false_id).into_iter())
         .collect()
     })
+}
+
+fn codegen_call(
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut SizedGeneralPurpose,
+    func_name: &str,
+    arg: Option<Box<ast::TypedExprNode>>,
+) -> Vec<String> {
+    if let Some(arg_expr) = arg {
+        allocator.allocate_then(|allocator, arg_retval| {
+            let arg_ctx = codegen_expr(allocator, arg_retval, *arg_expr);
+
+            flattenable_instructions!(
+                arg_ctx,
+                vec![
+                    format!(
+                        "\tmov{}\t{}, %rdi\n",
+                        arg_retval.operator_suffix(),
+                        arg_retval,
+                    ),
+                    format!("\tcall\t{}\n", func_name),
+                    format!("\tmov{}\t%rax, {}\n", ret_val.operator_suffix(), ret_val,),
+                ],
+            )
+        })
+    } else {
+        vec![
+            format!("\tcall\t{}\n", func_name),
+            format!("\tmov{}\t%rax, {}\n", ret_val.operator_suffix(), ret_val,),
+        ]
+    }
+}
+
+fn codegen_return(ret_val: &mut SizedGeneralPurpose, func_name: &str) -> Vec<String> {
+    vec![format!(
+        "\tmov{}\t{}, %rax\n",
+        ret_val.operator_suffix(),
+        ret_val,
+    )]
+    .into_iter()
+    .chain(codegen_jump(format!("func_{}_ret", func_name)).into_iter())
+    .collect()
 }
 
 #[allow(dead_code)]

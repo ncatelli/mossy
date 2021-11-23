@@ -17,12 +17,17 @@ impl Program {
 #[derive(PartialEq, Debug, Clone)]
 pub struct FunctionDeclaration {
     pub id: String,
+    pub return_type: crate::ast::Type,
     pub block: CompoundStmts,
 }
 
 impl FunctionDeclaration {
-    pub fn new(id: String, block: CompoundStmts) -> Self {
-        Self { id, block }
+    pub fn new(id: String, return_type: crate::ast::Type, block: CompoundStmts) -> Self {
+        Self {
+            id,
+            return_type,
+            block,
+        }
     }
 }
 
@@ -50,6 +55,8 @@ pub enum StmtNode {
     /// Declaration represents a global declaration statement with the
     /// enclosed string representing the Id of the variable.
     Declaration(crate::ast::Type, String),
+    /// A block return statement.
+    Return(Option<ExprNode>),
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.
     Assignment(String, ExprNode),
@@ -66,6 +73,7 @@ pub enum StmtNode {
 #[derive(PartialEq, Debug, Clone)]
 pub enum ExprNode {
     Primary(Primary),
+    FunctionCall(String, Option<Box<ExprNode>>),
 
     // Comparative
     Equal(Box<ExprNode>, Box<ExprNode>),

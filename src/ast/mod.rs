@@ -48,6 +48,8 @@ pub enum TypedStmtNode {
     Declaration(Type, String),
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.
+    /// A block return statement.
+    Return(Type, String, Option<TypedExprNode>),
     Assignment(String, TypedExprNode),
     /// Represents a statement containing only a single expression.
     Expression(TypedExprNode),
@@ -71,6 +73,7 @@ pub enum TypedStmtNode {
 #[derive(PartialEq, Debug, Clone)]
 pub enum TypedExprNode {
     Primary(Type, Primary),
+    FunctionCall(Type, String, Option<Box<TypedExprNode>>),
 
     // Comparative
     Equal(Type, Box<TypedExprNode>, Box<TypedExprNode>),
@@ -91,6 +94,7 @@ impl Typed for TypedExprNode {
     fn r#type(&self) -> Type {
         match self {
             TypedExprNode::Primary(t, _)
+            | TypedExprNode::FunctionCall(t, _, _)
             | TypedExprNode::Equal(t, _, _)
             | TypedExprNode::NotEqual(t, _, _)
             | TypedExprNode::LessThan(t, _, _)
@@ -173,12 +177,25 @@ impl ByteSized for IntegerWidth {
     }
 }
 
+/// A concrete type for function prototypes
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FuncProto {
+    pub return_type: Box<Type>,
+    pub args: Vec<Type>,
+}
+
+impl FuncProto {
+    pub fn new(return_type: Box<Type>, args: Vec<Type>) -> Self {
+        Self { return_type, args }
+    }
+}
+
 /// Represents valid primitive types.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Integer(Signed, IntegerWidth),
     Void,
-    Func { return_type: Box<Type> },
+    Func(FuncProto),
 }
 
 impl ByteSized for Type {
@@ -192,20 +209,20 @@ impl ByteSized for Type {
 }
 
 /// Evaluates type compatiblity for a given binary pair of types.
-pub(crate) fn type_compatible(left: Type, right: Type, flow_left: bool) -> CompatibilityResult {
+pub(crate) fn type_compatible(left: &Type, right: &Type, flow_left: bool) -> CompatibilityResult {
     match (left, right) {
         (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,
         (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width))
-            if l_width != r_width && l_sign == r_sign =>
+            if l_width != r_width && l_sign == r_sign && !flow_left =>
         {
             let widen_to_width = if l_width > r_width { l_width } else { r_width };
-            CompatibilityResult::WidenTo(Type::Integer(l_sign, widen_to_width))
+            CompatibilityResult::WidenTo(Type::Integer(*l_sign, *widen_to_width))
         }
         (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width))
-            if l_width >= r_width && l_sign == r_sign && !flow_left =>
+            if l_width >= r_width && l_sign == r_sign && flow_left =>
         {
             let widen_to_width = if l_width > r_width { l_width } else { r_width };
-            CompatibilityResult::WidenTo(Type::Integer(l_sign, widen_to_width))
+            CompatibilityResult::WidenTo(Type::Integer(*l_sign, *widen_to_width))
         }
         _ => CompatibilityResult::Incompatible,
     }

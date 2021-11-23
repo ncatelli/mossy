@@ -15,12 +15,13 @@ compound_statement: '{' '}'
         ;
 
 statement: 
-        | expression ";"
-        | declaration ";"
-        | assignment ";"
+        | expression ';'
+        | declaration ';'
+        | assignment ';'
         | if_statement 
         | while_statement 
         | for_statement
+        | return_stmt ';'
         ;
 
 declaration:   type identifier
@@ -49,35 +50,35 @@ preop_statement: assignment
 postop_statement: expression
         ;
 
+return_statement: 'return' expression?   ;
+
 expression: equality
         ;
 
-equality: relational ( ( "==" | "!=" ) relational )*
+equality: relational ( ( '==' | '!=' ) relational )*
         ;
 
-relational: addition ( ( "<" | "<=" | ">" | ">=" ) addition )*
+relational: addition ( ( '<' | '<=' | '>' | '>=' ) addition )*
         ;
 
-addition: multiplication ( ( "-" | "+" ) multiplication )* 
+addition: multiplication ( ( '-' | '+' ) multiplication )* 
         ;
 
-multiplication: primary ( ( "/" | "*" ) primary )* 
+multiplication: primary ( ( '/' | '*' ) primary )* 
         ;
 
-primary: identifier
-        | uint8
-        | char
-        ;
-
-uint8:  [0-255]
+primary: call
+        | identifier
+        | integer
         ;
 
 char:   alphabetic
         ;
 
-
-
 identifier: alphabetic+
+        ;
+
+call: identifier '(' expression? ')'
         ;
 
 type:   integer_type
@@ -91,5 +92,8 @@ integer_type:
         | 'long'
         ;
 
-alphabetic: [a-zA-Z]+
+
+integer:  [0-9]*;
+
+alphabetic: [a-zA-Z]+;
 ```

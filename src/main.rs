@@ -92,6 +92,7 @@ fn main() {
     let raw_args: Vec<String> = env::args().into_iter().collect::<Vec<String>>();
     let args = raw_args.iter().map(|a| a.as_str()).collect::<Vec<&str>>();
 
+    // Flag Definitions
     let in_file = scrap::Flag::expect_string("in-file", "i", "an input path for a source file.");
     let out_file = scrap::Flag::expect_string("out-file", "o", "an assembly output path.")
         .optional()
