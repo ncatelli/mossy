@@ -213,13 +213,13 @@ pub(crate) fn type_compatible(left: &Type, right: &Type, flow_left: bool) -> Com
     match (left, right) {
         (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,
         (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width))
-            if l_width != r_width && l_sign == r_sign =>
+            if l_width != r_width && l_sign == r_sign && !flow_left =>
         {
             let widen_to_width = if l_width > r_width { l_width } else { r_width };
             CompatibilityResult::WidenTo(Type::Integer(*l_sign, *widen_to_width))
         }
         (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width))
-            if l_width >= r_width && l_sign == r_sign && !flow_left =>
+            if l_width >= r_width && l_sign == r_sign && flow_left =>
         {
             let widen_to_width = if l_width > r_width { l_width } else { r_width };
             CompatibilityResult::WidenTo(Type::Integer(*l_sign, *widen_to_width))
