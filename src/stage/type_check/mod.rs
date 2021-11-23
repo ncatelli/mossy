@@ -263,7 +263,10 @@ impl TypeAnalysis {
                                 args.map(Box::new),
                             ))
                         }
-                        _ => Err(format!("type mismatch: {:?}", &r#type)),
+                        _ => Err(format!(
+                            "type mismatch, cannot call non-function type: {:?}",
+                            &r#type
+                        )),
                     })
             }
 
