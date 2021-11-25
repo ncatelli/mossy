@@ -55,12 +55,12 @@ fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Com
 }
 
 fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    semicolon_terminated_statement(expression().map(StmtNode::Expression))
-        .or(|| semicolon_terminated_statement(declaration()))
+    semicolon_terminated_statement(declaration())
         .or(|| semicolon_terminated_statement(assignment()))
         .or(if_statement)
         .or(while_statement)
         .or(for_statement)
+        .or(|| semicolon_terminated_statement(expression().map(StmtNode::Expression)))
         .or(|| semicolon_terminated_statement(return_statement()))
 }
 
