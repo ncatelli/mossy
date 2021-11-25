@@ -124,12 +124,11 @@ impl Typed for Primary {
     fn r#type(&self) -> Type {
         match self {
             Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Eight,
+                sign,
+                width,
                 value: _,
-            } => Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            } => Type::Integer(*sign, *width),
             Primary::Identifier(ty, _) => ty.clone(),
-            _ => panic!("unknown type"),
         }
     }
 }
