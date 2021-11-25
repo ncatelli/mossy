@@ -342,6 +342,41 @@ fn r#type<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::ast::Type
     use crate::ast::Type;
 
     whitespace_wrapped(parcel::one_of(vec![
+        expect_str("long")
+            .and_then(|_| whitespace_wrapped(expect_character('*')))
+            .map(|_| {
+                Type::Pointer(Box::new(Type::Integer(
+                    Signed::Unsigned,
+                    IntegerWidth::SixtyFour,
+                )))
+            }),
+        expect_str("int")
+            .and_then(|_| whitespace_wrapped(expect_character('*')))
+            .map(|_| {
+                Type::Pointer(Box::new(Type::Integer(
+                    Signed::Unsigned,
+                    IntegerWidth::ThirtyTwo,
+                )))
+            }),
+        expect_str("short")
+            .and_then(|_| whitespace_wrapped(expect_character('*')))
+            .map(|_| {
+                Type::Pointer(Box::new(Type::Integer(
+                    Signed::Unsigned,
+                    IntegerWidth::Sixteen,
+                )))
+            }),
+        expect_str("char")
+            .and_then(|_| whitespace_wrapped(expect_character('*')))
+            .map(|_| {
+                Type::Pointer(Box::new(Type::Integer(
+                    Signed::Unsigned,
+                    IntegerWidth::Eight,
+                )))
+            }),
+        expect_str("void")
+            .and_then(|_| whitespace_wrapped(expect_character('*')))
+            .map(|_| Type::Pointer(Box::new(Type::Void))),
         expect_str("long").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour)),
         expect_str("int").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::ThirtyTwo)),
         expect_str("short").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Sixteen)),

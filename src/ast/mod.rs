@@ -189,12 +189,16 @@ impl FuncProto {
     }
 }
 
+/// The size in bytes for a given pointer on the architecture.
+const POINTER_BYTE_WIDTH: usize = (usize::BITS / 8) as usize;
+
 /// Represents valid primitive types.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Integer(Signed, IntegerWidth),
     Void,
     Func(FuncProto),
+    Pointer(Box<Type>),
 }
 
 impl ByteSized for Type {
@@ -202,7 +206,21 @@ impl ByteSized for Type {
         match self {
             Self::Integer(_, iw) => iw.size(),
             Self::Void => 0,
-            Self::Func { .. } => (usize::BITS / 8) as usize,
+            Self::Func { .. } => POINTER_BYTE_WIDTH,
+            Self::Pointer(_) => POINTER_BYTE_WIDTH,
+        }
+    }
+}
+
+impl Type {
+    pub fn pointer_to(&self) -> Self {
+        Self::Pointer(Box::new(self.clone()))
+    }
+
+    pub fn value_at(&self) -> Option<Self> {
+        match self {
+            Type::Pointer(ty) => Some(*(ty.clone())),
+            _ => None,
         }
     }
 }

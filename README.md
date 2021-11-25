@@ -64,11 +64,10 @@ relational: addition ( ( '<' | '<=' | '>' | '>=' ) addition )*
 addition: multiplication ( ( '-' | '+' ) multiplication )* 
         ;
 
-multiplication: primary ( ( '/' | '*' ) primary )* 
+multiplication: call ( ( '/' | '*' ) call )* 
         ;
 
-primary: call
-        | identifier
+primary: identifier
         | integer
         ;
 
@@ -81,8 +80,11 @@ identifier: alphabetic+
 call: identifier '(' expression? ')'
         ;
 
-type:   integer_type
+type:   integer_type '*'
+        | 'void' '*'
+        | integer_type
         | 'void'
+        
         ;
 
 integer_type:
