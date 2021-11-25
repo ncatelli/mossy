@@ -337,46 +337,29 @@ fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
     parcel::one_or_more(alphabetic()).map(|chars| chars.into_iter().collect())
 }
 
-#[allow(clippy::redundant_closure)]
 fn r#type<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::ast::Type> {
     use crate::ast::Type;
 
+    whitespace_wrapped(
+        parcel::join(
+            primitive_type(),
+            whitespace_wrapped(expect_character('*').one_or_more()),
+        )
+        .map(|(ty, pointer_depth)| {
+            let nested_pointers = pointer_depth.len() - 1;
+            (0..nested_pointers)
+                .into_iter()
+                .fold(Type::Pointer(Box::new(ty)), |acc, _| {
+                    Type::Pointer(Box::new(acc))
+                })
+        }),
+    )
+    .or(primitive_type)
+}
+
+fn primitive_type<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::ast::Type> {
+    use crate::ast::Type;
     whitespace_wrapped(parcel::one_of(vec![
-        expect_str("long")
-            .and_then(|_| whitespace_wrapped(expect_character('*')))
-            .map(|_| {
-                Type::Pointer(Box::new(Type::Integer(
-                    Signed::Unsigned,
-                    IntegerWidth::SixtyFour,
-                )))
-            }),
-        expect_str("int")
-            .and_then(|_| whitespace_wrapped(expect_character('*')))
-            .map(|_| {
-                Type::Pointer(Box::new(Type::Integer(
-                    Signed::Unsigned,
-                    IntegerWidth::ThirtyTwo,
-                )))
-            }),
-        expect_str("short")
-            .and_then(|_| whitespace_wrapped(expect_character('*')))
-            .map(|_| {
-                Type::Pointer(Box::new(Type::Integer(
-                    Signed::Unsigned,
-                    IntegerWidth::Sixteen,
-                )))
-            }),
-        expect_str("char")
-            .and_then(|_| whitespace_wrapped(expect_character('*')))
-            .map(|_| {
-                Type::Pointer(Box::new(Type::Integer(
-                    Signed::Unsigned,
-                    IntegerWidth::Eight,
-                )))
-            }),
-        expect_str("void")
-            .and_then(|_| whitespace_wrapped(expect_character('*')))
-            .map(|_| Type::Pointer(Box::new(Type::Void))),
         expect_str("long").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour)),
         expect_str("int").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::ThirtyTwo)),
         expect_str("short").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Sixteen)),

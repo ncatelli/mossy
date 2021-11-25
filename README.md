@@ -80,12 +80,14 @@ identifier: alphabetic+
 call: identifier '(' expression? ')'
         ;
 
-type:   integer_type '*'
-        | 'void' '*'
-        | integer_type
-        | 'void'
-        
+type:   primitive_type '*'+
+        | primitive_type
         ;
+
+primitive_type: integer_type
+        | 'void'
+        ;
+
 
 integer_type:
         'char'
