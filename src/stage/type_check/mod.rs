@@ -158,7 +158,6 @@ impl TypeAnalysis {
             crate::parser::ast::StmtNode::Assignment(id, expr) => {
                 let expr = self.analyze_expression(expr)?;
 
-                println!("{:?}", &expr);
                 self.scopes
                     .lookup(&id)
                     .map(|var_type| type_compatible(&var_type, &expr.r#type(), true))

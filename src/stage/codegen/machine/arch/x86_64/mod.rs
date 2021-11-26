@@ -490,7 +490,7 @@ fn codegen_reference(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<Str
 
 fn codegen_deref(ret: &mut SizedGeneralPurpose, _: ast::Type) -> Vec<String> {
     vec![format!(
-        "\tmov{}\t%({}(), {}\n",
+        "\tmov{}\t(%{}), %{}\n",
         ret.operator_suffix(),
         ret.id(),
         ret.id()

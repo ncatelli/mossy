@@ -310,6 +310,8 @@ fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
 fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     whitespace_wrapped(expect_character('*'))
         .and_then(|_| prefix_expression())
+        .map(Box::new)
+        .map(ExprNode::Deref)
         .or(|| {
             whitespace_wrapped(expect_character('&'))
                 .and_then(|_| identifier())
