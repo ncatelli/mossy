@@ -67,6 +67,15 @@ addition: multiplication ( ( '-' | '+' ) multiplication )*
 multiplication: call ( ( '/' | '*' ) call )* 
         ;
 
+call: identifier '(' expression? ')'
+        | prefix_expression
+        ;
+
+prefix_expression: '*' prefix_expression
+        | '&' prefix_expression
+        | primary
+        ;
+
 primary: identifier
         | integer
         ;
@@ -75,9 +84,6 @@ char:   alphabetic
         ;
 
 identifier: alphabetic+
-        ;
-
-call: identifier '(' expression? ')'
         ;
 
 type:   primitive_type '*'+
