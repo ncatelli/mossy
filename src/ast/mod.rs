@@ -88,6 +88,10 @@ pub enum TypedExprNode {
     Division(Type, Box<TypedExprNode>, Box<TypedExprNode>),
     Addition(Type, Box<TypedExprNode>, Box<TypedExprNode>),
     Multiplication(Type, Box<TypedExprNode>, Box<TypedExprNode>),
+
+    // Pointer Operations
+    Ref(Type, String),
+    Deref(Type, Box<TypedExprNode>),
 }
 
 impl Typed for TypedExprNode {
@@ -104,7 +108,9 @@ impl Typed for TypedExprNode {
             | TypedExprNode::Subtraction(t, _, _)
             | TypedExprNode::Division(t, _, _)
             | TypedExprNode::Addition(t, _, _)
-            | TypedExprNode::Multiplication(t, _, _) => t.clone(),
+            | TypedExprNode::Multiplication(t, _, _)
+            | TypedExprNode::Ref(t, _)
+            | TypedExprNode::Deref(t, _) => t.clone(),
         }
     }
 }

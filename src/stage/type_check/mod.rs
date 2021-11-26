@@ -157,6 +157,8 @@ impl TypeAnalysis {
             }
             crate::parser::ast::StmtNode::Assignment(id, expr) => {
                 let expr = self.analyze_expression(expr)?;
+
+                println!("{:?}", &expr);
                 self.scopes
                     .lookup(&id)
                     .map(|var_type| type_compatible(&var_type, &expr.r#type(), true))
@@ -331,6 +333,21 @@ impl TypeAnalysis {
                     ast::TypedExprNode::Multiplication(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
+            ExprNode::Ref(identifier) => self
+                .scopes
+                .lookup(&identifier)
+                .map(|r#type| ast::TypedExprNode::Ref(r#type.pointer_to(), identifier))
+                .ok_or_else(|| "invalid type".to_string()),
+            ExprNode::Deref(expr) => self
+                .analyze_expression(*expr)
+                .and_then(|ty_expr| {
+                    ty_expr
+                        .r#type()
+                        .value_at()
+                        .ok_or_else(|| "type is not a reference".to_string())
+                        .map(|ty| (ty, ty_expr))
+                })
+                .map(|(ty, expr)| ast::TypedExprNode::Deref(ty, Box::new(expr))),
         }
     }
 

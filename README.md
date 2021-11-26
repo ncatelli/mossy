@@ -72,7 +72,7 @@ call: identifier '(' expression? ')'
         ;
 
 prefix_expression: '*' prefix_expression
-        | '&' prefix_expression
+        | '&' identifier
         | primary
         ;
 

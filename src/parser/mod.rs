@@ -304,7 +304,18 @@ fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
         )),
     )
     .map(|(id, expr)| ExprNode::FunctionCall(id, expr.map(Box::new)))
-    .or(primary)
+    .or(prefix_expression)
+}
+
+fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+    whitespace_wrapped(expect_character('*'))
+        .and_then(|_| prefix_expression())
+        .or(|| {
+            whitespace_wrapped(expect_character('&'))
+                .and_then(|_| identifier())
+                .map(ExprNode::Ref)
+        })
+        .or(primary)
 }
 
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
