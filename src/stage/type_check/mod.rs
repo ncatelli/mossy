@@ -2,7 +2,7 @@
 //! additional type checking and enrichment.
 
 use super::CompilationStage;
-use crate::ast::{self, type_compatible, FuncProto, Typed};
+use crate::ast::{self, FuncProto, TypeCompatibility, Typed};
 
 mod scopes;
 use scopes::ScopeStack;
@@ -150,7 +150,7 @@ impl TypeAnalysis {
                     let typed_expr = self.analyze_expression(rt_expr)?;
                     let expr_t = typed_expr.r#type();
 
-                    let rt_type = match type_compatible(proto.return_type.as_ref(), &expr_t, true) {
+                    let rt_type = match proto.return_type.as_ref().type_compatible(&expr_t, true) {
                         ast::CompatibilityResult::Equivalent => {
                             Ok(proto.return_type.as_ref().clone())
                         }
@@ -159,6 +159,7 @@ impl TypeAnalysis {
                             "function type and return type are incompatible: {:?}",
                             proto.return_type.as_ref()
                         )),
+                        ast::CompatibilityResult::Scale(_) => todo!(),
                     }?;
 
                     Ok(ast::TypedStmtNode::Return(
@@ -186,14 +187,15 @@ impl TypeAnalysis {
 
                 self.scopes
                     .lookup(&id)
-                    .map(|var_type| type_compatible(&var_type, &expr.r#type(), true))
+                    .map(|var_type| var_type.type_compatible(&expr.r#type(), true))
                     .ok_or(format!("symbol {} undefined", &id))
                     .and_then(|type_compat| match type_compat {
                         ast::CompatibilityResult::Equivalent => Ok(expr.r#type()),
-                        ast::CompatibilityResult::WidenTo(t) => Ok(t),
+                        ast::CompatibilityResult::WidenTo(ty) => Ok(ty),
                         ast::CompatibilityResult::Incompatible => {
                             Err(format!("invalid type: ({:?})", expr.r#type()))
                         }
+                        ast::CompatibilityResult::Scale(_) => todo!(),
                     })
                     .map(|_| ast::TypedStmtNode::Assignment(id, expr))
             }
@@ -384,10 +386,11 @@ impl TypeAnalysis {
         let lhs = self.analyze_expression(lhs).unwrap();
         let rhs = self.analyze_expression(rhs).unwrap();
 
-        match type_compatible(&lhs.r#type(), &rhs.r#type(), false) {
+        match lhs.r#type().type_compatible(&rhs.r#type(), false) {
             ast::CompatibilityResult::Equivalent => Some((lhs.r#type(), lhs, rhs)),
-            ast::CompatibilityResult::WidenTo(t) => Some((t, lhs, rhs)),
+            ast::CompatibilityResult::WidenTo(ty) => Some((ty, lhs, rhs)),
             ast::CompatibilityResult::Incompatible => None,
+            ast::CompatibilityResult::Scale(_) => todo!(),
         }
     }
 }
