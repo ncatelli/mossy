@@ -19,8 +19,8 @@ pub fn parse(input: &[(usize, char)]) -> Result<Program, ParseErr> {
     parcel::one_or_more(function_declaration().map(ast::GlobalDecls::Func).or(|| {
         semicolon_terminated_statement(declaration()).map(|stmt| {
             // safe to unpack due to declaration guarantee.
-            if let ast::StmtNode::Declaration(ty, id) = stmt {
-                ast::GlobalDecls::Var(ty, id)
+            if let ast::StmtNode::Declaration(decl) = stmt {
+                ast::GlobalDecls::Var(decl)
             } else {
                 unreachable!()
             }
@@ -84,8 +84,15 @@ where
 }
 
 fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    parcel::join(r#type(), whitespace_wrapped(identifier()))
-        .map(|(ty, id)| StmtNode::Declaration(ty, id))
+    parcel::join(
+        r#type(),
+        whitespace_wrapped(parcel::one_or_more(parcel::left(parcel::join(
+            identifier(),
+            whitespace_wrapped(expect_character(',').optional()),
+        )))),
+    )
+    .map(|(ty, ids)| crate::ast::Declaration(ty, ids))
+    .map(StmtNode::Declaration)
 }
 
 fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {

@@ -1,4 +1,4 @@
-use crate::ast::{IntegerWidth, Signed};
+use crate::ast::{Declaration, IntegerWidth, Signed};
 
 pub type Span = core::ops::Range<usize>;
 
@@ -16,7 +16,7 @@ impl Program {
 #[derive(PartialEq, Debug, Clone)]
 pub enum GlobalDecls {
     Func(FunctionDeclaration),
-    Var(crate::ast::Type, String),
+    Var(Declaration),
 }
 
 /// A new fuction declaration wrapping a string and block.
@@ -58,9 +58,10 @@ impl From<CompoundStmts> for Vec<StmtNode> {
 /// AstNode representing any allowable statement in the ast.
 #[derive(PartialEq, Debug, Clone)]
 pub enum StmtNode {
-    /// Declaration represents a global declaration statement with the
-    /// enclosed string representing the Id of the variable.
-    Declaration(crate::ast::Type, String),
+    /// Declaration represents a declaration statement with the enclosed
+    /// strings representing the one or more Ids of the variables of the given
+    /// type.
+    Declaration(Declaration),
     /// A block return statement.
     Return(Option<ExprNode>),
     /// Assignment represents an assignment statement of an expressions value
