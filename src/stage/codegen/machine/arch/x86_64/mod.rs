@@ -37,21 +37,37 @@ impl CompilationStage<ast::TypedProgram, Vec<String>, String> for X86_64 {
         input
             .defs
             .into_iter()
-            .map(|f| {
+            .map(|global_decl| {
                 let mut allocator = GPRegisterAllocator::default();
-                let (id, block) = (f.id, f.block);
 
-                codegen_statements(&mut allocator, block)
-                    .map(|block| {
-                        vec![
-                            codegen_function_preamble(&id),
-                            block,
-                            codegen_function_postamble(&id),
-                        ]
-                    })
-                    .map(|output| output.into_iter().flatten().collect())
+                let res: Result<Vec<String>, CodeGenerationErr> = match global_decl {
+                    ast::TypedGlobalDecls::Func(func) => {
+                        let (id, block) = (func.id, func.block);
+
+                        codegen_statements(&mut allocator, block)
+                            .map(|block| {
+                                vec![
+                                    codegen_function_preamble(&id),
+                                    block,
+                                    codegen_function_postamble(&id),
+                                ]
+                            })
+                            .map(|output| output.into_iter().flatten().collect())
+                    }
+                    ast::TypedGlobalDecls::Var(ast::Declaration(ty, identifiers)) => {
+                        let globals = identifiers
+                            .iter()
+                            .map(|id| codegen_global_symbol(&ty, id))
+                            .flatten()
+                            .collect();
+                        Ok(globals)
+                    }
+                };
+
+                res
             })
-            .collect::<Result<Vec<String>, CodeGenerationErr>>()
+            .collect::<Result<Vec<Vec<String>>, CodeGenerationErr>>()
+            .map(|insts| insts.into_iter().flatten().collect())
             .map_err(|e| format!("{:?}", e))
     }
 }
@@ -102,8 +118,12 @@ fn codegen_statement(
     match input {
         ast::TypedStmtNode::Expression(expr) => allocator
             .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
-        ast::TypedStmtNode::Declaration(t, identifier) => {
-            Ok(vec![codegen_global_symbol(t, &identifier)])
+        ast::TypedStmtNode::Declaration(ast::Declaration(ty, identifiers)) => {
+            let var_decls = identifiers
+                .iter()
+                .map(|id| codegen_global_symbol(&ty, id))
+                .collect();
+            Ok(var_decls)
         }
         ast::TypedStmtNode::Return(_, id, arg) => allocator.allocate_then(|allocator, ret_val| {
             let res: Vec<String> = if let Some(expr) = arg {
@@ -289,7 +309,7 @@ pub fn codegen_function_postamble(identifier: &str) -> Vec<String> {
         .collect()
 }
 
-fn codegen_global_symbol(kind: Type, identifier: &str) -> Vec<String> {
+fn codegen_global_symbol(kind: &Type, identifier: &str) -> Vec<String> {
     const ALIGNMENT: usize = 16;
     let reserve_bytes = kind.size();
 

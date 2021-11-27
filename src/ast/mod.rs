@@ -1,10 +1,10 @@
 #[derive(Debug)]
 pub struct TypedProgram {
-    pub defs: Vec<TypedFunctionDeclaration>,
+    pub defs: Vec<TypedGlobalDecls>,
 }
 
 impl TypedProgram {
-    pub fn new(defs: Vec<TypedFunctionDeclaration>) -> Self {
+    pub fn new(defs: Vec<TypedGlobalDecls>) -> Self {
         Self { defs }
     }
 }
@@ -20,6 +20,12 @@ impl TypedFunctionDeclaration {
     pub fn new(id: String, block: TypedCompoundStmts) -> Self {
         Self { id, block }
     }
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum TypedGlobalDecls {
+    Func(TypedFunctionDeclaration),
+    Var(Declaration),
 }
 
 /// A typed block of statements
@@ -40,12 +46,17 @@ impl From<TypedCompoundStmts> for Vec<TypedStmtNode> {
     }
 }
 
+/// Declaration represents a declaration statement with the enclosed type and
+/// one or more IDs.
+#[derive(PartialEq, Debug, Clone)]
+pub struct Declaration(pub crate::ast::Type, pub Vec<String>);
+
 /// AstNode representing any allowable statement in the ast.
 #[derive(PartialEq, Debug, Clone)]
 pub enum TypedStmtNode {
     /// Declaration represents a global declaration statement with the
     /// enclosed string representing the Id of the variable.
-    Declaration(Type, String),
+    Declaration(Declaration),
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.
     /// A block return statement.

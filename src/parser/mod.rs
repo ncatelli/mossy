@@ -16,20 +16,27 @@ pub enum ParseErr {
 /// parse expects a character slice as input and attempts to parse a valid
 /// expression, returning a parse error if it is invalid.
 pub fn parse(input: &[(usize, char)]) -> Result<Program, ParseErr> {
-    parcel::one_or_more(function_declaration())
-        .parse(input)
-        .map_err(ParseErr::UnexpectedToken)
-        .and_then(|ms| match ms {
-            MatchStatus::Match {
-                span: _,
-                remainder: _,
-                inner,
-            } => Ok(inner),
-            MatchStatus::NoMatch(_) => {
-                Err(ParseErr::Unspecified("not a valid expression".to_string()))
+    parcel::one_or_more(function_declaration().map(ast::GlobalDecls::Func).or(|| {
+        semicolon_terminated_statement(declaration()).map(|stmt| {
+            // safe to unpack due to declaration guarantee.
+            if let ast::StmtNode::Declaration(decl) = stmt {
+                ast::GlobalDecls::Var(decl)
+            } else {
+                unreachable!()
             }
         })
-        .map(Program::new)
+    }))
+    .parse(input)
+    .map_err(ParseErr::UnexpectedToken)
+    .and_then(|ms| match ms {
+        MatchStatus::Match {
+            span: _,
+            remainder: _,
+            inner,
+        } => Ok(inner),
+        MatchStatus::NoMatch(_) => Err(ParseErr::Unspecified("not a valid expression".to_string())),
+    })
+    .map(Program::new)
 }
 
 fn function_declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionDeclaration> {
@@ -44,14 +51,7 @@ fn function_declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Fu
 }
 
 fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], CompoundStmts> {
-    parcel::right(parcel::join(
-        whitespace_wrapped(expect_character('{')),
-        parcel::left(parcel::join(
-            parcel::zero_or_more(statement()),
-            whitespace_wrapped(expect_character('}')),
-        )),
-    ))
-    .map(CompoundStmts::new)
+    character_wrapped('{', '}', parcel::zero_or_more(statement())).map(CompoundStmts::new)
 }
 
 fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -77,8 +77,15 @@ where
 }
 
 fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    parcel::join(r#type(), whitespace_wrapped(identifier()))
-        .map(|(ty, id)| StmtNode::Declaration(ty, id))
+    parcel::join(
+        r#type(),
+        whitespace_wrapped(parcel::one_or_more(parcel::left(parcel::join(
+            identifier(),
+            whitespace_wrapped(expect_character(',').optional()),
+        )))),
+    )
+    .map(|(ty, ids)| crate::ast::Declaration(ty, ids))
+    .map(StmtNode::Declaration)
 }
 
 fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -103,13 +110,22 @@ fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> 
 }
 
 fn if_head<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], (ExprNode, CompoundStmts)> {
-    whitespace_wrapped(expect_str("if"))
-        .and_then(|_| parcel::join(parens_wrapped(expression()), compound_statements()))
+    whitespace_wrapped(expect_str("if")).and_then(|_| {
+        parcel::join(
+            character_wrapped('(', ')', expression()),
+            compound_statements(),
+        )
+    })
 }
 
 fn while_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     whitespace_wrapped(expect_str("while"))
-        .and_then(|_| parcel::join(parens_wrapped(expression()), compound_statements()))
+        .and_then(|_| {
+            parcel::join(
+                character_wrapped('(', ')', expression()),
+                compound_statements(),
+            )
+        })
         .map(|(cond, block)| StmtNode::While(cond, block))
 }
 
@@ -117,16 +133,20 @@ fn for_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode>
     whitespace_wrapped(expect_str("for"))
         .and_then(|_| {
             parcel::join(
-                parens_wrapped(parcel::join(
-                    preop_statement(),
+                character_wrapped(
+                    '(',
+                    ')',
                     parcel::join(
-                        parcel::left(parcel::join(
-                            expression(),
-                            whitespace_wrapped(expect_str(";")),
-                        )),
-                        postop_statement(),
+                        preop_statement(),
+                        parcel::join(
+                            parcel::left(parcel::join(
+                                expression(),
+                                whitespace_wrapped(expect_str(";")),
+                            )),
+                            postop_statement(),
+                        ),
                     ),
-                )),
+                ),
                 compound_statements(),
             )
         })
@@ -491,16 +511,20 @@ where
     ))
 }
 
-fn parens_wrapped<'a, P, B>(parser: P) -> impl Parser<'a, &'a [(usize, char)], B>
+fn character_wrapped<'a, P, B>(
+    prefix: char,
+    suffix: char,
+    parser: P,
+) -> impl Parser<'a, &'a [(usize, char)], B>
 where
     B: 'a,
     P: Parser<'a, &'a [(usize, char)], B> + 'a,
 {
     parcel::right(parcel::join(
-        whitespace_wrapped(expect_character('(')),
+        whitespace_wrapped(expect_character(prefix)),
         parcel::left(parcel::join(
             parser,
-            whitespace_wrapped(expect_character(')')),
+            whitespace_wrapped(expect_character(suffix)),
         )),
     ))
 }
