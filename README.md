@@ -4,7 +4,11 @@ An (irresponsibly) experimental C compiler for the first-principles of computing
 ## Grammar
 
 ```
-program: function_declaration*
+program: global_declaration*
+        ;
+
+global_declaration: function_declaration
+        | var_declaration
         ;
 
 function_declaration: type identifier '(' ')' compound_statement
@@ -16,18 +20,18 @@ compound_statement: '{' '}'
 
 statement: 
         | expression ';'
-        | declaration ';'
-        | assignment ';'
+        | var_declaration
+        | assignment
         | if_statement 
         | while_statement 
         | for_statement
-        | return_stmt ';'
+        | return_stmt
         ;
 
-declaration:   type identifier
+var_declaration:   type identifier_list ';'
         ;
 
-assignent:   identifier '=' expression 
+assignent:   identifier '=' expression ';'
         ;
 
 if_statement: if_head
@@ -50,7 +54,8 @@ preop_statement: assignment
 postop_statement: expression
         ;
 
-return_statement: 'return' expression?   ;
+return_statement: 'return' expression? ';'
+        ;
 
 expression: equality
         ;
@@ -83,14 +88,21 @@ primary: identifier
 char:   alphabetic
         ;
 
+
+identifier_list: identifier
+        | identifier ',' identifier_list
+        ;
+
 identifier: alphabetic+
         ;
 
-type:   primitive_type '*'+
-        | primitive_type
+type:   type_keyword optional_pointer
         ;
 
-primitive_type: integer_type
+optional_pointer: ('*' optional_pointer)?
+        ;
+
+type_keyword: integer_type
         | 'void'
         ;
 
