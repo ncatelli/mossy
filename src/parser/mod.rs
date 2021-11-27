@@ -55,12 +55,12 @@ fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Com
 }
 
 fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    semicolon_terminated_statement(expression().map(StmtNode::Expression))
-        .or(|| semicolon_terminated_statement(declaration()))
+    semicolon_terminated_statement(declaration())
         .or(|| semicolon_terminated_statement(assignment()))
         .or(if_statement)
         .or(while_statement)
         .or(for_statement)
+        .or(|| semicolon_terminated_statement(expression().map(StmtNode::Expression)))
         .or(|| semicolon_terminated_statement(return_statement()))
 }
 
@@ -304,7 +304,20 @@ fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
         )),
     )
     .map(|(id, expr)| ExprNode::FunctionCall(id, expr.map(Box::new)))
-    .or(primary)
+    .or(prefix_expression)
+}
+
+fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+    whitespace_wrapped(expect_character('*'))
+        .and_then(|_| prefix_expression())
+        .map(Box::new)
+        .map(ExprNode::Deref)
+        .or(|| {
+            whitespace_wrapped(expect_character('&'))
+                .and_then(|_| identifier())
+                .map(ExprNode::Ref)
+        })
+        .or(primary)
 }
 
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
@@ -337,10 +350,28 @@ fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
     parcel::one_or_more(alphabetic()).map(|chars| chars.into_iter().collect())
 }
 
-#[allow(clippy::redundant_closure)]
 fn r#type<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::ast::Type> {
     use crate::ast::Type;
 
+    whitespace_wrapped(
+        parcel::join(
+            primitive_type(),
+            whitespace_wrapped(expect_character('*').one_or_more()),
+        )
+        .map(|(ty, pointer_depth)| {
+            let nested_pointers = pointer_depth.len() - 1;
+            (0..nested_pointers)
+                .into_iter()
+                .fold(Type::Pointer(Box::new(ty)), |acc, _| {
+                    Type::Pointer(Box::new(acc))
+                })
+        }),
+    )
+    .or(primitive_type)
+}
+
+fn primitive_type<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::ast::Type> {
+    use crate::ast::Type;
     whitespace_wrapped(parcel::one_of(vec![
         expect_str("long").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour)),
         expect_str("int").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::ThirtyTwo)),

@@ -88,6 +88,10 @@ pub enum ExprNode {
     Division(Box<ExprNode>, Box<ExprNode>),
     Addition(Box<ExprNode>, Box<ExprNode>),
     Multiplication(Box<ExprNode>, Box<ExprNode>),
+
+    // Pointer Operations
+    Ref(String),
+    Deref(Box<ExprNode>),
 }
 
 /// Primary represents a primitive type within the ast.

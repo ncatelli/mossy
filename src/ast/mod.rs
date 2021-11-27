@@ -88,6 +88,10 @@ pub enum TypedExprNode {
     Division(Type, Box<TypedExprNode>, Box<TypedExprNode>),
     Addition(Type, Box<TypedExprNode>, Box<TypedExprNode>),
     Multiplication(Type, Box<TypedExprNode>, Box<TypedExprNode>),
+
+    // Pointer Operations
+    Ref(Type, String),
+    Deref(Type, Box<TypedExprNode>),
 }
 
 impl Typed for TypedExprNode {
@@ -104,7 +108,9 @@ impl Typed for TypedExprNode {
             | TypedExprNode::Subtraction(t, _, _)
             | TypedExprNode::Division(t, _, _)
             | TypedExprNode::Addition(t, _, _)
-            | TypedExprNode::Multiplication(t, _, _) => t.clone(),
+            | TypedExprNode::Multiplication(t, _, _)
+            | TypedExprNode::Ref(t, _)
+            | TypedExprNode::Deref(t, _) => t.clone(),
         }
     }
 }
@@ -124,12 +130,11 @@ impl Typed for Primary {
     fn r#type(&self) -> Type {
         match self {
             Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Eight,
+                sign,
+                width,
                 value: _,
-            } => Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            } => Type::Integer(*sign, *width),
             Primary::Identifier(ty, _) => ty.clone(),
-            _ => panic!("unknown type"),
         }
     }
 }
@@ -190,12 +195,16 @@ impl FuncProto {
     }
 }
 
+/// The size in bytes for a given pointer on the architecture.
+const POINTER_BYTE_WIDTH: usize = (usize::BITS / 8) as usize;
+
 /// Represents valid primitive types.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Integer(Signed, IntegerWidth),
     Void,
     Func(FuncProto),
+    Pointer(Box<Type>),
 }
 
 impl ByteSized for Type {
@@ -203,7 +212,21 @@ impl ByteSized for Type {
         match self {
             Self::Integer(_, iw) => iw.size(),
             Self::Void => 0,
-            Self::Func { .. } => (usize::BITS / 8) as usize,
+            Self::Func { .. } => POINTER_BYTE_WIDTH,
+            Self::Pointer(_) => POINTER_BYTE_WIDTH,
+        }
+    }
+}
+
+impl Type {
+    pub fn pointer_to(&self) -> Self {
+        Self::Pointer(Box::new(self.clone()))
+    }
+
+    pub fn value_at(&self) -> Option<Self> {
+        match self {
+            Type::Pointer(ty) => Some(*(ty.clone())),
+            _ => None,
         }
     }
 }

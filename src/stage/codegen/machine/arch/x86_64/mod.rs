@@ -438,6 +438,13 @@ fn codegen_expr(
             codegen_multiplication(allocator, ret_val, lhs, rhs)
         }
         TypedExprNode::Division(_, lhs, rhs) => codegen_division(allocator, ret_val, lhs, rhs),
+        TypedExprNode::Ref(_, identifier) => codegen_reference(ret_val, &identifier),
+        TypedExprNode::Deref(ty, expr) => {
+            flattenable_instructions!(
+                codegen_expr(allocator, ret_val, *expr),
+                codegen_deref(ret_val, ty),
+            )
+        }
     }
 }
 
@@ -474,6 +481,19 @@ fn codegen_constant_u8(ret_val: &mut SizedGeneralPurpose, constant: u8) -> Vec<S
         ret_val.operator_suffix(),
         constant,
         ret_val
+    )]
+}
+
+fn codegen_reference(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
+    vec![format!("\tleaq\t{}(%rip), %{}\n", identifier, ret.id())]
+}
+
+fn codegen_deref(ret: &mut SizedGeneralPurpose, _: ast::Type) -> Vec<String> {
+    vec![format!(
+        "\tmov{}\t(%{}), %{}\n",
+        ret.operator_suffix(),
+        ret.id(),
+        ret.id()
     )]
 }
 
