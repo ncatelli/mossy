@@ -16,20 +16,27 @@ pub enum ParseErr {
 /// parse expects a character slice as input and attempts to parse a valid
 /// expression, returning a parse error if it is invalid.
 pub fn parse(input: &[(usize, char)]) -> Result<Program, ParseErr> {
-    parcel::one_or_more(function_declaration())
-        .parse(input)
-        .map_err(ParseErr::UnexpectedToken)
-        .and_then(|ms| match ms {
-            MatchStatus::Match {
-                span: _,
-                remainder: _,
-                inner,
-            } => Ok(inner),
-            MatchStatus::NoMatch(_) => {
-                Err(ParseErr::Unspecified("not a valid expression".to_string()))
+    parcel::one_or_more(function_declaration().map(ast::GlobalDecls::Func).or(|| {
+        semicolon_terminated_statement(declaration()).map(|stmt| {
+            // safe to unpack due to declaration guarantee.
+            if let ast::StmtNode::Declaration(ty, id) = stmt {
+                ast::GlobalDecls::Var(ty, id)
+            } else {
+                unreachable!()
             }
         })
-        .map(Program::new)
+    }))
+    .parse(input)
+    .map_err(ParseErr::UnexpectedToken)
+    .and_then(|ms| match ms {
+        MatchStatus::Match {
+            span: _,
+            remainder: _,
+            inner,
+        } => Ok(inner),
+        MatchStatus::NoMatch(_) => Err(ParseErr::Unspecified("not a valid expression".to_string())),
+    })
+    .map(Program::new)
 }
 
 fn function_declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionDeclaration> {

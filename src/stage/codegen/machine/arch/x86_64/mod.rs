@@ -37,21 +37,32 @@ impl CompilationStage<ast::TypedProgram, Vec<String>, String> for X86_64 {
         input
             .defs
             .into_iter()
-            .map(|f| {
+            .map(|global_decl| {
                 let mut allocator = GPRegisterAllocator::default();
-                let (id, block) = (f.id, f.block);
 
-                codegen_statements(&mut allocator, block)
-                    .map(|block| {
-                        vec![
-                            codegen_function_preamble(&id),
-                            block,
-                            codegen_function_postamble(&id),
-                        ]
-                    })
-                    .map(|output| output.into_iter().flatten().collect())
+                let res: Result<Vec<String>, CodeGenerationErr> = match global_decl {
+                    ast::TypedGlobalDecls::Func(func) => {
+                        let (id, block) = (func.id, func.block);
+
+                        codegen_statements(&mut allocator, block)
+                            .map(|block| {
+                                vec![
+                                    codegen_function_preamble(&id),
+                                    block,
+                                    codegen_function_postamble(&id),
+                                ]
+                            })
+                            .map(|output| output.into_iter().flatten().collect())
+                    }
+                    ast::TypedGlobalDecls::Var(ty, identifier) => {
+                        Ok(codegen_global_symbol(ty, &identifier))
+                    }
+                };
+
+                res
             })
-            .collect::<Result<Vec<String>, CodeGenerationErr>>()
+            .collect::<Result<Vec<Vec<String>>, CodeGenerationErr>>()
+            .map(|insts| insts.into_iter().flatten().collect())
             .map_err(|e| format!("{:?}", e))
     }
 }

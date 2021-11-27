@@ -4,13 +4,19 @@ pub type Span = core::ops::Range<usize>;
 
 #[derive(Debug)]
 pub struct Program {
-    pub defs: Vec<FunctionDeclaration>,
+    pub defs: Vec<GlobalDecls>,
 }
 
 impl Program {
-    pub fn new(defs: Vec<FunctionDeclaration>) -> Self {
+    pub fn new(defs: Vec<GlobalDecls>) -> Self {
         Self { defs }
     }
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum GlobalDecls {
+    Func(FunctionDeclaration),
+    Var(crate::ast::Type, String),
 }
 
 /// A new fuction declaration wrapping a string and block.

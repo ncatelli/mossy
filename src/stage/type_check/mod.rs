@@ -33,8 +33,27 @@ impl CompilationStage<crate::parser::ast::Program, ast::TypedProgram, String> fo
             .defs
             .into_iter()
             .map(|ast_node| self.apply(ast_node))
-            .collect::<Result<Vec<ast::TypedFunctionDeclaration>, String>>()
+            .collect::<Result<Vec<ast::TypedGlobalDecls>, String>>()
             .map(ast::TypedProgram::new)
+    }
+}
+
+impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, String>
+    for TypeAnalysis
+{
+    fn apply(
+        &mut self,
+        input: crate::parser::ast::GlobalDecls,
+    ) -> Result<ast::TypedGlobalDecls, String> {
+        match input {
+            crate::parser::ast::GlobalDecls::Func(fd) => {
+                self.apply(fd).map(ast::TypedGlobalDecls::Func)
+            }
+            crate::parser::ast::GlobalDecls::Var(ty, id) => {
+                self.scopes.define_mut(&id, ty.clone());
+                Ok(ast::TypedGlobalDecls::Var(ty, id))
+            }
+        }
     }
 }
 

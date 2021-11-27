@@ -1,10 +1,10 @@
 #[derive(Debug)]
 pub struct TypedProgram {
-    pub defs: Vec<TypedFunctionDeclaration>,
+    pub defs: Vec<TypedGlobalDecls>,
 }
 
 impl TypedProgram {
-    pub fn new(defs: Vec<TypedFunctionDeclaration>) -> Self {
+    pub fn new(defs: Vec<TypedGlobalDecls>) -> Self {
         Self { defs }
     }
 }
@@ -20,6 +20,12 @@ impl TypedFunctionDeclaration {
     pub fn new(id: String, block: TypedCompoundStmts) -> Self {
         Self { id, block }
     }
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum TypedGlobalDecls {
+    Func(TypedFunctionDeclaration),
+    Var(crate::ast::Type, String),
 }
 
 /// A typed block of statements
