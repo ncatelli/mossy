@@ -103,6 +103,7 @@ pub enum TypedExprNode {
     // Pointer Operations
     Ref(Type, String),
     Deref(Type, Box<TypedExprNode>),
+    ScaleBy(Type, Box<TypedExprNode>),
 }
 
 impl Typed for TypedExprNode {
@@ -121,7 +122,8 @@ impl Typed for TypedExprNode {
             | TypedExprNode::Addition(t, _, _)
             | TypedExprNode::Multiplication(t, _, _)
             | TypedExprNode::Ref(t, _)
-            | TypedExprNode::Deref(t, _) => t.clone(),
+            | TypedExprNode::Deref(t, _)
+            | TypedExprNode::ScaleBy(t, _) => t.clone(),
         }
     }
 }
@@ -158,6 +160,7 @@ pub trait ByteSized {
 pub enum CompatibilityResult {
     Equivalent,
     WidenTo(Type),
+    Scale(Type),
     Incompatible,
 }
 
@@ -242,22 +245,35 @@ impl Type {
     }
 }
 
-/// Evaluates type compatiblity for a given binary pair of types.
-pub(crate) fn type_compatible(left: &Type, right: &Type, flow_left: bool) -> CompatibilityResult {
-    match (left, right) {
-        (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,
-        (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width))
-            if l_width != r_width && l_sign == r_sign && !flow_left =>
-        {
-            let widen_to_width = if l_width > r_width { l_width } else { r_width };
-            CompatibilityResult::WidenTo(Type::Integer(*l_sign, *widen_to_width))
+pub trait TypeCompatibility {
+    type Output;
+    type Rhs;
+
+    fn type_compatible(&self, right: &Self::Rhs, flow_left: bool) -> Self::Output;
+}
+
+impl TypeCompatibility for Type {
+    type Output = CompatibilityResult;
+    type Rhs = Type;
+
+    fn type_compatible(&self, right: &Self::Rhs, flow_left: bool) -> Self::Output {
+        match (self, right) {
+            (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,
+            (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width))
+                if l_width != r_width && l_sign == r_sign && !flow_left =>
+            {
+                let widen_to_width = if l_width > r_width { l_width } else { r_width };
+                CompatibilityResult::WidenTo(Type::Integer(*l_sign, *widen_to_width))
+            }
+            (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width))
+                if l_width >= r_width && l_sign == r_sign && flow_left =>
+            {
+                let widen_to_width = if l_width > r_width { l_width } else { r_width };
+                CompatibilityResult::WidenTo(Type::Integer(*l_sign, *widen_to_width))
+            }
+            (Type::Pointer(ty), Type::Integer(_, _)) => CompatibilityResult::Scale(*ty.clone()),
+
+            _ => CompatibilityResult::Incompatible,
         }
-        (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width))
-            if l_width >= r_width && l_sign == r_sign && flow_left =>
-        {
-            let widen_to_width = if l_width > r_width { l_width } else { r_width };
-            CompatibilityResult::WidenTo(Type::Integer(*l_sign, *widen_to_width))
-        }
-        _ => CompatibilityResult::Incompatible,
     }
 }
