@@ -116,8 +116,12 @@ fn codegen_statement(
     input: ast::TypedStmtNode,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     match input {
-        ast::TypedStmtNode::Expression(expr) => allocator
-            .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
+        ast::TypedStmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
+            Ok(vec![
+                codegen_expr(allocator, ret_val, expr),
+                codegen_printint(ret_val),
+            ])
+        }),
         ast::TypedStmtNode::Declaration(ast::Declaration(ty, identifiers)) => {
             let var_decls = identifiers
                 .iter()
@@ -310,7 +314,7 @@ pub fn codegen_function_postamble(identifier: &str) -> Vec<String> {
 }
 
 fn codegen_global_symbol(kind: &Type, identifier: &str) -> Vec<String> {
-    const ALIGNMENT: usize = 16;
+    const ALIGNMENT: usize = 2;
     let reserve_bytes = kind.size();
 
     vec![format!(
