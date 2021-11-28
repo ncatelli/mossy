@@ -195,7 +195,7 @@ impl TypeAnalysis {
                         ast::CompatibilityResult::Incompatible => {
                             Err(format!("invalid type: ({:?})", expr.r#type()))
                         }
-                        ast::CompatibilityResult::Scale(_) => todo!(),
+                        ast::CompatibilityResult::Scale(t) => Ok(t),
                     })
                     .map(|_| ast::TypedStmtNode::Assignment(id, expr))
             }
@@ -390,7 +390,11 @@ impl TypeAnalysis {
             ast::CompatibilityResult::Equivalent => Some((lhs.r#type(), lhs, rhs)),
             ast::CompatibilityResult::WidenTo(ty) => Some((ty, lhs, rhs)),
             ast::CompatibilityResult::Incompatible => None,
-            ast::CompatibilityResult::Scale(_) => todo!(),
+            ast::CompatibilityResult::Scale(ty) => Some((
+                ty.clone(),
+                lhs,
+                ast::TypedExprNode::ScaleBy(ty, Box::new(rhs)),
+            )),
         }
     }
 }

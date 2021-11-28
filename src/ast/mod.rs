@@ -103,6 +103,7 @@ pub enum TypedExprNode {
     // Pointer Operations
     Ref(Type, String),
     Deref(Type, Box<TypedExprNode>),
+    ScaleBy(Type, Box<TypedExprNode>),
 }
 
 impl Typed for TypedExprNode {
@@ -121,7 +122,8 @@ impl Typed for TypedExprNode {
             | TypedExprNode::Addition(t, _, _)
             | TypedExprNode::Multiplication(t, _, _)
             | TypedExprNode::Ref(t, _)
-            | TypedExprNode::Deref(t, _) => t.clone(),
+            | TypedExprNode::Deref(t, _)
+            | TypedExprNode::ScaleBy(t, _) => t.clone(),
         }
     }
 }
@@ -269,6 +271,8 @@ impl TypeCompatibility for Type {
                 let widen_to_width = if l_width > r_width { l_width } else { r_width };
                 CompatibilityResult::WidenTo(Type::Integer(*l_sign, *widen_to_width))
             }
+            (Type::Pointer(ty), Type::Integer(_, _)) => CompatibilityResult::Scale(*ty.clone()),
+
             _ => CompatibilityResult::Incompatible,
         }
     }

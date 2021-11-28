@@ -60,8 +60,8 @@ fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
         .or(if_statement)
         .or(while_statement)
         .or(for_statement)
-        .or(|| semicolon_terminated_statement(expression().map(StmtNode::Expression)))
         .or(|| semicolon_terminated_statement(return_statement()))
+        .or(|| semicolon_terminated_statement(expression().map(StmtNode::Expression)))
 }
 
 fn semicolon_terminated_statement<'a, P>(
@@ -328,12 +328,12 @@ fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
 }
 
 fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
-    whitespace_wrapped(expect_character('*'))
+    expect_character('*')
         .and_then(|_| prefix_expression())
         .map(Box::new)
         .map(ExprNode::Deref)
         .or(|| {
-            whitespace_wrapped(expect_character('&'))
+            expect_character('&')
                 .and_then(|_| identifier())
                 .map(ExprNode::Ref)
         })

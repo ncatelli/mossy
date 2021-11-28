@@ -450,6 +450,9 @@ fn codegen_expr(
             rhs,
         ),
 
+        TypedExprNode::Addition(Type::Pointer(_), lhs, rhs) => {
+            codegen_addition(allocator, ret_val, lhs, rhs)
+        }
         TypedExprNode::Addition(_, lhs, rhs) => codegen_addition(allocator, ret_val, lhs, rhs),
         TypedExprNode::Subtraction(_, lhs, rhs) => {
             codegen_subtraction(allocator, ret_val, lhs, rhs)
@@ -464,6 +467,10 @@ fn codegen_expr(
                 codegen_expr(allocator, ret_val, *expr),
                 codegen_deref(ret_val, ty),
             )
+        }
+        TypedExprNode::ScaleBy(ty, lhs) => {
+            let scale_by_size = ty.size();
+            codegen_scaleby(allocator, ret_val, scale_by_size, lhs)
         }
     }
 }
@@ -515,6 +522,30 @@ fn codegen_deref(ret: &mut SizedGeneralPurpose, _: ast::Type) -> Vec<String> {
         ret.id(),
         ret.id()
     )]
+}
+
+fn codegen_scaleby(
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut SizedGeneralPurpose,
+    size_of: usize,
+    expr: Box<ast::TypedExprNode>,
+) -> Vec<String> {
+    use ast::Typed;
+
+    if let ast::Type::Integer(sign, width) = expr.r#type() {
+        let scale_by_expr = ast::TypedExprNode::Primary(
+            ast::Type::Integer(sign, width),
+            ast::Primary::Integer {
+                sign,
+                width,
+                value: size_of as u64,
+            },
+        );
+
+        codegen_multiplication(allocator, ret_val, expr, Box::new(scale_by_expr))
+    } else {
+        panic!("invalid scale_by types")
+    }
 }
 
 fn codegen_addition(
