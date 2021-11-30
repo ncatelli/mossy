@@ -328,12 +328,12 @@ fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
 }
 
 fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
-    expect_character('*')
+    whitespace_wrapped(expect_character('*'))
         .and_then(|_| prefix_expression())
         .map(Box::new)
         .map(ExprNode::Deref)
         .or(|| {
-            expect_character('&')
+            whitespace_wrapped(expect_character('&'))
                 .and_then(|_| identifier())
                 .map(ExprNode::Ref)
         })
@@ -563,8 +563,9 @@ mod tests {
     }
 
     use crate::parser::ast::*;
+
     #[test]
-    fn should_parse_complex_expression() {
+    fn should_parse_complex_arithmetic_expression() {
         use parcel::Parser;
 
         let input: Vec<(usize, char)> = "{ 13 - 6 + 4 * 5 + 8 / 3; }".chars().enumerate().collect();
@@ -584,5 +585,31 @@ mod tests {
             ))])),
             res
         )
+    }
+
+    #[test]
+    fn should_parse_a_keyword_from_a_dereferenced_identifier() {
+        use parcel::Parser;
+
+        let input: Vec<(usize, char)> = "{ return *x; }".chars().enumerate().collect();
+        let res = crate::parser::compound_statements()
+            .parse(&input)
+            .map(|ms| ms.unwrap());
+
+        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Return(Some(
+            ExprNode::Deref(Box::new(ExprNode::Primary(Primary::Identifier(
+                "x".to_string(),
+            )))),
+        ))]));
+
+        assert_eq!(&expected_result, &res);
+
+        let input_with_arbitrary_whitespace: Vec<(usize, char)> =
+            "{ return *          \n\nx; }".chars().enumerate().collect();
+        let res = crate::parser::compound_statements()
+            .parse(&input_with_arbitrary_whitespace)
+            .map(|ms| ms.unwrap());
+
+        assert_eq!(&expected_result, &res)
     }
 }
