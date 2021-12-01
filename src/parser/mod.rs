@@ -41,7 +41,7 @@ pub fn parse(input: &[(usize, char)]) -> Result<Program, ParseErr> {
 
 fn function_declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionDeclaration> {
     parcel::join(
-        parcel::join(r#type(), whitespace_wrapped(identifier())),
+        parcel::join(type_declarator(), whitespace_wrapped(identifier())),
         parcel::right(parcel::join(
             expect_character('(').and_then(|_| whitespace_wrapped(expect_character(')'))),
             compound_statements(),
@@ -78,7 +78,7 @@ where
 
 fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     parcel::join(
-        r#type(),
+        type_declarator(),
         whitespace_wrapped(parcel::one_or_more(parcel::left(parcel::join(
             identifier(),
             whitespace_wrapped(expect_character(',').optional()),
@@ -370,12 +370,12 @@ fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
     parcel::one_or_more(alphabetic()).map(|chars| chars.into_iter().collect())
 }
 
-fn r#type<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::ast::Type> {
+fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::ast::Type> {
     use crate::ast::Type;
 
     whitespace_wrapped(
         parcel::join(
-            primitive_type(),
+            type_specifier(),
             whitespace_wrapped(expect_character('*').one_or_more()),
         )
         .map(|(ty, pointer_depth)| {
@@ -387,10 +387,10 @@ fn r#type<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::ast::Type
                 })
         }),
     )
-    .or(primitive_type)
+    .or(type_specifier)
 }
 
-fn primitive_type<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::ast::Type> {
+fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::ast::Type> {
     use crate::ast::Type;
     whitespace_wrapped(parcel::one_of(vec![
         expect_str("long").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour)),
