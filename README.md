@@ -2,16 +2,17 @@
 An (irresponsibly) experimental C compiler for the first-principles of computing project.
 
 ## Grammar
+Grammar is heavily referenced from [WMU cs4850 course grammar](https://cs.wmich.edu/%7Egupta/teaching/cs4850/sumII06/The%20syntax%20of%20C%20in%20Backus-Naur%20form.htm)
 
 ```
-program: global_declaration*
+tranlation_unit: external_declaration*
         ;
 
-global_declaration: function_declaration
+external_declaration: function_declaration
         | var_declaration
         ;
 
-function_declaration: type identifier '(' ')' compound_statement
+function_declaration: type_declarator identifier '(' ')' compound_statement
         ;
 
 compound_statement: '{' '}'
@@ -28,7 +29,7 @@ statement:
         | return_stmt
         ;
 
-var_declaration:   type identifier_list ';'
+var_declaration:   type_declarator identifier_list ';'
         ;
 
 assignent:   identifier '=' expression ';'
@@ -82,7 +83,7 @@ prefix_expression: '*' prefix_expression
         ;
 
 primary: identifier
-        | integer
+        | integer_constant
         ;
 
 char:   alphabetic
@@ -96,26 +97,21 @@ identifier_list: identifier
 identifier: alphabetic+
         ;
 
-type:   type_keyword optional_pointer
+type_declarator:   type_specifier optional_pointer
         ;
 
 optional_pointer: ('*' optional_pointer)?
         ;
 
-type_keyword: integer_type
+type_specifier: 'char'
+        | 'short'
+        | 'int'
+        | 'long'
         | 'void'
         ;
 
 
-integer_type:
-        'char'
-        | 'short'
-        | 'int'
-        | 'long'
-        ;
-
-
-integer:  [0-9]*;
+integer_constant:  [0-9]*;
 
 alphabetic: [a-zA-Z]+;
 ```
