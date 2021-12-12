@@ -8,5 +8,5 @@ edition = "2018"
 lto = true
 
 [dependencies]
-parcel = { git = "https://github.com/ncatelli/parcel", tag = "v2.0.0" }
+parcel = { git = "https://github.com/ncatelli/parcel", tag = "v2.0.1" }
 scrap = { git = "https://github.com/ncatelli/scrap", branch = "main" }
