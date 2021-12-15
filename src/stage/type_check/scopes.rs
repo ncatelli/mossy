@@ -1,4 +1,4 @@
-use crate::ast::Type;
+use crate::stage::ast::Type;
 
 // Alias for a hashmap of String/Type
 pub type Scope = std::collections::HashMap<String, Type>;

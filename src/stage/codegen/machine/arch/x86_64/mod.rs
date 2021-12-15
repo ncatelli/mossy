@@ -1,4 +1,4 @@
-use crate::ast::{self, ByteSized, Type};
+use crate::stage::ast::{self, ByteSized, Type};
 use crate::stage::codegen::machine::arch::TargetArchitecture;
 use crate::stage::codegen::{self, machine, register::Register, CodeGenerationErr};
 use crate::stage::CompilationStage;
@@ -184,9 +184,9 @@ macro_rules! flattenable_instructions {
 
 fn codegen_if_statement_with_else(
     allocator: &mut GPRegisterAllocator,
-    cond: crate::ast::TypedExprNode,
-    true_case: crate::ast::TypedCompoundStmts,
-    false_case: crate::ast::TypedCompoundStmts,
+    cond: ast::TypedExprNode,
+    true_case: ast::TypedCompoundStmts,
+    false_case: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     allocator.allocate_then(|allocator, ret_val| {
         let cond_ctx = codegen_expr(allocator, ret_val, cond);
@@ -211,8 +211,8 @@ fn codegen_if_statement_with_else(
 
 fn codegen_if_statement_without_else(
     allocator: &mut GPRegisterAllocator,
-    cond: crate::ast::TypedExprNode,
-    true_case: crate::ast::TypedCompoundStmts,
+    cond: ast::TypedExprNode,
+    true_case: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     allocator.allocate_then(|allocator, ret_val| {
         let cond_ctx = codegen_expr(allocator, ret_val, cond);
@@ -232,8 +232,8 @@ fn codegen_if_statement_without_else(
 
 fn codegen_while_statement(
     allocator: &mut GPRegisterAllocator,
-    cond: crate::ast::TypedExprNode,
-    block: crate::ast::TypedCompoundStmts,
+    cond: ast::TypedExprNode,
+    block: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     allocator.allocate_then(|allocator, ret_val| {
         let cond_ctx = codegen_expr(allocator, ret_val, cond);
@@ -256,10 +256,10 @@ fn codegen_while_statement(
 
 fn codegen_for_statement(
     allocator: &mut GPRegisterAllocator,
-    preop: crate::ast::TypedStmtNode,
-    cond: crate::ast::TypedExprNode,
-    postop: crate::ast::TypedStmtNode,
-    block: crate::ast::TypedCompoundStmts,
+    preop: ast::TypedStmtNode,
+    cond: ast::TypedExprNode,
+    postop: ast::TypedStmtNode,
+    block: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     allocator.allocate_then(|allocator, ret_val| {
         let preop_ctx = codegen_statement(allocator, preop)?;
@@ -360,9 +360,9 @@ where
 fn codegen_expr(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
-    expr: crate::ast::TypedExprNode,
+    expr: ast::TypedExprNode,
 ) -> Vec<String> {
-    use crate::ast::{IntegerWidth, Primary, Signed, TypedExprNode};
+    use crate::stage::ast::{IntegerWidth, Primary, Signed, TypedExprNode};
 
     match expr {
         TypedExprNode::Primary(

@@ -1,7 +1,7 @@
 use parcel::parsers::character::*;
 use parcel::prelude::v1::*;
 
-use crate::ast::{IntegerWidth, Signed};
+use crate::stage::ast::{IntegerWidth, Signed};
 
 pub mod ast;
 use ast::*;
@@ -84,7 +84,7 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
             whitespace_wrapped(expect_character(',').optional()),
         )))),
     )
-    .map(|(ty, ids)| crate::ast::Declaration(ty, ids))
+    .map(|(ty, ids)| crate::stage::ast::Declaration(ty, ids))
     .map(StmtNode::Declaration)
 }
 
@@ -370,8 +370,8 @@ fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
     parcel::one_or_more(alphabetic()).map(|chars| chars.into_iter().collect())
 }
 
-fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::ast::Type> {
-    use crate::ast::Type;
+fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::stage::ast::Type> {
+    use crate::stage::ast::Type;
 
     whitespace_wrapped(
         parcel::join(
@@ -390,8 +390,9 @@ fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::
     .or(type_specifier)
 }
 
-fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::ast::Type> {
-    use crate::ast::Type;
+fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::stage::ast::Type> {
+    use crate::stage::ast::Type;
+
     whitespace_wrapped(parcel::one_of(vec![
         expect_str("long").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour)),
         expect_str("int").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::ThirtyTwo)),
@@ -555,8 +556,8 @@ mod tests {
     macro_rules! primary_expr {
         ($value:expr) => {
             $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-                sign: crate::ast::Signed::Unsigned,
-                width: crate::ast::IntegerWidth::Eight,
+                sign: $crate::stage::ast::Signed::Unsigned,
+                width: $crate::stage::ast::IntegerWidth::Eight,
                 value: $value,
             })
         };
