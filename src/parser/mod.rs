@@ -1,6 +1,7 @@
 use parcel::parsers::character::*;
 use parcel::prelude::v1::*;
 
+pub use crate::stage::ast::Type;
 use crate::stage::ast::{IntegerWidth, Signed};
 
 pub mod ast;
@@ -370,9 +371,7 @@ fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
     parcel::one_or_more(alphabetic()).map(|chars| chars.into_iter().collect())
 }
 
-fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::stage::ast::Type> {
-    use crate::stage::ast::Type;
-
+fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
     whitespace_wrapped(
         parcel::join(
             type_specifier(),
@@ -390,9 +389,7 @@ fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::
     .or(type_specifier)
 }
 
-fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], crate::stage::ast::Type> {
-    use crate::stage::ast::Type;
-
+fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
     whitespace_wrapped(parcel::one_of(vec![
         expect_str("long").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour)),
         expect_str("int").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::ThirtyTwo)),

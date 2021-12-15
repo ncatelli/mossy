@@ -1,7 +1,5 @@
 use crate::stage::ast::{self, Declaration, IntegerWidth, Signed};
 
-pub type Span = core::ops::Range<usize>;
-
 #[derive(Debug)]
 pub struct Program {
     pub defs: Vec<GlobalDecls>,
