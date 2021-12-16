@@ -49,7 +49,7 @@ impl From<TypedCompoundStmts> for Vec<TypedStmtNode> {
 /// Declaration represents a declaration statement with the enclosed type and
 /// one or more IDs.
 #[derive(PartialEq, Debug, Clone)]
-pub struct Declaration(pub crate::ast::Type, pub Vec<String>);
+pub struct Declaration(pub Type, pub Vec<String>);
 
 /// AstNode representing any allowable statement in the ast.
 #[derive(PartialEq, Debug, Clone)]

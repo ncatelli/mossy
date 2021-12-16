@@ -1,6 +1,4 @@
-use crate::ast::{Declaration, IntegerWidth, Signed};
-
-pub type Span = core::ops::Range<usize>;
+use crate::stage::ast::{self, Declaration, IntegerWidth, Signed};
 
 #[derive(Debug)]
 pub struct Program {
@@ -23,12 +21,12 @@ pub enum GlobalDecls {
 #[derive(PartialEq, Debug, Clone)]
 pub struct FunctionDeclaration {
     pub id: String,
-    pub return_type: crate::ast::Type,
+    pub return_type: ast::Type,
     pub block: CompoundStmts,
 }
 
 impl FunctionDeclaration {
-    pub fn new(id: String, return_type: crate::ast::Type, block: CompoundStmts) -> Self {
+    pub fn new(id: String, return_type: ast::Type, block: CompoundStmts) -> Self {
         Self {
             id,
             return_type,

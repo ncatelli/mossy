@@ -2,7 +2,7 @@
 //! additional type checking and enrichment.
 
 use super::CompilationStage;
-use crate::ast::{self, FuncProto, TypeCompatibility, Typed};
+use crate::stage::ast::{self, FuncProto, TypeCompatibility, Typed};
 
 mod scopes;
 use scopes::ScopeStack;
@@ -45,7 +45,7 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
         &mut self,
         input: crate::parser::ast::GlobalDecls,
     ) -> Result<ast::TypedGlobalDecls, String> {
-        use crate::ast::Declaration;
+        use ast::Declaration;
         match input {
             crate::parser::ast::GlobalDecls::Func(fd) => {
                 self.apply(fd).map(ast::TypedGlobalDecls::Func)
@@ -244,7 +244,7 @@ impl TypeAnalysis {
         use crate::parser::ast::ExprNode;
         use crate::parser::ast::Primary;
 
-        use crate::ast::Signed;
+        use ast::Signed;
 
         match expr {
             ExprNode::Primary(Primary::Integer {
@@ -256,7 +256,7 @@ impl TypeAnalysis {
 
                 Ok(ast::TypedExprNode::Primary(
                     ast::Type::Integer(sign, width),
-                    crate::ast::Primary::Integer { sign, width, value },
+                    ast::Primary::Integer { sign, width, value },
                 ))
             }
             ExprNode::Primary(Primary::Integer {
