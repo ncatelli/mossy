@@ -607,4 +607,26 @@ mod tests {
 
         assert_eq!(&expected_result, &res)
     }
+
+    macro_rules! assignment_expr {
+        ($ident:literal, $expr:expr) => {
+            ExprNode::Assignment($ident.to_string(), Box::new($expr))
+        };
+    }
+
+    #[test]
+    fn should_parse_multiple_nested_assignment_expressions() {
+        use parcel::Parser;
+
+        let input: Vec<(usize, char)> = "{ x = y = 5; }".chars().enumerate().collect();
+        let res = crate::parser::compound_statements()
+            .parse(&input)
+            .map(|ms| ms.unwrap());
+
+        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
+            assignment_expr!("x", assignment_expr!("y", primary_expr!(5))),
+        )]));
+
+        assert_eq!(&expected_result, &res);
+    }
 }
