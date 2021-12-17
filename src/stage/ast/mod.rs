@@ -61,7 +61,6 @@ pub enum TypedStmtNode {
     /// to a given pre-declared assignment.
     /// A block return statement.
     Return(Type, String, Option<TypedExprNode>),
-    Assignment(String, TypedExprNode),
     /// Represents a statement containing only a single expression.
     Expression(TypedExprNode),
     /// Represents a conditional if statement with an optional else clause.
@@ -85,6 +84,8 @@ pub enum TypedStmtNode {
 pub enum TypedExprNode {
     Primary(Type, Primary),
     FunctionCall(Type, String, Option<Box<TypedExprNode>>),
+
+    Assignment(Type, String, Box<TypedExprNode>),
 
     // Comparative
     Equal(Type, Box<TypedExprNode>, Box<TypedExprNode>),
@@ -111,6 +112,7 @@ impl Typed for TypedExprNode {
         match self {
             TypedExprNode::Primary(t, _)
             | TypedExprNode::FunctionCall(t, _, _)
+            | TypedExprNode::Assignment(t, _, _)
             | TypedExprNode::Equal(t, _, _)
             | TypedExprNode::NotEqual(t, _, _)
             | TypedExprNode::LessThan(t, _, _)

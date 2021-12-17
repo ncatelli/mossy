@@ -62,9 +62,6 @@ pub enum StmtNode {
     Declaration(Declaration),
     /// A block return statement.
     Return(Option<ExprNode>),
-    /// Assignment represents an assignment statement of an expressions value
-    /// to a given pre-declared assignment.
-    Assignment(String, ExprNode),
     /// Represents a statement containing only a single expression.
     Expression(ExprNode),
     /// Represents a conditional if statement with an optional else clause.
@@ -79,6 +76,10 @@ pub enum StmtNode {
 pub enum ExprNode {
     Primary(Primary),
     FunctionCall(String, Option<Box<ExprNode>>),
+
+    /// Assignment represents an assignment statement of an expressions value
+    /// to a given pre-declared assignment.
+    Assignment(String, Box<ExprNode>),
 
     // Comparative
     Equal(Box<ExprNode>, Box<ExprNode>),

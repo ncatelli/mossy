@@ -182,23 +182,7 @@ impl TypeAnalysis {
                     Err("invalid use of return: not in function".to_string())
                 }
             }
-            crate::parser::ast::StmtNode::Assignment(id, expr) => {
-                let expr = self.analyze_expression(expr)?;
 
-                self.scopes
-                    .lookup(&id)
-                    .map(|var_type| var_type.type_compatible(&expr.r#type(), true))
-                    .ok_or(format!("symbol {} undefined", &id))
-                    .and_then(|type_compat| match type_compat {
-                        ast::CompatibilityResult::Equivalent => Ok(expr.r#type()),
-                        ast::CompatibilityResult::WidenTo(ty) => Ok(ty),
-                        ast::CompatibilityResult::Incompatible => {
-                            Err(format!("invalid type: ({:?})", expr.r#type()))
-                        }
-                        ast::CompatibilityResult::Scale(t) => Ok(t),
-                    })
-                    .map(|_| ast::TypedStmtNode::Assignment(id, expr))
-            }
             crate::parser::ast::StmtNode::If(cond, t_case, f_case) => {
                 let typed_cond = self.analyze_expression(cond)?;
                 let typed_t_case = self.analyze_block(t_case)?;
@@ -299,6 +283,23 @@ impl TypeAnalysis {
                     })
             }
 
+            ExprNode::Assignment(id, expr) => {
+                let expr = self.analyze_expression(*expr)?;
+
+                self.scopes
+                    .lookup(&id)
+                    .map(|var_type| var_type.type_compatible(&expr.r#type(), true))
+                    .ok_or(format!("symbol {} undefined", &id))
+                    .and_then(|type_compat| match type_compat {
+                        ast::CompatibilityResult::Equivalent => Ok(expr.r#type()),
+                        ast::CompatibilityResult::WidenTo(ty) => Ok(ty),
+                        ast::CompatibilityResult::Incompatible => {
+                            Err(format!("invalid type: ({:?})", expr.r#type()))
+                        }
+                        ast::CompatibilityResult::Scale(t) => Ok(t),
+                    })
+                    .map(|ty| ast::TypedExprNode::Assignment(ty, id, Box::new(expr)))
+            }
             ExprNode::Equal(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
