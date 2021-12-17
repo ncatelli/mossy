@@ -79,7 +79,7 @@ pub enum ExprNode {
 
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.
-    Assignment(String, Box<ExprNode>),
+    Assignment(Box<ExprNode>, Box<ExprNode>),
 
     // Comparative
     Equal(Box<ExprNode>, Box<ExprNode>),

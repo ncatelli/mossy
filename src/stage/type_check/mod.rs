@@ -283,22 +283,30 @@ impl TypeAnalysis {
                     })
             }
 
-            ExprNode::Assignment(id, expr) => {
-                let expr = self.analyze_expression(*expr)?;
+            ExprNode::Assignment(lhs, rhs) => {
+                use ast::{Primary, TypedExprNode};
 
-                self.scopes
-                    .lookup(&id)
-                    .map(|var_type| var_type.type_compatible(&expr.r#type(), true))
-                    .ok_or(format!("symbol {} undefined", &id))
-                    .and_then(|type_compat| match type_compat {
-                        ast::CompatibilityResult::Equivalent => Ok(expr.r#type()),
-                        ast::CompatibilityResult::WidenTo(ty) => Ok(ty),
-                        ast::CompatibilityResult::Incompatible => {
-                            Err(format!("invalid type: ({:?})", expr.r#type()))
-                        }
-                        ast::CompatibilityResult::Scale(t) => Ok(t),
-                    })
-                    .map(|ty| ast::TypedExprNode::Assignment(ty, id, Box::new(expr)))
+                let rhs = self.analyze_expression(*rhs)?;
+                let lhs = self.analyze_expression(*lhs)?;
+
+                match lhs {
+                    TypedExprNode::Primary(lhs_ty, Primary::Identifier(_, id)) => self
+                        .scopes
+                        .lookup(&id)
+                        .map(|var_type| var_type.type_compatible(&rhs.r#type(), true))
+                        .ok_or(format!("symbol {} undefined", &id))
+                        .and_then(|type_compat| match type_compat {
+                            ast::CompatibilityResult::Equivalent => Ok(lhs_ty),
+                            ast::CompatibilityResult::WidenTo(ty) => Ok(ty),
+                            ast::CompatibilityResult::Incompatible => {
+                                Err(format!("invalid type: ({:?})", lhs_ty))
+                            }
+                            ast::CompatibilityResult::Scale(t) => Ok(t),
+                        })
+                        .map(|ty| ast::TypedExprNode::Assignment(ty, id, Box::new(rhs))),
+                    TypedExprNode::Deref(_, _) => todo!(),
+                    _ => Err(format!("invalid type: ({:?})", lhs.r#type())),
+                }
             }
             ExprNode::Equal(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)

@@ -166,10 +166,10 @@ fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
 
 fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
-        whitespace_wrapped(identifier()),
+        whitespace_wrapped(equality()),
         whitespace_wrapped(expect_character('=')).and_then(|_| whitespace_wrapped(assignment())),
     )
-    .map(|(ident, expr)| ExprNode::Assignment(ident, Box::new(expr)))
+    .map(|(lhs, rhs)| ExprNode::Assignment(Box::new(lhs), Box::new(rhs)))
     .or(equality)
 }
 
@@ -609,8 +609,8 @@ mod tests {
     }
 
     macro_rules! assignment_expr {
-        ($ident:literal, $expr:expr) => {
-            ExprNode::Assignment($ident.to_string(), Box::new($expr))
+        ($lhs:expr, $rhs:expr) => {
+            ExprNode::Assignment(Box::new($lhs), Box::new($rhs))
         };
     }
 
@@ -624,7 +624,13 @@ mod tests {
             .map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
-            assignment_expr!("x", assignment_expr!("y", primary_expr!(5))),
+            assignment_expr!(
+                ExprNode::Primary(Primary::Identifier("x".to_string())),
+                assignment_expr!(
+                    ExprNode::Primary(Primary::Identifier("y".to_string())),
+                    primary_expr!(5)
+                )
+            ),
         )]));
 
         assert_eq!(&expected_result, &res);

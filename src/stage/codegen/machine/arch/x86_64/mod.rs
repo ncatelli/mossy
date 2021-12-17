@@ -517,6 +517,19 @@ fn codegen_reference(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<Str
     vec![format!("\tleaq\t{}(%rip), %{}\n", identifier, ret.id())]
 }
 
+fn codegen_store_deref(
+    src: &mut SizedGeneralPurpose,
+    dest: &mut SizedGeneralPurpose,
+    _: ast::Type,
+) -> Vec<String> {
+    vec![format!(
+        "\tmov{}\t%{}, (%{})\n",
+        src.operator_suffix(),
+        src.id(),
+        dest.id()
+    )]
+}
+
 fn codegen_deref(ret: &mut SizedGeneralPurpose, _: ast::Type) -> Vec<String> {
     vec![format!(
         "\tmov{}\t(%{}), %{}\n",
