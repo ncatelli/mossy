@@ -22,7 +22,6 @@ compound_statement: '{' '}'
 statement: 
         | expression ';'
         | var_declaration
-        | assignment
         | if_statement 
         | while_statement 
         | for_statement
@@ -30,9 +29,6 @@ statement:
         ;
 
 var_declaration:   type_declarator identifier_list ';'
-        ;
-
-assignent:   identifier '=' expression ';'
         ;
 
 if_statement: if_head
@@ -58,7 +54,11 @@ postop_statement: expression
 return_statement: 'return' expression? ';'
         ;
 
-expression: equality
+expression: assignment
+        ;
+
+assignment:   identifier '=' assignment
+        | equality
         ;
 
 equality: relational ( ( '==' | '!=' ) relational )*

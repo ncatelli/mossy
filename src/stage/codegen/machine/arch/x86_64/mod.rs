@@ -116,12 +116,8 @@ fn codegen_statement(
     input: ast::TypedStmtNode,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     match input {
-        ast::TypedStmtNode::Expression(expr) => allocator.allocate_then(|allocator, ret_val| {
-            Ok(vec![
-                codegen_expr(allocator, ret_val, expr),
-                codegen_printint(ret_val),
-            ])
-        }),
+        ast::TypedStmtNode::Expression(expr) => allocator
+            .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
         ast::TypedStmtNode::Declaration(ast::Declaration(ty, identifiers)) => {
             let var_decls = identifiers
                 .iter()
@@ -141,14 +137,7 @@ fn codegen_statement(
 
             Ok(vec![res])
         }),
-        ast::TypedStmtNode::Assignment(identifier, expr) => {
-            allocator.allocate_then(|allocator, ret_val| {
-                Ok(vec![
-                    codegen_expr(allocator, ret_val, expr),
-                    codegen_store_global(ret_val, &identifier),
-                ])
-            })
-        }
+
         // with else case
         ast::TypedStmtNode::If(cond, true_case, Some(false_case)) => {
             codegen_if_statement_with_else(allocator, cond, true_case, false_case)
@@ -427,6 +416,24 @@ fn codegen_expr(
             codegen_call(allocator, ret_val, &func_name, optional_arg)
         }
 
+        ast::TypedExprNode::IdentifierAssignment(_, identifier, expr) => {
+            allocator.allocate_then(|allocator, ret_val| {
+                flattenable_instructions!(
+                    codegen_expr(allocator, ret_val, *expr),
+                    codegen_store_global(ret_val, &identifier),
+                )
+            })
+        }
+        TypedExprNode::DerefAssignment(_, lhs, rhs) => {
+            allocator.allocate_then(|allocator, rhs_ret_val| {
+                flattenable_instructions!(
+                    codegen_expr(allocator, rhs_ret_val, *rhs),
+                    codegen_expr(allocator, ret_val, *lhs),
+                    codegen_store_deref(ret_val, rhs_ret_val),
+                )
+            })
+        }
+
         TypedExprNode::Equal(_, lhs, rhs) => {
             codegen_compare_and_set(allocator, ret_val, ComparisonOperation::Equal, lhs, rhs)
         }
@@ -517,6 +524,18 @@ fn codegen_constant_u8(ret_val: &mut SizedGeneralPurpose, constant: u8) -> Vec<S
 
 fn codegen_reference(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
     vec![format!("\tleaq\t{}(%rip), %{}\n", identifier, ret.id())]
+}
+
+fn codegen_store_deref(
+    dest: &mut SizedGeneralPurpose,
+    src: &mut SizedGeneralPurpose,
+) -> Vec<String> {
+    vec![format!(
+        "\tmov{}\t%{}, (%{})\n",
+        dest.operator_suffix(),
+        src.id(),
+        dest.id()
+    )]
 }
 
 fn codegen_deref(ret: &mut SizedGeneralPurpose, _: ast::Type) -> Vec<String> {

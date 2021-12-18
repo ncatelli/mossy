@@ -57,7 +57,6 @@ fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Com
 
 fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     semicolon_terminated_statement(declaration())
-        .or(|| semicolon_terminated_statement(assignment()))
         .or(if_statement)
         .or(while_statement)
         .or(for_statement)
@@ -87,17 +86,6 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     )
     .map(|(ty, ids)| crate::stage::ast::Declaration(ty, ids))
     .map(StmtNode::Declaration)
-}
-
-fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    parcel::join(
-        whitespace_wrapped(identifier()),
-        parcel::right(parcel::join(
-            whitespace_wrapped(expect_character('=')),
-            whitespace_wrapped(expression()),
-        )),
-    )
-    .map(|(ident, expr)| StmtNode::Assignment(ident, expr))
 }
 
 fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -173,7 +161,16 @@ fn return_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNo
 }
 
 fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
-    equality().map(|e| e)
+    assignment()
+}
+
+fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+    parcel::join(
+        whitespace_wrapped(equality()),
+        whitespace_wrapped(expect_character('=')).and_then(|_| whitespace_wrapped(assignment())),
+    )
+    .map(|(lhs, rhs)| ExprNode::Assignment(Box::new(lhs), Box::new(rhs)))
+    .or(equality)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -609,5 +606,33 @@ mod tests {
             .map(|ms| ms.unwrap());
 
         assert_eq!(&expected_result, &res)
+    }
+
+    macro_rules! assignment_expr {
+        ($lhs:expr, $rhs:expr) => {
+            ExprNode::Assignment(Box::new($lhs), Box::new($rhs))
+        };
+    }
+
+    #[test]
+    fn should_parse_multiple_nested_assignment_expressions() {
+        use parcel::Parser;
+
+        let input: Vec<(usize, char)> = "{ x = y = 5; }".chars().enumerate().collect();
+        let res = crate::parser::compound_statements()
+            .parse(&input)
+            .map(|ms| ms.unwrap());
+
+        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
+            assignment_expr!(
+                ExprNode::Primary(Primary::Identifier("x".to_string())),
+                assignment_expr!(
+                    ExprNode::Primary(Primary::Identifier("y".to_string())),
+                    primary_expr!(5)
+                )
+            ),
+        )]));
+
+        assert_eq!(&expected_result, &res);
     }
 }
