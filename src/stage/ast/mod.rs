@@ -85,7 +85,8 @@ pub enum TypedExprNode {
     Primary(Type, Primary),
     FunctionCall(Type, String, Option<Box<TypedExprNode>>),
 
-    Assignment(Type, String, Box<TypedExprNode>),
+    IdentifierAssignment(Type, String, Box<TypedExprNode>),
+    DerefAssignment(Type, Box<TypedExprNode>, Box<TypedExprNode>),
 
     // Comparative
     Equal(Type, Box<TypedExprNode>, Box<TypedExprNode>),
@@ -110,22 +111,23 @@ pub enum TypedExprNode {
 impl Typed for TypedExprNode {
     fn r#type(&self) -> Type {
         match self {
-            TypedExprNode::Primary(t, _)
-            | TypedExprNode::FunctionCall(t, _, _)
-            | TypedExprNode::Assignment(t, _, _)
-            | TypedExprNode::Equal(t, _, _)
-            | TypedExprNode::NotEqual(t, _, _)
-            | TypedExprNode::LessThan(t, _, _)
-            | TypedExprNode::GreaterThan(t, _, _)
-            | TypedExprNode::LessEqual(t, _, _)
-            | TypedExprNode::GreaterEqual(t, _, _)
-            | TypedExprNode::Subtraction(t, _, _)
-            | TypedExprNode::Division(t, _, _)
-            | TypedExprNode::Addition(t, _, _)
-            | TypedExprNode::Multiplication(t, _, _)
-            | TypedExprNode::Ref(t, _)
-            | TypedExprNode::Deref(t, _)
-            | TypedExprNode::ScaleBy(t, _) => t.clone(),
+            TypedExprNode::Primary(ty, _)
+            | TypedExprNode::FunctionCall(ty, _, _)
+            | TypedExprNode::IdentifierAssignment(ty, _, _)
+            | TypedExprNode::DerefAssignment(ty, _, _)
+            | TypedExprNode::Equal(ty, _, _)
+            | TypedExprNode::NotEqual(ty, _, _)
+            | TypedExprNode::LessThan(ty, _, _)
+            | TypedExprNode::GreaterThan(ty, _, _)
+            | TypedExprNode::LessEqual(ty, _, _)
+            | TypedExprNode::GreaterEqual(ty, _, _)
+            | TypedExprNode::Subtraction(ty, _, _)
+            | TypedExprNode::Division(ty, _, _)
+            | TypedExprNode::Addition(ty, _, _)
+            | TypedExprNode::Multiplication(ty, _, _)
+            | TypedExprNode::Ref(ty, _)
+            | TypedExprNode::Deref(ty, _)
+            | TypedExprNode::ScaleBy(ty, _) => ty.clone(),
         }
     }
 }

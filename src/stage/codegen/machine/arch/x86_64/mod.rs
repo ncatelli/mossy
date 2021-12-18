@@ -416,11 +416,20 @@ fn codegen_expr(
             codegen_call(allocator, ret_val, &func_name, optional_arg)
         }
 
-        ast::TypedExprNode::Assignment(_, identifier, expr) => {
+        ast::TypedExprNode::IdentifierAssignment(_, identifier, expr) => {
             allocator.allocate_then(|allocator, ret_val| {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret_val, *expr),
                     codegen_store_global(ret_val, &identifier),
+                )
+            })
+        }
+        TypedExprNode::DerefAssignment(_, lhs, rhs) => {
+            allocator.allocate_then(|allocator, rhs_ret_val| {
+                flattenable_instructions!(
+                    codegen_expr(allocator, rhs_ret_val, *rhs),
+                    codegen_expr(allocator, ret_val, *lhs),
+                    codegen_store_deref(ret_val, rhs_ret_val),
                 )
             })
         }
@@ -518,13 +527,12 @@ fn codegen_reference(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<Str
 }
 
 fn codegen_store_deref(
-    src: &mut SizedGeneralPurpose,
     dest: &mut SizedGeneralPurpose,
-    _: ast::Type,
+    src: &mut SizedGeneralPurpose,
 ) -> Vec<String> {
     vec![format!(
         "\tmov{}\t%{}, (%{})\n",
-        src.operator_suffix(),
+        dest.operator_suffix(),
         src.id(),
         dest.id()
     )]

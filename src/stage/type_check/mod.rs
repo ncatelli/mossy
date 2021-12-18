@@ -303,8 +303,18 @@ impl TypeAnalysis {
                             }
                             ast::CompatibilityResult::Scale(t) => Ok(t),
                         })
-                        .map(|ty| ast::TypedExprNode::Assignment(ty, id, Box::new(rhs))),
-                    TypedExprNode::Deref(_, _) => todo!(),
+                        .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, id, Box::new(rhs))),
+                    TypedExprNode::Deref(ty, expr) => match ty.type_compatible(&rhs.r#type(), true)
+                    {
+                        ast::CompatibilityResult::Equivalent => Ok(ty),
+                        ast::CompatibilityResult::WidenTo(ty) => Ok(ty),
+                        ast::CompatibilityResult::Incompatible => {
+                            Err(format!("invalid type: ({:?})", ty))
+                        }
+                        ast::CompatibilityResult::Scale(t) => Ok(t),
+                    }
+                    .map(|ty| ast::TypedExprNode::DerefAssignment(ty, expr, Box::new(rhs))),
+                    // Fail on any other type
                     _ => Err(format!("invalid type: ({:?})", lhs.r#type())),
                 }
             }
