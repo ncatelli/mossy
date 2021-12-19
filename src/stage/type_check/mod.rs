@@ -259,7 +259,10 @@ impl TypeAnalysis {
                 })
                 .ok_or_else(|| "invalid type".to_string()),
 
-            ExprNode::Grouping(_) => todo!(),
+            ExprNode::Grouping(expr) => self
+                .analyze_expression(*expr)
+                .map(|ty_expr| (ty_expr.r#type(), ty_expr))
+                .map(|(ty, expr)| ast::TypedExprNode::Grouping(ty, Box::new(expr))),
 
             ExprNode::FunctionCall(identifier, args) => {
                 let args = args.map(|arg| self.analyze_expression(*arg).unwrap());

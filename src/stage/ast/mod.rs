@@ -106,6 +106,8 @@ pub enum TypedExprNode {
     Ref(Type, String),
     Deref(Type, Box<TypedExprNode>),
     ScaleBy(Type, Box<TypedExprNode>),
+
+    Grouping(Type, Box<TypedExprNode>),
 }
 
 impl Typed for TypedExprNode {
@@ -127,7 +129,8 @@ impl Typed for TypedExprNode {
             | TypedExprNode::Multiplication(ty, _, _)
             | TypedExprNode::Ref(ty, _)
             | TypedExprNode::Deref(ty, _)
-            | TypedExprNode::ScaleBy(ty, _) => ty.clone(),
+            | TypedExprNode::ScaleBy(ty, _)
+            | TypedExprNode::Grouping(ty, _) => ty.clone(),
         }
     }
 }

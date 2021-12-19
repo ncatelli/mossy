@@ -483,6 +483,7 @@ fn codegen_expr(
             let scale_by_size = ty.size();
             codegen_scaleby(allocator, ret_val, scale_by_size, lhs)
         }
+        TypedExprNode::Grouping(_, expr) => codegen_expr(allocator, ret_val, *expr),
     }
 }
 
