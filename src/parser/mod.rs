@@ -569,6 +569,12 @@ mod tests {
         };
     }
 
+    macro_rules! grouping_expr {
+        ($value:expr) => {
+            $crate::parser::ast::ExprNode::Grouping(Box::new($value))
+        };
+    }
+
     use crate::parser::ast::*;
 
     #[test]
@@ -666,11 +672,7 @@ mod tests {
             factor_expr!(
                 primary_expr!(2),
                 '*',
-                ExprNode::Grouping(Box::new(term_expr!(
-                    primary_expr!(3),
-                    '+',
-                    primary_expr!(4)
-                )))
+                grouping_expr!(term_expr!(primary_expr!(3), '+', primary_expr!(4)))
             ),
         )]));
 
