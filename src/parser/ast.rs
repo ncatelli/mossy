@@ -98,6 +98,8 @@ pub enum ExprNode {
     // Pointer Operations
     Ref(String),
     Deref(Box<ExprNode>),
+
+    Grouping(Box<ExprNode>),
 }
 
 /// Primary represents a primitive type within the ast.

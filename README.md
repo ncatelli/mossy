@@ -84,11 +84,14 @@ prefix_expression: '*' prefix_expression
 
 primary: identifier
         | integer_constant
+        | grouping 
         ;
 
 char:   alphabetic
         ;
 
+grouping: '(' expression ')'
+        ;
 
 identifier_list: identifier
         | identifier ',' identifier_list

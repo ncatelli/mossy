@@ -259,6 +259,8 @@ impl TypeAnalysis {
                 })
                 .ok_or_else(|| "invalid type".to_string()),
 
+            ExprNode::Grouping(_) => todo!(),
+
             ExprNode::FunctionCall(identifier, args) => {
                 let args = args.map(|arg| self.analyze_expression(*arg).unwrap());
 
