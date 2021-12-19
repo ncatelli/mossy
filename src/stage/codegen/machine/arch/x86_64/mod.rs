@@ -1,6 +1,6 @@
 use crate::stage::ast::{self, ByteSized, Type};
 use crate::stage::codegen::machine::arch::TargetArchitecture;
-use crate::stage::codegen::{self, machine, register::Register, CodeGenerationErr};
+use crate::stage::codegen::{self, register::Register, CodeGenerationErr};
 use crate::stage::CompilationStage;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -13,11 +13,6 @@ mod register;
 use register::{GPRegisterAllocator, SizedGeneralPurpose};
 
 impl TargetArchitecture for X86_64 {}
-
-/// Defines a constant preamble to be prepended to any compiled binaries.
-pub const CG_PREAMBLE: &str = "\t.text
-.LC0:
-    .string \"%d\\n\"\n\n";
 
 impl CompilationStage<ast::TypedProgram, Vec<String>, String> for X86_64 {
     fn apply(&mut self, input: ast::TypedProgram) -> Result<Vec<String>, String> {
@@ -258,11 +253,6 @@ fn codegen_for_statement(
             codegen_label(loop_end_block_id),
         ))
     })
-}
-
-/// Returns a vector-wrapped preamble.
-pub fn codegen_preamble() -> Vec<String> {
-    vec![String::from(machine::arch::x86_64::CG_PREAMBLE)]
 }
 
 pub fn codegen_function_preamble(identifier: &str) -> Vec<String> {

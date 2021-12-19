@@ -79,12 +79,7 @@ fn compile(source: &str) -> RuntimeResult<String> {
                 .apply(program)
         })
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
-        .map(|insts| {
-            x86_64::codegen_preamble()
-                .into_iter()
-                .chain(insts.into_iter())
-                .collect::<String>()
-        })
+        .map(|insts| insts.into_iter().collect::<String>())
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))
 }
 
