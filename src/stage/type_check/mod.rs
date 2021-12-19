@@ -422,3 +422,97 @@ impl TypeAnalysis {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::parser::ast;
+    use crate::stage::{
+        self,
+        ast::{IntegerWidth, Signed, Type, TypedExprNode},
+    };
+
+    #[test]
+    fn test_grouping_assigns_correct_type() {
+        let analyzer = super::TypeAnalysis::default();
+        let pre_typed_ast =
+            ast::ExprNode::Grouping(Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
+                sign: Signed::Unsigned,
+                width: IntegerWidth::Eight,
+                value: 1,
+            })));
+
+        let typed_ast = analyzer.analyze_expression(pre_typed_ast);
+        let expected = TypedExprNode::Grouping(
+            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            Box::new(TypedExprNode::Primary(
+                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                stage::ast::Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: 1,
+                },
+            )),
+        );
+
+        assert_eq!(Ok(expected), typed_ast);
+
+        // Preserves complex order
+
+        let pre_typed_ast = ast::ExprNode::Grouping(Box::new(ast::ExprNode::Multiplication(
+            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
+                sign: Signed::Unsigned,
+                width: IntegerWidth::Eight,
+                value: 2,
+            })),
+            Box::new(ast::ExprNode::Addition(
+                Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: 3,
+                })),
+                Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: 4,
+                })),
+            )),
+        )));
+
+        let typed_ast = analyzer.analyze_expression(pre_typed_ast);
+        let expected = TypedExprNode::Grouping(
+            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            Box::new(TypedExprNode::Multiplication(
+                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                Box::new(TypedExprNode::Primary(
+                    Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                    stage::ast::Primary::Integer {
+                        sign: Signed::Unsigned,
+                        width: IntegerWidth::Eight,
+                        value: 2,
+                    },
+                )),
+                Box::new(TypedExprNode::Addition(
+                    Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                    Box::new(TypedExprNode::Primary(
+                        Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                        stage::ast::Primary::Integer {
+                            sign: Signed::Unsigned,
+                            width: IntegerWidth::Eight,
+                            value: 3,
+                        },
+                    )),
+                    Box::new(TypedExprNode::Primary(
+                        Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                        stage::ast::Primary::Integer {
+                            sign: Signed::Unsigned,
+                            width: IntegerWidth::Eight,
+                            value: 4,
+                        },
+                    )),
+                )),
+            )),
+        );
+
+        assert_eq!(Ok(expected), typed_ast);
+    }
+}
