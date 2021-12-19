@@ -342,6 +342,18 @@ fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     identifier()
         .map(|id| ExprNode::Primary(Primary::Identifier(id)))
         .or(|| number().map(ExprNode::Primary))
+        .or(grouping)
+}
+
+fn grouping<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+    whitespace_wrapped(expect_character('('))
+        .and_then(|_| {
+            parcel::left(parcel::join(
+                expression(),
+                whitespace_wrapped(expect_character(')')),
+            ))
+        })
+        .map(|expr| ExprNode::Grouping(Box::new(expr)))
 }
 
 fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
@@ -557,6 +569,12 @@ mod tests {
         };
     }
 
+    macro_rules! grouping_expr {
+        ($value:expr) => {
+            $crate::parser::ast::ExprNode::Grouping(Box::new($value))
+        };
+    }
+
     use crate::parser::ast::*;
 
     #[test]
@@ -630,6 +648,31 @@ mod tests {
                     ExprNode::Primary(Primary::Identifier("y".to_string())),
                     primary_expr!(5)
                 )
+            ),
+        )]));
+
+        assert_eq!(&expected_result, &res);
+    }
+
+    #[test]
+    fn should_parse_grouping_expressions_in_correct_precedence() {
+        use parcel::Parser;
+
+        let input: Vec<(usize, char)> = "{
+    2 * (3 + 4);
+}"
+        .chars()
+        .enumerate()
+        .collect();
+        let res = crate::parser::compound_statements()
+            .parse(&input)
+            .map(|ms| ms.unwrap());
+
+        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
+            factor_expr!(
+                primary_expr!(2),
+                '*',
+                grouping_expr!(term_expr!(primary_expr!(3), '+', primary_expr!(4)))
             ),
         )]));
 
