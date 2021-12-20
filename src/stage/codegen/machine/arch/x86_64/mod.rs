@@ -280,18 +280,18 @@ pub fn codegen_function_postamble(identifier: &str) -> Vec<String> {
 }
 
 fn codegen_global_symbol(kind: &Type, identifier: &str) -> Vec<String> {
-    const ALIGNMENT: usize = 2;
     let reserve_bytes = kind.size();
+    let alignment = kind.size();
 
     vec![format!(
-        "\t.comm\t{},{},{}\n",
-        identifier, reserve_bytes, ALIGNMENT
+        "\t.comm\tvar_{},{},{}\n",
+        identifier, reserve_bytes, alignment
     )]
 }
 
 fn codegen_store_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
     vec![format!(
-        "\tmov{}\t%{}, {}(%rip)\n",
+        "\tmov{}\t%{}, var_{}(%rip)\n",
         ret.operator_suffix(),
         ret.id(),
         identifier
@@ -300,7 +300,7 @@ fn codegen_store_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<
 
 fn codegen_load_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
     vec![format!(
-        "\tmov{}\t{}(%rip), %{}\n",
+        "\tmov{}\tvar_{}(%rip), %{}\n",
         ret.operator_suffix(),
         identifier,
         ret.id()
@@ -775,4 +775,91 @@ fn codegen_return(ret_val: &mut SizedGeneralPurpose, func_name: &str) -> Vec<Str
     .into_iter()
     .chain(codegen_jump(format!("func_{}_ret", func_name)).into_iter())
     .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stage::ast;
+
+    macro_rules! compound_statements {
+        ($($stmt:expr,)*) => {
+               $crate::stage::ast::TypedCompoundStmts::new(
+                   vec![
+                    $(
+                        $stmt,
+                    )*
+                   ]
+               )
+
+        };
+    }
+
+    #[test]
+    fn should_use_correct_return_register_for_modulo_operations() {
+        use crate::stage::CompilationStage;
+        use ast::{IntegerWidth, Primary, Signed, TypedExprNode, TypedStmtNode};
+
+        let modulo_expr_stmt = TypedStmtNode::Expression(TypedExprNode::Modulo(
+            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            Box::new(TypedExprNode::Primary(
+                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: 10,
+                },
+            )),
+            Box::new(TypedExprNode::Primary(
+                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: 3,
+                },
+            )),
+        ));
+
+        let div_expr_stmt = TypedStmtNode::Expression(TypedExprNode::Division(
+            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            Box::new(TypedExprNode::Primary(
+                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: 10,
+                },
+            )),
+            Box::new(TypedExprNode::Primary(
+                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: 3,
+                },
+            )),
+        ));
+
+        assert_eq!(
+            Ok(vec![
+                "\tmovq\t$10, %r15
+\tmovq\t$3, %r14
+\tmovq\t%r15,%rax
+\tcqo
+\tidivq\t%r14
+\tmovq\t%rdx,%r15
+"
+                .to_string(),
+                "\tmovq\t$10, %r13
+\tmovq\t$3, %r12
+\tmovq\t%r13,%rax
+\tcqo
+\tidivq\t%r12
+\tmovq\t%rax,%r13
+"
+                .to_string()
+            ]),
+            X86_64.apply(compound_statements!(modulo_expr_stmt, div_expr_stmt,))
+        );
+    }
 }
