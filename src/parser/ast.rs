@@ -90,10 +90,11 @@ pub enum ExprNode {
     GreaterEqual(Box<ExprNode>, Box<ExprNode>),
 
     // Arithmetic
-    Subtraction(Box<ExprNode>, Box<ExprNode>),
-    Division(Box<ExprNode>, Box<ExprNode>),
     Addition(Box<ExprNode>, Box<ExprNode>),
+    Subtraction(Box<ExprNode>, Box<ExprNode>),
     Multiplication(Box<ExprNode>, Box<ExprNode>),
+    Division(Box<ExprNode>, Box<ExprNode>),
+    Modulo(Box<ExprNode>, Box<ExprNode>),
 
     // Pointer Operations
     Ref(String),

@@ -448,7 +448,12 @@ fn codegen_expr(
         TypedExprNode::Multiplication(_, lhs, rhs) => {
             codegen_multiplication(allocator, ret_val, lhs, rhs)
         }
-        TypedExprNode::Division(_, lhs, rhs) => codegen_division(allocator, ret_val, lhs, rhs),
+        TypedExprNode::Division(_, lhs, rhs) => {
+            codegen_division(allocator, ret_val, lhs, rhs, DivisionVariant::Division)
+        }
+        TypedExprNode::Modulo(_, lhs, rhs) => {
+            codegen_division(allocator, ret_val, lhs, rhs, DivisionVariant::Modulo)
+        }
         TypedExprNode::Ref(_, identifier) => codegen_reference(ret_val, &identifier),
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(
@@ -621,11 +626,18 @@ fn codegen_multiplication(
     })
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum DivisionVariant {
+    Division,
+    Modulo,
+}
+
 fn codegen_division(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
+    division_varient: DivisionVariant,
 ) -> Vec<String> {
     allocator.allocate_then(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
@@ -637,9 +649,14 @@ fn codegen_division(
             rhs_ctx,
             vec![
                 format!("\tmov{}\t{},%rax\n", operand_suffix, ret_val),
-                String::from("\tcqo\n"),
+                "\tcqo\n".to_string(),
                 format!("\tidiv{}\t{}\n", operand_suffix, rhs_retval),
-                format!("\tmov{}\t%rax,{}\n", operand_suffix, ret_val),
+                match division_varient {
+                    DivisionVariant::Division =>
+                        format!("\tmov{}\t%rax,{}\n", operand_suffix, ret_val),
+                    DivisionVariant::Modulo =>
+                        format!("\tmov{}\t%rdx,{}\n", operand_suffix, ret_val),
+                }
             ],
         )
     })
