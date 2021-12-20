@@ -1,6 +1,6 @@
 use crate::stage::ast::{self, ByteSized, Type};
 use crate::stage::codegen::machine::arch::TargetArchitecture;
-use crate::stage::codegen::{self, machine, register::Register, CodeGenerationErr};
+use crate::stage::codegen::{self, register::Register, CodeGenerationErr};
 use crate::stage::CompilationStage;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -13,24 +13,6 @@ mod register;
 use register::{GPRegisterAllocator, SizedGeneralPurpose};
 
 impl TargetArchitecture for X86_64 {}
-
-/// Defines a constant preamble to be prepended to any compiled binaries.
-pub const CG_PREAMBLE: &str = "\t.text
-.LC0:
-    .string \"%d\\n\"
-printint:
-    pushq   %rbp
-    movq    %rsp, %rbp
-    subq    $16, %rsp
-    movl    %edi, -4(%rbp)
-    movl    -4(%rbp), %eax
-    movl    %eax, %esi
-    leaq	.LC0(%rip), %rdi
-    movl	$0, %eax
-    call	printf@PLT
-    nop
-    leave
-    ret\n\n";
 
 impl CompilationStage<ast::TypedProgram, Vec<String>, String> for X86_64 {
     fn apply(&mut self, input: ast::TypedProgram) -> Result<Vec<String>, String> {
@@ -271,11 +253,6 @@ fn codegen_for_statement(
             codegen_label(loop_end_block_id),
         ))
     })
-}
-
-/// Returns a vector-wrapped preamble.
-pub fn codegen_preamble() -> Vec<String> {
-    vec![String::from(machine::arch::x86_64::CG_PREAMBLE)]
 }
 
 pub fn codegen_function_preamble(identifier: &str) -> Vec<String> {
@@ -781,13 +758,4 @@ fn codegen_return(ret_val: &mut SizedGeneralPurpose, func_name: &str) -> Vec<Str
     .into_iter()
     .chain(codegen_jump(format!("func_{}_ret", func_name)).into_iter())
     .collect()
-}
-
-#[allow(dead_code)]
-fn codegen_printint(reg: &mut SizedGeneralPurpose) -> Vec<String> {
-    vec![format!(
-        "\tmov{}\t{}, %rdi\n\tcall\tprintint\n",
-        reg.operator_suffix(),
-        reg
-    )]
 }
