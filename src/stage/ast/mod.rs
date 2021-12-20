@@ -97,9 +97,10 @@ pub enum TypedExprNode {
     GreaterEqual(Type, Box<TypedExprNode>, Box<TypedExprNode>),
 
     // Arithmetic
+    Addition(Type, Box<TypedExprNode>, Box<TypedExprNode>),
     Subtraction(Type, Box<TypedExprNode>, Box<TypedExprNode>),
     Division(Type, Box<TypedExprNode>, Box<TypedExprNode>),
-    Addition(Type, Box<TypedExprNode>, Box<TypedExprNode>),
+    Modulo(Type, Box<TypedExprNode>, Box<TypedExprNode>),
     Multiplication(Type, Box<TypedExprNode>, Box<TypedExprNode>),
 
     // Pointer Operations
@@ -123,10 +124,11 @@ impl Typed for TypedExprNode {
             | TypedExprNode::GreaterThan(ty, _, _)
             | TypedExprNode::LessEqual(ty, _, _)
             | TypedExprNode::GreaterEqual(ty, _, _)
+            | TypedExprNode::Addition(ty, _, _)
             | TypedExprNode::Subtraction(ty, _, _)
             | TypedExprNode::Division(ty, _, _)
-            | TypedExprNode::Addition(ty, _, _)
             | TypedExprNode::Multiplication(ty, _, _)
+            | TypedExprNode::Modulo(ty, _, _)
             | TypedExprNode::Ref(ty, _)
             | TypedExprNode::Deref(ty, _)
             | TypedExprNode::ScaleBy(ty, _)

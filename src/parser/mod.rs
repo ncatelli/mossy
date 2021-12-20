@@ -283,6 +283,7 @@ fn addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
 enum MultiplicationExprOp {
     Star,
     Slash,
+    Mod,
 }
 
 #[allow(clippy::redundant_closure)]
@@ -293,7 +294,8 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
             whitespace_wrapped(
                 expect_character('*')
                     .map(|_| MultiplicationExprOp::Star)
-                    .or(|| expect_character('/').map(|_| MultiplicationExprOp::Slash)),
+                    .or(|| expect_character('/').map(|_| MultiplicationExprOp::Slash))
+                    .or(|| expect_character('%').map(|_| MultiplicationExprOp::Mod)),
             ),
             whitespace_wrapped(call()),
         ))
@@ -308,6 +310,7 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
                     ExprNode::Multiplication(Box::new(lhs), Box::new(rhs))
                 }
                 MultiplicationExprOp::Slash => ExprNode::Division(Box::new(lhs), Box::new(rhs)),
+                MultiplicationExprOp::Mod => ExprNode::Modulo(Box::new(lhs), Box::new(rhs)),
             })
     })
     .or(|| call())
@@ -547,6 +550,9 @@ mod tests {
         };
         ($lhs:expr, '-', $rhs:expr) => {
             $crate::parser::ast::ExprNode::Subtraction(Box::new($lhs), Box::new($rhs))
+        };
+        ($lhs:expr, '%', $rhs:expr) => {
+            $crate::parser::ast::ExprNode::Modulo(Box::new($lhs), Box::new($rhs))
         };
     }
 

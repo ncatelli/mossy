@@ -279,19 +279,19 @@ pub fn codegen_function_postamble(identifier: &str) -> Vec<String> {
         .collect()
 }
 
-fn codegen_global_symbol(kind: &Type, identifier: &str) -> Vec<String> {
-    const ALIGNMENT: usize = 2;
-    let reserve_bytes = kind.size();
+fn codegen_global_symbol(_kind: &Type, identifier: &str) -> Vec<String> {
+    let reserve_bytes = 8;
+    let alignment = 8;
 
     vec![format!(
-        "\t.comm\t{},{},{}\n",
-        identifier, reserve_bytes, ALIGNMENT
+        "\t.comm\tvar_{},{},{}\n",
+        identifier, reserve_bytes, alignment
     )]
 }
 
 fn codegen_store_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
     vec![format!(
-        "\tmov{}\t%{}, {}(%rip)\n",
+        "\tmov{}\t%{}, var_{}(%rip)\n",
         ret.operator_suffix(),
         ret.id(),
         identifier
@@ -300,7 +300,7 @@ fn codegen_store_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<
 
 fn codegen_load_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
     vec![format!(
-        "\tmov{}\t{}(%rip), %{}\n",
+        "\tmov{}\tvar_{}(%rip), %{}\n",
         ret.operator_suffix(),
         identifier,
         ret.id()
@@ -448,7 +448,22 @@ fn codegen_expr(
         TypedExprNode::Multiplication(_, lhs, rhs) => {
             codegen_multiplication(allocator, ret_val, lhs, rhs)
         }
-        TypedExprNode::Division(_, lhs, rhs) => codegen_division(allocator, ret_val, lhs, rhs),
+        TypedExprNode::Division(_, lhs, rhs) => codegen_division(
+            allocator,
+            ret_val,
+            lhs,
+            rhs,
+            Signed::Unsigned,
+            DivisionVariant::Division,
+        ),
+        TypedExprNode::Modulo(_, lhs, rhs) => codegen_division(
+            allocator,
+            ret_val,
+            lhs,
+            rhs,
+            Signed::Unsigned,
+            DivisionVariant::Modulo,
+        ),
         TypedExprNode::Ref(_, identifier) => codegen_reference(ret_val, &identifier),
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(
@@ -621,12 +636,22 @@ fn codegen_multiplication(
     })
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum DivisionVariant {
+    Division,
+    Modulo,
+}
+
 fn codegen_division(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut SizedGeneralPurpose,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
+    sign: crate::stage::ast::Signed,
+    division_variant: DivisionVariant,
 ) -> Vec<String> {
+    use crate::stage::ast::Signed;
+
     allocator.allocate_then(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
         let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
@@ -637,9 +662,19 @@ fn codegen_division(
             rhs_ctx,
             vec![
                 format!("\tmov{}\t{},%rax\n", operand_suffix, ret_val),
-                String::from("\tcqo\n"),
-                format!("\tidiv{}\t{}\n", operand_suffix, rhs_retval),
-                format!("\tmov{}\t%rax,{}\n", operand_suffix, ret_val),
+                match sign {
+                    Signed::Signed => format!("\tcqo\n\tidiv{}\t{}\n", operand_suffix, rhs_retval),
+                    Signed::Unsigned => format!(
+                        "\txor\t%rdx,%rdx\n\tdiv{}\t{}\n",
+                        operand_suffix, rhs_retval
+                    ),
+                },
+                match division_variant {
+                    DivisionVariant::Division =>
+                        format!("\tmov{}\t%rax,{}\n", operand_suffix, ret_val),
+                    DivisionVariant::Modulo =>
+                        format!("\tmov{}\t%rdx,{}\n", operand_suffix, ret_val),
+                }
             ],
         )
     })
@@ -758,4 +793,91 @@ fn codegen_return(ret_val: &mut SizedGeneralPurpose, func_name: &str) -> Vec<Str
     .into_iter()
     .chain(codegen_jump(format!("func_{}_ret", func_name)).into_iter())
     .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stage::ast;
+
+    macro_rules! compound_statements {
+        ($($stmt:expr,)*) => {
+               $crate::stage::ast::TypedCompoundStmts::new(
+                   vec![
+                    $(
+                        $stmt,
+                    )*
+                   ]
+               )
+
+        };
+    }
+
+    #[test]
+    fn should_use_correct_return_register_for_modulo_operations() {
+        use crate::stage::CompilationStage;
+        use ast::{IntegerWidth, Primary, Signed, TypedExprNode, TypedStmtNode};
+
+        let modulo_expr_stmt = TypedStmtNode::Expression(TypedExprNode::Modulo(
+            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            Box::new(TypedExprNode::Primary(
+                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: 10,
+                },
+            )),
+            Box::new(TypedExprNode::Primary(
+                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: 3,
+                },
+            )),
+        ));
+
+        let div_expr_stmt = TypedStmtNode::Expression(TypedExprNode::Division(
+            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            Box::new(TypedExprNode::Primary(
+                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: 10,
+                },
+            )),
+            Box::new(TypedExprNode::Primary(
+                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: 3,
+                },
+            )),
+        ));
+
+        assert_eq!(
+            Ok(vec![
+                "\tmovq\t$10, %r15
+\tmovq\t$3, %r14
+\tmovq\t%r15,%rax
+\txor\t%rdx,%rdx
+\tdivq\t%r14
+\tmovq\t%rdx,%r15
+"
+                .to_string(),
+                "\tmovq\t$10, %r13
+\tmovq\t$3, %r12
+\tmovq\t%r13,%rax
+\txor\t%rdx,%rdx
+\tdivq\t%r12
+\tmovq\t%rax,%r13
+"
+                .to_string()
+            ]),
+            X86_64.apply(compound_statements!(modulo_expr_stmt, div_expr_stmt,))
+        );
+    }
 }

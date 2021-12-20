@@ -371,19 +371,25 @@ impl TypeAnalysis {
                     ast::TypedExprNode::Subtraction(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
-
-            ExprNode::Division(lhs, rhs) => self
-                .analyze_binary_expr(*lhs, *rhs)
-                .map(|(expr_type, lhs, rhs)| {
-                    ast::TypedExprNode::Division(expr_type, Box::new(lhs), Box::new(rhs))
-                })
-                .ok_or_else(|| "invalid type".to_string()),
             ExprNode::Multiplication(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
                     ast::TypedExprNode::Multiplication(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
+            ExprNode::Division(lhs, rhs) => self
+                .analyze_binary_expr(*lhs, *rhs)
+                .map(|(expr_type, lhs, rhs)| {
+                    ast::TypedExprNode::Division(expr_type, Box::new(lhs), Box::new(rhs))
+                })
+                .ok_or_else(|| "invalid type".to_string()),
+            ExprNode::Modulo(lhs, rhs) => self
+                .analyze_binary_expr(*lhs, *rhs)
+                .map(|(expr_type, lhs, rhs)| {
+                    ast::TypedExprNode::Modulo(expr_type, Box::new(lhs), Box::new(rhs))
+                })
+                .ok_or_else(|| "invalid type".to_string()),
+
             ExprNode::Ref(identifier) => self
                 .scopes
                 .lookup(&identifier)

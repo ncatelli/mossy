@@ -7,16 +7,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in library 'mainspring'",
+            "name": "Debug unit tests in library 'mossy'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
                     "--lib",
-                    "--package=mainspring"
+                    "--package=mossy"
                 ],
                 "filter": {
-                    "name": "mainspring",
+                    "name": "mossy",
                     "kind": "lib"
                 }
             },

@@ -70,7 +70,7 @@ relational: addition ( ( '<' | '<=' | '>' | '>=' ) addition )*
 addition: multiplication ( ( '-' | '+' ) multiplication )* 
         ;
 
-multiplication: call ( ( '/' | '*' ) call )* 
+multiplication: call ( ( '/' | '%' | '*' ) call )* 
         ;
 
 call: identifier '(' expression? ')'
