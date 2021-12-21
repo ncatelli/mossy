@@ -80,7 +80,7 @@ fn compile(source: &str) -> RuntimeResult<String> {
         })
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
         .map(|insts| insts.into_iter().collect::<String>())
-        .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))
+        .map_err(RuntimeError::Undefined)
 }
 
 fn main() {
@@ -129,7 +129,7 @@ fn main() {
         }
 
         Err(RuntimeError::Undefined(e)) => {
-            println!("{}\n{}", e, &help_string);
+            println!("error: {}", e);
             std::process::exit(RuntimeError::Undefined(e).exit_code())
         }
     }
