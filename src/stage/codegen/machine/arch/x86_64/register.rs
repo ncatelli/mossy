@@ -1,6 +1,15 @@
 use crate::stage::codegen::register::{AddressWidth, Register};
 use std::sync::mpsc;
 
+/// Represents the width of an operand
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OperandWidth {
+    QuadWord,
+    DoubleWord,
+    Word,
+    Byte,
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub enum SizedGeneralPurpose {
@@ -34,6 +43,21 @@ impl Register<u64> for SizedGeneralPurpose {
 }
 
 impl SizedGeneralPurpose {
+    pub fn resize(mut self, width: OperandWidth) -> Self {
+        self.resize_mut(width);
+        self
+    }
+
+    pub fn resize_mut(&mut self, width: OperandWidth) {
+        let id = self.id();
+        *self = match width {
+            OperandWidth::QuadWord => SizedGeneralPurpose::QuadWord(id),
+            OperandWidth::DoubleWord => SizedGeneralPurpose::DoubleWord(id),
+            OperandWidth::Word => SizedGeneralPurpose::Word(id),
+            OperandWidth::Byte => SizedGeneralPurpose::Byte(id),
+        };
+    }
+
     pub fn operator_suffix(&self) -> &'static str {
         match self {
             SizedGeneralPurpose::QuadWord(_) => "q",
@@ -111,8 +135,8 @@ impl GPRegisterAllocator {
         }
     }
 
-    fn allocate(&mut self) -> Option<RegisterAllocationGuard> {
-        let reg = self.available.try_recv().ok()?;
+    fn allocate_with_width(&mut self, width: OperandWidth) -> Option<RegisterAllocationGuard> {
+        let reg = self.available.try_recv().ok()?.resize(width);
 
         Some(RegisterAllocationGuard::new(self.freed.clone(), reg))
     }
@@ -122,7 +146,15 @@ impl GPRegisterAllocator {
     where
         F: FnOnce(&mut Self, &mut SizedGeneralPurpose) -> R,
     {
-        self.allocate()
+        self.allocate_with_width_then(OperandWidth::QuadWord, f)
+    }
+
+    /// Allocates a register for the duration of the life of closure with a given width.
+    pub fn allocate_with_width_then<F, R>(&mut self, width: OperandWidth, f: F) -> R
+    where
+        F: FnOnce(&mut Self, &mut SizedGeneralPurpose) -> R,
+    {
+        self.allocate_with_width(width)
             .map(|mut guard| {
                 let ret_val = f(self, guard.borrow_inner_mut());
                 ret_val
@@ -148,6 +180,7 @@ impl Default for GPRegisterAllocator {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::stage::codegen::machine::arch::x86_64;
     use crate::stage::codegen::register::Register;
 
@@ -167,14 +200,18 @@ mod tests {
         let mut guards = Vec::new();
 
         for _ in 0..9 {
-            guards.push(allocator.allocate());
+            guards.push(allocator.allocate_with_width(OperandWidth::QuadWord));
         }
 
         // pool should be empty
-        assert!(allocator.allocate().is_none());
+        assert!(allocator
+            .allocate_with_width(OperandWidth::QuadWord)
+            .is_none());
 
         // should free up register leases.
         drop(guards);
-        assert!(allocator.allocate().is_some());
+        assert!(allocator
+            .allocate_with_width(OperandWidth::QuadWord)
+            .is_some());
     }
 }
