@@ -979,18 +979,18 @@ mod tests {
             Ok(vec![
                 "\tmovq\t$10, %r15
 \tmovq\t$3, %r14
-\tmovq\t%r15,%rax
-\txor\t%rdx,%rdx
-\tdivq\t%r14
-\tmovq\t%rdx,%r15
+\tmovb\t%r15b, %al
+\txorq\t%rdx, %rdx
+\tdivb\t%r14b
+\tmovb\t%dl, %r15b
 "
                 .to_string(),
                 "\tmovq\t$10, %r13
 \tmovq\t$3, %r12
-\tmovq\t%r13,%rax
-\txor\t%rdx,%rdx
-\tdivq\t%r12
-\tmovq\t%rax,%r13
+\tmovb\t%r13b, %al
+\txorq\t%rdx, %rdx
+\tdivb\t%r12b
+\tmovb\t%al, %r13b
 "
                 .to_string()
             ]),
