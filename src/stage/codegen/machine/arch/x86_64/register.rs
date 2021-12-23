@@ -1,6 +1,10 @@
 use crate::stage::codegen::register::{AddressWidth, Register};
 use std::sync::mpsc;
 
+pub trait WidthFormatted {
+    fn fmt_with_operand_width(&self, width: OperandWidth) -> &'static str;
+}
+
 /// Represents the width of an operand
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperandWidth {
@@ -8,6 +12,128 @@ pub enum OperandWidth {
     DoubleWord,
     Word,
     Byte,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Registers {
+    A,
+    B,
+    C,
+    D,
+    SI,
+    DI,
+    BP,
+    R8,
+    R9,
+    R10,
+    R11,
+    R12,
+    R13,
+    R14,
+    R15,
+}
+
+impl WidthFormatted for Registers {
+    fn fmt_with_operand_width(&self, width: OperandWidth) -> &'static str {
+        match (self, width) {
+            (Registers::A, OperandWidth::QuadWord) => "rax",
+            (Registers::A, OperandWidth::DoubleWord) => "eax",
+            (Registers::A, OperandWidth::Word) => "ax",
+            (Registers::A, OperandWidth::Byte) => "al",
+            (Registers::B, OperandWidth::QuadWord) => "rbx",
+            (Registers::B, OperandWidth::DoubleWord) => "ebx",
+            (Registers::B, OperandWidth::Word) => "bx",
+            (Registers::B, OperandWidth::Byte) => "bl",
+            (Registers::C, OperandWidth::QuadWord) => "rcx",
+            (Registers::C, OperandWidth::DoubleWord) => "ecx",
+            (Registers::C, OperandWidth::Word) => "cx",
+            (Registers::C, OperandWidth::Byte) => "cl",
+            (Registers::D, OperandWidth::QuadWord) => "rdx",
+            (Registers::D, OperandWidth::DoubleWord) => "edx",
+            (Registers::D, OperandWidth::Word) => "dx",
+            (Registers::D, OperandWidth::Byte) => "dl",
+
+            (Registers::SI, OperandWidth::QuadWord) => "rsi",
+            (Registers::SI, OperandWidth::DoubleWord) => "esi",
+            (Registers::SI, OperandWidth::Word) => "si",
+            (Registers::SI, OperandWidth::Byte) => "sil",
+            (Registers::DI, OperandWidth::QuadWord) => "rdi",
+            (Registers::DI, OperandWidth::DoubleWord) => "edi",
+            (Registers::DI, OperandWidth::Word) => "di",
+            (Registers::DI, OperandWidth::Byte) => "dil",
+            (Registers::BP, OperandWidth::QuadWord) => "rbp",
+            (Registers::BP, OperandWidth::DoubleWord) => "ebp",
+            (Registers::BP, OperandWidth::Word) => "bp",
+            (Registers::BP, OperandWidth::Byte) => "bpl",
+            (Registers::R8, OperandWidth::QuadWord) => "r8",
+            (Registers::R8, OperandWidth::DoubleWord) => "r8d",
+            (Registers::R8, OperandWidth::Word) => "r8w",
+            (Registers::R8, OperandWidth::Byte) => "r8b",
+            (Registers::R9, OperandWidth::QuadWord) => "r9",
+            (Registers::R9, OperandWidth::DoubleWord) => "r9d",
+            (Registers::R9, OperandWidth::Word) => "r9w",
+            (Registers::R9, OperandWidth::Byte) => "r9b",
+            (Registers::R10, OperandWidth::QuadWord) => "r10",
+            (Registers::R10, OperandWidth::DoubleWord) => "r10d",
+            (Registers::R10, OperandWidth::Word) => "r10w",
+            (Registers::R10, OperandWidth::Byte) => "r10b",
+            (Registers::R11, OperandWidth::QuadWord) => "r11",
+            (Registers::R11, OperandWidth::DoubleWord) => "r11d",
+            (Registers::R11, OperandWidth::Word) => "r11w",
+            (Registers::R11, OperandWidth::Byte) => "r11b",
+            (Registers::R12, OperandWidth::QuadWord) => "r12",
+            (Registers::R12, OperandWidth::DoubleWord) => "r12d",
+            (Registers::R12, OperandWidth::Word) => "r12w",
+            (Registers::R12, OperandWidth::Byte) => "r12b",
+            (Registers::R13, OperandWidth::QuadWord) => "r13",
+            (Registers::R13, OperandWidth::DoubleWord) => "r13d",
+            (Registers::R13, OperandWidth::Word) => "r13w",
+            (Registers::R13, OperandWidth::Byte) => "r13b",
+            (Registers::R14, OperandWidth::QuadWord) => "r14",
+            (Registers::R14, OperandWidth::DoubleWord) => "r14d",
+            (Registers::R14, OperandWidth::Word) => "r14w",
+            (Registers::R14, OperandWidth::Byte) => "r14b",
+            (Registers::R15, OperandWidth::QuadWord) => "r15",
+            (Registers::R15, OperandWidth::DoubleWord) => "r15d",
+            (Registers::R15, OperandWidth::Word) => "r15w",
+            (Registers::R15, OperandWidth::Byte) => "r15b",
+        }
+    }
+}
+
+impl From<GeneralPurposeRegisters> for Registers {
+    fn from(gpr: GeneralPurposeRegisters) -> Self {
+        match gpr {
+            GeneralPurposeRegisters::R8 => Self::R8,
+            GeneralPurposeRegisters::R9 => Self::R9,
+            GeneralPurposeRegisters::R10 => Self::R10,
+            GeneralPurposeRegisters::R11 => Self::R11,
+            GeneralPurposeRegisters::R12 => Self::R12,
+            GeneralPurposeRegisters::R13 => Self::R13,
+            GeneralPurposeRegisters::R14 => Self::R14,
+            GeneralPurposeRegisters::R15 => Self::R15,
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GeneralPurposeRegisters {
+    R8,
+    R9,
+    R10,
+    R11,
+    R12,
+    R13,
+    R14,
+    R15,
+}
+
+impl WidthFormatted for GeneralPurposeRegisters {
+    fn fmt_with_operand_width(&self, width: OperandWidth) -> &'static str {
+        Registers::from(*self).fmt_with_operand_width(width)
+    }
 }
 
 #[allow(dead_code)]
