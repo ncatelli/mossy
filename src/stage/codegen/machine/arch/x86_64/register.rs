@@ -4,7 +4,6 @@ pub trait WidthFormatted {
     fn fmt_with_operand_width(&self, width: OperandWidth) -> &'static str;
 }
 
-#[allow(dead_code)]
 /// Represents the width of an operand
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperandWidth {
@@ -14,7 +13,6 @@ pub enum OperandWidth {
     Byte,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PointerRegister;
 
@@ -132,7 +130,6 @@ impl From<GeneralPurposeRegister> for ScalarRegister {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeneralPurposeRegister {
     R8,
