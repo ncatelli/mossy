@@ -1,6 +1,7 @@
-use crate::stage::ast::{self, ByteSized, Type};
+use crate::stage::ast::{self, ByteSized, Type, Typed};
+use crate::stage::codegen::machine::arch::x86_64::register::WidthFormatted;
 use crate::stage::codegen::machine::arch::TargetArchitecture;
-use crate::stage::codegen::{self, register::Register, CodeGenerationErr};
+use crate::stage::codegen::{self, CodeGenerationErr};
 use crate::stage::CompilationStage;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
@@ -10,7 +11,9 @@ static BLOCK_ID: AtomicUsize = AtomicUsize::new(0);
 pub struct X86_64;
 
 mod register;
-use register::{GPRegisterAllocator, OperandWidth, SizedGeneralPurpose};
+use register::{
+    GPRegisterAllocator, GeneralPurposeRegister, OperandWidth, PointerRegister, ScalarRegister,
+};
 
 impl TargetArchitecture for X86_64 {}
 
@@ -289,21 +292,27 @@ fn codegen_global_symbol(_kind: &Type, identifier: &str) -> Vec<String> {
     )]
 }
 
-fn codegen_store_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
+fn codegen_store_global(ret: &mut GeneralPurposeRegister, identifier: &str) -> Vec<String> {
+    // TODO: Size this
+    let width = OperandWidth::QuadWord;
     vec![format!(
         "\tmov{}\t%{}, var_{}(%rip)\n",
-        ret.operator_suffix(),
-        ret.id(),
+        operator_suffix(width),
+        ret.fmt_with_operand_width(width),
         identifier
     )]
 }
 
-fn codegen_load_global(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
+fn codegen_load_global(ret: &mut GeneralPurposeRegister, identifier: &str) -> Vec<String> {
+    // TODO: Size this
+    let width = OperandWidth::QuadWord;
+
     vec![format!(
-        "\tmov{}\tvar_{}(%rip), %{}\n",
-        ret.operator_suffix(),
+        "\tmov{}\tvar_{}(%{}), %{}\n",
+        operator_suffix(width),
         identifier,
-        ret.id()
+        PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+        ret.fmt_with_operand_width(width)
     )]
 }
 
@@ -325,7 +334,7 @@ where
 
 fn codegen_expr(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
+    ret_val: &mut GeneralPurposeRegister,
     expr: ast::TypedExprNode,
 ) -> Vec<String> {
     use crate::stage::ast::{IntegerWidth, Primary, Signed, TypedExprNode};
@@ -479,75 +488,87 @@ fn codegen_expr(
     }
 }
 
-fn codegen_constant_u64(ret_val: &mut SizedGeneralPurpose, constant: u64) -> Vec<String> {
+fn codegen_constant_u64(ret_val: &mut GeneralPurposeRegister, constant: u64) -> Vec<String> {
+    const WIDTH: OperandWidth = OperandWidth::QuadWord;
+
     vec![format!(
-        "\tmov{}\t${}, {}\n",
-        ret_val.operator_suffix(),
+        "\tmov{}\t${}, %{}\n",
+        operator_suffix(WIDTH),
         constant,
-        ret_val
+        ret_val.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_u32(ret_val: &mut SizedGeneralPurpose, constant: u32) -> Vec<String> {
+fn codegen_constant_u32(ret_val: &mut GeneralPurposeRegister, constant: u32) -> Vec<String> {
+    const WIDTH: OperandWidth = OperandWidth::DoubleWord;
+
     vec![format!(
-        "\tmov{}\t${}, {}\n",
-        ret_val.operator_suffix(),
+        "\tmov{}\t${}, %{}\n",
+        operator_suffix(WIDTH),
         constant,
-        ret_val
+        ret_val.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_u16(ret_val: &mut SizedGeneralPurpose, constant: u16) -> Vec<String> {
+fn codegen_constant_u16(ret_val: &mut GeneralPurposeRegister, constant: u16) -> Vec<String> {
+    const WIDTH: OperandWidth = OperandWidth::Word;
+
     vec![format!(
-        "\tmov{}\t${}, {}\n",
-        ret_val.operator_suffix(),
+        "\tmov{}\t${}, %{}\n",
+        operator_suffix(WIDTH),
         constant,
-        ret_val
+        ret_val.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_u8(ret_val: &mut SizedGeneralPurpose, constant: u8) -> Vec<String> {
+fn codegen_constant_u8(ret_val: &mut GeneralPurposeRegister, constant: u8) -> Vec<String> {
+    const WIDTH: OperandWidth = OperandWidth::Byte;
     vec![format!(
-        "\tmov{}\t${}, {}\n",
-        ret_val.operator_suffix(),
+        "\tmov{}\t${}, %{}\n",
+        operator_suffix(WIDTH),
         constant,
-        ret_val
+        ret_val.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_reference(ret: &mut SizedGeneralPurpose, identifier: &str) -> Vec<String> {
-    vec![format!("\tleaq\t{}(%rip), %{}\n", identifier, ret.id())]
+fn codegen_reference(ret: &mut GeneralPurposeRegister, identifier: &str) -> Vec<String> {
+    vec![format!(
+        "\tleaq\t{}(%{}), %{}\n",
+        identifier,
+        PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+        ret.fmt_with_operand_width(OperandWidth::QuadWord)
+    )]
 }
 
 fn codegen_store_deref(
-    dest: &mut SizedGeneralPurpose,
-    src: &mut SizedGeneralPurpose,
+    dest: &mut GeneralPurposeRegister,
+    src: &mut GeneralPurposeRegister,
 ) -> Vec<String> {
+    const WIDTH: OperandWidth = OperandWidth::QuadWord;
     vec![format!(
         "\tmov{}\t%{}, (%{})\n",
-        dest.operator_suffix(),
-        src.id(),
-        dest.id()
+        operator_suffix(WIDTH),
+        src.fmt_with_operand_width(WIDTH),
+        dest.fmt_with_operand_width(OperandWidth::QuadWord)
     )]
 }
 
-fn codegen_deref(ret: &mut SizedGeneralPurpose, _: ast::Type) -> Vec<String> {
+fn codegen_deref(ret: &mut GeneralPurposeRegister, ty: ast::Type) -> Vec<String> {
+    let width = operand_width_of_type(ty);
     vec![format!(
         "\tmov{}\t(%{}), %{}\n",
-        ret.operator_suffix(),
-        ret.id(),
-        ret.id()
+        operator_suffix(width),
+        ret.fmt_with_operand_width(OperandWidth::QuadWord),
+        ret.fmt_with_operand_width(width)
     )]
 }
 
 fn codegen_scaleby(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
+    ret_val: &mut GeneralPurposeRegister,
     size_of: usize,
     expr: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    use ast::Typed;
-
     if let ast::Type::Integer(sign, width) = expr.r#type() {
         let scale_by_expr = ast::TypedExprNode::Primary(
             ast::Type::Integer(sign, width),
@@ -566,10 +587,12 @@ fn codegen_scaleby(
 
 fn codegen_addition(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
+    ret_val: &mut GeneralPurposeRegister,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
+    let width = operand_width_of_type(lhs.r#type());
+
     allocator.allocate_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
         let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
@@ -578,10 +601,10 @@ fn codegen_addition(
             lhs_ctx,
             rhs_ctx,
             vec![format!(
-                "\tadd{}\t{}, {}\n",
-                ret_val.operator_suffix(),
-                lhs_retval,
-                ret_val
+                "\tadd{}\t%{}, %{}\n",
+                operator_suffix(width),
+                lhs_retval.fmt_with_operand_width(width),
+                ret_val.fmt_with_operand_width(width)
             )],
         ]
         .into_iter()
@@ -592,10 +615,12 @@ fn codegen_addition(
 
 fn codegen_subtraction(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
+    ret_val: &mut GeneralPurposeRegister,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
+    let width = operand_width_of_type(lhs.r#type());
+
     allocator.allocate_then(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
         let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
@@ -604,10 +629,10 @@ fn codegen_subtraction(
             lhs_ctx,
             rhs_ctx,
             vec![format!(
-                "\tsub{}\t{}, {}\n",
-                ret_val.operator_suffix(),
-                ret_val,
-                rhs_retval
+                "\tsub{}\t%{}, %{}\n",
+                operator_suffix(width),
+                ret_val.fmt_with_operand_width(width),
+                rhs_retval.fmt_with_operand_width(width)
             )],
         )
     })
@@ -615,10 +640,12 @@ fn codegen_subtraction(
 
 fn codegen_multiplication(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
+    ret_val: &mut GeneralPurposeRegister,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
+    let width = operand_width_of_type(lhs.r#type());
+
     allocator.allocate_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
         let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
@@ -627,10 +654,10 @@ fn codegen_multiplication(
             lhs_ctx,
             rhs_ctx,
             vec![format!(
-                "\timul{}\t{}, {}\n",
-                ret_val.operator_suffix(),
-                lhs_retval,
-                ret_val
+                "\timul{}\t%{}, %{}\n",
+                operator_suffix(width),
+                lhs_retval.fmt_with_operand_width(width),
+                ret_val.fmt_with_operand_width(width)
             )],
         )
     })
@@ -644,7 +671,7 @@ enum DivisionVariant {
 
 fn codegen_division(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
+    ret_val: &mut GeneralPurposeRegister,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
     sign: crate::stage::ast::Signed,
@@ -652,28 +679,54 @@ fn codegen_division(
 ) -> Vec<String> {
     use crate::stage::ast::Signed;
 
+    let width = operand_width_of_type(lhs.r#type());
+
     allocator.allocate_then(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
         let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
-        let operand_suffix = ret_val.operator_suffix();
+        let operand_suffix = operator_suffix(width);
 
         flattenable_instructions!(
             lhs_ctx,
             rhs_ctx,
             vec![
-                format!("\tmov{}\t{},%rax\n", operand_suffix, ret_val),
+                format!(
+                    "\tmov{}\t%{}, %{}\n",
+                    operand_suffix,
+                    ret_val.fmt_with_operand_width(width),
+                    ScalarRegister::A.fmt_with_operand_width(width)
+                ),
                 match sign {
-                    Signed::Signed => format!("\tcqo\n\tidiv{}\t{}\n", operand_suffix, rhs_retval),
-                    Signed::Unsigned => format!(
-                        "\txor\t%rdx,%rdx\n\tdiv{}\t{}\n",
-                        operand_suffix, rhs_retval
+                    Signed::Signed => format!(
+                        "\tcqo\n\tidiv{}\t%{}\n",
+                        operand_suffix,
+                        rhs_retval.fmt_with_operand_width(width)
                     ),
+                    Signed::Unsigned => {
+                        let d_reg = ScalarRegister::D.fmt_with_operand_width(width);
+
+                        format!(
+                            "\txor\t%{}, %{}\n\tdiv{}\t%{}\n",
+                            d_reg,
+                            d_reg,
+                            operand_suffix,
+                            rhs_retval.fmt_with_operand_width(width)
+                        )
+                    }
                 },
                 match division_variant {
-                    DivisionVariant::Division =>
-                        format!("\tmov{}\t%rax,{}\n", operand_suffix, ret_val),
-                    DivisionVariant::Modulo =>
-                        format!("\tmov{}\t%rdx,{}\n", operand_suffix, ret_val),
+                    DivisionVariant::Division => format!(
+                        "\tmov{}\t%{}, %{}\n",
+                        operand_suffix,
+                        ScalarRegister::A.fmt_with_operand_width(width),
+                        ret_val.fmt_with_operand_width(width)
+                    ),
+                    DivisionVariant::Modulo => format!(
+                        "\tmov{}\t%{}, %{}\n",
+                        operand_suffix,
+                        ScalarRegister::D.fmt_with_operand_width(width),
+                        ret_val.fmt_with_operand_width(width)
+                    ),
                 }
             ],
         )
@@ -692,11 +745,13 @@ enum ComparisonOperation {
 
 fn codegen_compare_and_set(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
+    ret_val: &mut GeneralPurposeRegister,
     comparison_op: ComparisonOperation,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
+    let width = operand_width_of_type(lhs.r#type());
+
     allocator.allocate_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
         let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
@@ -710,19 +765,27 @@ fn codegen_compare_and_set(
             ComparisonOperation::NotEqual => "setne",
         };
 
-        let operand_suffix = ret_val.operator_suffix();
+        let operand_suffix = operator_suffix(width);
 
         flattenable_instructions!(
             lhs_ctx,
             rhs_ctx,
             vec![
-                format!("\tcmp{}\t{}, {}\n", operand_suffix, ret_val, lhs_retval),
                 format!(
-                    "\t{}\t{}\n",
-                    set_operator,
-                    SizedGeneralPurpose::Byte(ret_val.id())
+                    "\tcmp{}\t%{}, %{}\n",
+                    operand_suffix,
+                    ret_val.fmt_with_operand_width(width),
+                    lhs_retval.fmt_with_operand_width(width)
                 ),
-                format!("\tandq\t$255,{}\n", ret_val),
+                format!(
+                    "\t{}\t%{}\n",
+                    set_operator,
+                    ret_val.fmt_with_operand_width(OperandWidth::Byte)
+                ),
+                format!(
+                    "\tandq\t$255, %{}\n",
+                    ret_val.fmt_with_operand_width(OperandWidth::QuadWord)
+                ),
             ],
         )
     })
@@ -730,21 +793,30 @@ fn codegen_compare_and_set(
 
 fn codegen_compare_and_jmp(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
+    ret_val: &mut GeneralPurposeRegister,
     cond_true_id: BlockId,
     cond_false_id: BlockId,
 ) -> Vec<String> {
-    let operand_suffix = ret_val.operator_suffix();
+    const WIDTH: OperandWidth = OperandWidth::QuadWord;
+    let operand_suffix = operator_suffix(WIDTH);
     allocator.allocate_then(|_, zero_val| {
         vec![
-            format!("\tandq\t$0,{}\n", zero_val),
-            format!("\tcmp{}\t{}, {}\n", operand_suffix, ret_val, zero_val),
+            format!("\tandq\t$0, %{}\n", zero_val.fmt_with_operand_width(WIDTH)),
             format!(
-                "\t{}\t{}\n",
-                "sete",
-                SizedGeneralPurpose::Byte(ret_val.id())
+                "\tcmp{}\t{}, {}\n",
+                operand_suffix,
+                ret_val.fmt_with_operand_width(WIDTH),
+                zero_val.fmt_with_operand_width(WIDTH)
             ),
-            format!("\tandq\t$255,{}\n", ret_val),
+            format!(
+                "\t{}\t%{}\n",
+                "sete",
+                ret_val.fmt_with_operand_width(OperandWidth::Byte)
+            ),
+            format!(
+                "\tandq\t$255, %{}\n",
+                ret_val.fmt_with_operand_width(OperandWidth::QuadWord)
+            ),
             format!("\t{}\tL{}\n", "je", cond_true_id),
         ]
         .into_iter()
@@ -755,11 +827,15 @@ fn codegen_compare_and_jmp(
 
 fn codegen_call(
     allocator: &mut GPRegisterAllocator,
-    ret_val: &mut SizedGeneralPurpose,
+    ret_val: &mut GeneralPurposeRegister,
     func_name: &str,
     arg: Option<Box<ast::TypedExprNode>>,
 ) -> Vec<String> {
+    // FIXME: This needs to be passed to the function from the function type
+    let placeholder_ret_val_width = OperandWidth::QuadWord;
     if let Some(arg_expr) = arg {
+        let width = operand_width_of_type(arg_expr.r#type());
+
         allocator.allocate_then(|allocator, arg_retval| {
             let arg_ctx = codegen_expr(allocator, arg_retval, *arg_expr);
 
@@ -767,32 +843,55 @@ fn codegen_call(
                 arg_ctx,
                 vec![
                     format!(
-                        "\tmov{}\t{}, %rdi\n",
-                        arg_retval.operator_suffix(),
-                        arg_retval,
+                        "\tmov{}\t%{}, %{}\n",
+                        operator_suffix(width),
+                        arg_retval.fmt_with_operand_width(width),
+                        ScalarRegister::D.fmt_with_operand_width(width)
                     ),
                     format!("\tcall\t{}\n", func_name),
-                    format!("\tmov{}\t%rax, {}\n", ret_val.operator_suffix(), ret_val,),
+                    format!(
+                        "\tmov{}\t%{}, {}\n",
+                        operator_suffix(placeholder_ret_val_width),
+                        ScalarRegister::A.fmt_with_operand_width(placeholder_ret_val_width),
+                        ret_val.fmt_with_operand_width(placeholder_ret_val_width),
+                    ),
                 ],
             )
         })
     } else {
         vec![
             format!("\tcall\t{}\n", func_name),
-            format!("\tmov{}\t%rax, {}\n", ret_val.operator_suffix(), ret_val,),
+            format!(
+                "\tmov{}\t%{}, %{}\n",
+                operator_suffix(placeholder_ret_val_width),
+                ScalarRegister::A.fmt_with_operand_width(placeholder_ret_val_width),
+                ret_val.fmt_with_operand_width(placeholder_ret_val_width),
+            ),
         ]
     }
 }
 
-fn codegen_return(ret_val: &mut SizedGeneralPurpose, func_name: &str) -> Vec<String> {
+fn codegen_return(ret_val: &mut GeneralPurposeRegister, func_name: &str) -> Vec<String> {
+    // FIXME: Operand width needs to be passed
+    let placeholder_ret_val_width = OperandWidth::QuadWord;
     vec![format!(
-        "\tmov{}\t{}, %rax\n",
-        ret_val.operator_suffix(),
-        ret_val,
+        "\tmov{}\t%{}, %{}\n",
+        operator_suffix(placeholder_ret_val_width),
+        ret_val.fmt_with_operand_width(placeholder_ret_val_width),
+        ScalarRegister::A.fmt_with_operand_width(placeholder_ret_val_width)
     )]
     .into_iter()
     .chain(codegen_jump(format!("func_{}_ret", func_name)).into_iter())
     .collect()
+}
+
+const fn operator_suffix(width: OperandWidth) -> &'static str {
+    match width {
+        OperandWidth::QuadWord => "q",
+        OperandWidth::DoubleWord => "l",
+        OperandWidth::Word => "w",
+        OperandWidth::Byte => "b",
+    }
 }
 
 fn operand_width_of_type(ty: Type) -> OperandWidth {

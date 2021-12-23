@@ -1,10 +1,10 @@
-use crate::stage::codegen::register::{AddressWidth, Register};
 use std::sync::mpsc;
 
 pub trait WidthFormatted {
     fn fmt_with_operand_width(&self, width: OperandWidth) -> &'static str;
 }
 
+#[allow(dead_code)]
 /// Represents the width of an operand
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OperandWidth {
@@ -16,7 +16,22 @@ pub enum OperandWidth {
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Registers {
+pub struct PointerRegister;
+
+impl WidthFormatted for PointerRegister {
+    fn fmt_with_operand_width(&self, width: OperandWidth) -> &'static str {
+        match width {
+            OperandWidth::QuadWord => "rip",
+            OperandWidth::DoubleWord => "eip",
+            OperandWidth::Word => "ip",
+            OperandWidth::Byte => panic!("instruction pointer cannot be byte formatted"),
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScalarRegister {
     A,
     B,
     C,
@@ -34,92 +49,92 @@ pub enum Registers {
     R15,
 }
 
-impl WidthFormatted for Registers {
+impl WidthFormatted for ScalarRegister {
     fn fmt_with_operand_width(&self, width: OperandWidth) -> &'static str {
         match (self, width) {
-            (Registers::A, OperandWidth::QuadWord) => "rax",
-            (Registers::A, OperandWidth::DoubleWord) => "eax",
-            (Registers::A, OperandWidth::Word) => "ax",
-            (Registers::A, OperandWidth::Byte) => "al",
-            (Registers::B, OperandWidth::QuadWord) => "rbx",
-            (Registers::B, OperandWidth::DoubleWord) => "ebx",
-            (Registers::B, OperandWidth::Word) => "bx",
-            (Registers::B, OperandWidth::Byte) => "bl",
-            (Registers::C, OperandWidth::QuadWord) => "rcx",
-            (Registers::C, OperandWidth::DoubleWord) => "ecx",
-            (Registers::C, OperandWidth::Word) => "cx",
-            (Registers::C, OperandWidth::Byte) => "cl",
-            (Registers::D, OperandWidth::QuadWord) => "rdx",
-            (Registers::D, OperandWidth::DoubleWord) => "edx",
-            (Registers::D, OperandWidth::Word) => "dx",
-            (Registers::D, OperandWidth::Byte) => "dl",
+            (ScalarRegister::A, OperandWidth::QuadWord) => "rax",
+            (ScalarRegister::A, OperandWidth::DoubleWord) => "eax",
+            (ScalarRegister::A, OperandWidth::Word) => "ax",
+            (ScalarRegister::A, OperandWidth::Byte) => "al",
+            (ScalarRegister::B, OperandWidth::QuadWord) => "rbx",
+            (ScalarRegister::B, OperandWidth::DoubleWord) => "ebx",
+            (ScalarRegister::B, OperandWidth::Word) => "bx",
+            (ScalarRegister::B, OperandWidth::Byte) => "bl",
+            (ScalarRegister::C, OperandWidth::QuadWord) => "rcx",
+            (ScalarRegister::C, OperandWidth::DoubleWord) => "ecx",
+            (ScalarRegister::C, OperandWidth::Word) => "cx",
+            (ScalarRegister::C, OperandWidth::Byte) => "cl",
+            (ScalarRegister::D, OperandWidth::QuadWord) => "rdx",
+            (ScalarRegister::D, OperandWidth::DoubleWord) => "edx",
+            (ScalarRegister::D, OperandWidth::Word) => "dx",
+            (ScalarRegister::D, OperandWidth::Byte) => "dl",
 
-            (Registers::SI, OperandWidth::QuadWord) => "rsi",
-            (Registers::SI, OperandWidth::DoubleWord) => "esi",
-            (Registers::SI, OperandWidth::Word) => "si",
-            (Registers::SI, OperandWidth::Byte) => "sil",
-            (Registers::DI, OperandWidth::QuadWord) => "rdi",
-            (Registers::DI, OperandWidth::DoubleWord) => "edi",
-            (Registers::DI, OperandWidth::Word) => "di",
-            (Registers::DI, OperandWidth::Byte) => "dil",
-            (Registers::BP, OperandWidth::QuadWord) => "rbp",
-            (Registers::BP, OperandWidth::DoubleWord) => "ebp",
-            (Registers::BP, OperandWidth::Word) => "bp",
-            (Registers::BP, OperandWidth::Byte) => "bpl",
-            (Registers::R8, OperandWidth::QuadWord) => "r8",
-            (Registers::R8, OperandWidth::DoubleWord) => "r8d",
-            (Registers::R8, OperandWidth::Word) => "r8w",
-            (Registers::R8, OperandWidth::Byte) => "r8b",
-            (Registers::R9, OperandWidth::QuadWord) => "r9",
-            (Registers::R9, OperandWidth::DoubleWord) => "r9d",
-            (Registers::R9, OperandWidth::Word) => "r9w",
-            (Registers::R9, OperandWidth::Byte) => "r9b",
-            (Registers::R10, OperandWidth::QuadWord) => "r10",
-            (Registers::R10, OperandWidth::DoubleWord) => "r10d",
-            (Registers::R10, OperandWidth::Word) => "r10w",
-            (Registers::R10, OperandWidth::Byte) => "r10b",
-            (Registers::R11, OperandWidth::QuadWord) => "r11",
-            (Registers::R11, OperandWidth::DoubleWord) => "r11d",
-            (Registers::R11, OperandWidth::Word) => "r11w",
-            (Registers::R11, OperandWidth::Byte) => "r11b",
-            (Registers::R12, OperandWidth::QuadWord) => "r12",
-            (Registers::R12, OperandWidth::DoubleWord) => "r12d",
-            (Registers::R12, OperandWidth::Word) => "r12w",
-            (Registers::R12, OperandWidth::Byte) => "r12b",
-            (Registers::R13, OperandWidth::QuadWord) => "r13",
-            (Registers::R13, OperandWidth::DoubleWord) => "r13d",
-            (Registers::R13, OperandWidth::Word) => "r13w",
-            (Registers::R13, OperandWidth::Byte) => "r13b",
-            (Registers::R14, OperandWidth::QuadWord) => "r14",
-            (Registers::R14, OperandWidth::DoubleWord) => "r14d",
-            (Registers::R14, OperandWidth::Word) => "r14w",
-            (Registers::R14, OperandWidth::Byte) => "r14b",
-            (Registers::R15, OperandWidth::QuadWord) => "r15",
-            (Registers::R15, OperandWidth::DoubleWord) => "r15d",
-            (Registers::R15, OperandWidth::Word) => "r15w",
-            (Registers::R15, OperandWidth::Byte) => "r15b",
+            (ScalarRegister::SI, OperandWidth::QuadWord) => "rsi",
+            (ScalarRegister::SI, OperandWidth::DoubleWord) => "esi",
+            (ScalarRegister::SI, OperandWidth::Word) => "si",
+            (ScalarRegister::SI, OperandWidth::Byte) => "sil",
+            (ScalarRegister::DI, OperandWidth::QuadWord) => "rdi",
+            (ScalarRegister::DI, OperandWidth::DoubleWord) => "edi",
+            (ScalarRegister::DI, OperandWidth::Word) => "di",
+            (ScalarRegister::DI, OperandWidth::Byte) => "dil",
+            (ScalarRegister::BP, OperandWidth::QuadWord) => "rbp",
+            (ScalarRegister::BP, OperandWidth::DoubleWord) => "ebp",
+            (ScalarRegister::BP, OperandWidth::Word) => "bp",
+            (ScalarRegister::BP, OperandWidth::Byte) => "bpl",
+            (ScalarRegister::R8, OperandWidth::QuadWord) => "r8",
+            (ScalarRegister::R8, OperandWidth::DoubleWord) => "r8d",
+            (ScalarRegister::R8, OperandWidth::Word) => "r8w",
+            (ScalarRegister::R8, OperandWidth::Byte) => "r8b",
+            (ScalarRegister::R9, OperandWidth::QuadWord) => "r9",
+            (ScalarRegister::R9, OperandWidth::DoubleWord) => "r9d",
+            (ScalarRegister::R9, OperandWidth::Word) => "r9w",
+            (ScalarRegister::R9, OperandWidth::Byte) => "r9b",
+            (ScalarRegister::R10, OperandWidth::QuadWord) => "r10",
+            (ScalarRegister::R10, OperandWidth::DoubleWord) => "r10d",
+            (ScalarRegister::R10, OperandWidth::Word) => "r10w",
+            (ScalarRegister::R10, OperandWidth::Byte) => "r10b",
+            (ScalarRegister::R11, OperandWidth::QuadWord) => "r11",
+            (ScalarRegister::R11, OperandWidth::DoubleWord) => "r11d",
+            (ScalarRegister::R11, OperandWidth::Word) => "r11w",
+            (ScalarRegister::R11, OperandWidth::Byte) => "r11b",
+            (ScalarRegister::R12, OperandWidth::QuadWord) => "r12",
+            (ScalarRegister::R12, OperandWidth::DoubleWord) => "r12d",
+            (ScalarRegister::R12, OperandWidth::Word) => "r12w",
+            (ScalarRegister::R12, OperandWidth::Byte) => "r12b",
+            (ScalarRegister::R13, OperandWidth::QuadWord) => "r13",
+            (ScalarRegister::R13, OperandWidth::DoubleWord) => "r13d",
+            (ScalarRegister::R13, OperandWidth::Word) => "r13w",
+            (ScalarRegister::R13, OperandWidth::Byte) => "r13b",
+            (ScalarRegister::R14, OperandWidth::QuadWord) => "r14",
+            (ScalarRegister::R14, OperandWidth::DoubleWord) => "r14d",
+            (ScalarRegister::R14, OperandWidth::Word) => "r14w",
+            (ScalarRegister::R14, OperandWidth::Byte) => "r14b",
+            (ScalarRegister::R15, OperandWidth::QuadWord) => "r15",
+            (ScalarRegister::R15, OperandWidth::DoubleWord) => "r15d",
+            (ScalarRegister::R15, OperandWidth::Word) => "r15w",
+            (ScalarRegister::R15, OperandWidth::Byte) => "r15b",
         }
     }
 }
 
-impl From<GeneralPurposeRegisters> for Registers {
-    fn from(gpr: GeneralPurposeRegisters) -> Self {
+impl From<GeneralPurposeRegister> for ScalarRegister {
+    fn from(gpr: GeneralPurposeRegister) -> Self {
         match gpr {
-            GeneralPurposeRegisters::R8 => Self::R8,
-            GeneralPurposeRegisters::R9 => Self::R9,
-            GeneralPurposeRegisters::R10 => Self::R10,
-            GeneralPurposeRegisters::R11 => Self::R11,
-            GeneralPurposeRegisters::R12 => Self::R12,
-            GeneralPurposeRegisters::R13 => Self::R13,
-            GeneralPurposeRegisters::R14 => Self::R14,
-            GeneralPurposeRegisters::R15 => Self::R15,
+            GeneralPurposeRegister::R8 => Self::R8,
+            GeneralPurposeRegister::R9 => Self::R9,
+            GeneralPurposeRegister::R10 => Self::R10,
+            GeneralPurposeRegister::R11 => Self::R11,
+            GeneralPurposeRegister::R12 => Self::R12,
+            GeneralPurposeRegister::R13 => Self::R13,
+            GeneralPurposeRegister::R14 => Self::R14,
+            GeneralPurposeRegister::R15 => Self::R15,
         }
     }
 }
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GeneralPurposeRegisters {
+pub enum GeneralPurposeRegister {
     R8,
     R9,
     R10,
@@ -130,104 +145,32 @@ pub enum GeneralPurposeRegisters {
     R15,
 }
 
-impl WidthFormatted for GeneralPurposeRegisters {
+impl WidthFormatted for GeneralPurposeRegister {
     fn fmt_with_operand_width(&self, width: OperandWidth) -> &'static str {
-        Registers::from(*self).fmt_with_operand_width(width)
-    }
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Clone, Copy)]
-pub enum SizedGeneralPurpose {
-    QuadWord(&'static str),
-    DoubleWord(&'static str),
-    Word(&'static str),
-    Byte(&'static str),
-}
-
-impl AddressWidth for SizedGeneralPurpose {
-    fn bits(&self) -> usize {
-        match self {
-            SizedGeneralPurpose::QuadWord(_) => 64,
-            SizedGeneralPurpose::DoubleWord(_) => 32,
-            SizedGeneralPurpose::Word(_) => 16,
-            SizedGeneralPurpose::Byte(_) => 8,
-        }
-    }
-}
-
-impl Register<u64> for SizedGeneralPurpose {
-    /// returns the string representation of the register.
-    fn id(&self) -> &'static str {
-        match self {
-            SizedGeneralPurpose::QuadWord(id) => id,
-            SizedGeneralPurpose::DoubleWord(id) => id,
-            SizedGeneralPurpose::Word(id) => id,
-            SizedGeneralPurpose::Byte(id) => id,
-        }
-    }
-}
-
-impl SizedGeneralPurpose {
-    pub fn resize(mut self, width: OperandWidth) -> Self {
-        self.resize_mut(width);
-        self
-    }
-
-    pub fn resize_mut(&mut self, width: OperandWidth) {
-        let id = self.id();
-        *self = match width {
-            OperandWidth::QuadWord => SizedGeneralPurpose::QuadWord(id),
-            OperandWidth::DoubleWord => SizedGeneralPurpose::DoubleWord(id),
-            OperandWidth::Word => SizedGeneralPurpose::Word(id),
-            OperandWidth::Byte => SizedGeneralPurpose::Byte(id),
-        };
-    }
-
-    pub fn operator_suffix(&self) -> &'static str {
-        match self {
-            SizedGeneralPurpose::QuadWord(_) => "q",
-            SizedGeneralPurpose::DoubleWord(_) => "l",
-            SizedGeneralPurpose::Word(_) => "w",
-            SizedGeneralPurpose::Byte(_) => "b",
-        }
-    }
-}
-
-impl core::fmt::Display for SizedGeneralPurpose {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let repr = self.id();
-        let register_suffix = match self {
-            SizedGeneralPurpose::QuadWord(_) => "",
-            SizedGeneralPurpose::DoubleWord(_) => "d",
-            SizedGeneralPurpose::Word(_) => "w",
-            SizedGeneralPurpose::Byte(_) => "b",
-        };
-
-        write!(f, "%{}{}", repr, register_suffix)
+        ScalarRegister::from(*self).fmt_with_operand_width(width)
     }
 }
 
 #[derive(Debug)]
 struct RegisterAllocationGuard {
-    free_channel: std::sync::mpsc::Sender<SizedGeneralPurpose>,
-    reg: SizedGeneralPurpose,
+    free_channel: std::sync::mpsc::Sender<GeneralPurposeRegister>,
+    reg: GeneralPurposeRegister,
 }
 
 impl RegisterAllocationGuard {
     fn new(
-        free_channel: std::sync::mpsc::Sender<SizedGeneralPurpose>,
-        reg: SizedGeneralPurpose,
+        free_channel: std::sync::mpsc::Sender<GeneralPurposeRegister>,
+        reg: GeneralPurposeRegister,
     ) -> Self {
         Self { free_channel, reg }
     }
 
     #[allow(dead_code)]
-    fn borrow_inner(&self) -> &SizedGeneralPurpose {
+    fn borrow_inner(&self) -> &GeneralPurposeRegister {
         &self.reg
     }
 
-    fn borrow_inner_mut(&mut self) -> &mut SizedGeneralPurpose {
+    fn borrow_inner_mut(&mut self) -> &mut GeneralPurposeRegister {
         &mut self.reg
     }
 }
@@ -242,13 +185,13 @@ impl core::ops::Drop for RegisterAllocationGuard {
 
 #[derive(Debug)]
 pub struct GPRegisterAllocator {
-    freed: mpsc::Sender<SizedGeneralPurpose>,
-    available: mpsc::Receiver<SizedGeneralPurpose>,
+    freed: mpsc::Sender<GeneralPurposeRegister>,
+    available: mpsc::Receiver<GeneralPurposeRegister>,
 }
 
 impl GPRegisterAllocator {
     #[allow(dead_code)]
-    pub fn new(registers: Vec<SizedGeneralPurpose>) -> Self {
+    pub fn new(registers: Vec<GeneralPurposeRegister>) -> Self {
         let (freed, available_registers) = mpsc::channel();
 
         for register in registers {
@@ -261,8 +204,8 @@ impl GPRegisterAllocator {
         }
     }
 
-    fn allocate_with_width(&mut self, width: OperandWidth) -> Option<RegisterAllocationGuard> {
-        let reg = self.available.try_recv().ok()?.resize(width);
+    fn allocate(&mut self) -> Option<RegisterAllocationGuard> {
+        let reg = self.available.try_recv().ok()?;
 
         Some(RegisterAllocationGuard::new(self.freed.clone(), reg))
     }
@@ -270,17 +213,9 @@ impl GPRegisterAllocator {
     /// Allocates a register for the duration of the life of closure.
     pub fn allocate_then<F, R>(&mut self, f: F) -> R
     where
-        F: FnOnce(&mut Self, &mut SizedGeneralPurpose) -> R,
+        F: FnOnce(&mut Self, &mut GeneralPurposeRegister) -> R,
     {
-        self.allocate_with_width_then(OperandWidth::QuadWord, f)
-    }
-
-    /// Allocates a register for the duration of the life of closure with a given width.
-    pub fn allocate_with_width_then<F, R>(&mut self, width: OperandWidth, f: F) -> R
-    where
-        F: FnOnce(&mut Self, &mut SizedGeneralPurpose) -> R,
-    {
-        self.allocate_with_width(width)
+        self.allocate()
             .map(|mut guard| {
                 let ret_val = f(self, guard.borrow_inner_mut());
                 ret_val
@@ -292,14 +227,14 @@ impl GPRegisterAllocator {
 impl Default for GPRegisterAllocator {
     fn default() -> Self {
         Self::new(vec![
-            SizedGeneralPurpose::QuadWord("r15"),
-            SizedGeneralPurpose::QuadWord("r14"),
-            SizedGeneralPurpose::QuadWord("r13"),
-            SizedGeneralPurpose::QuadWord("r12"),
-            SizedGeneralPurpose::QuadWord("r11"),
-            SizedGeneralPurpose::QuadWord("r10"),
-            SizedGeneralPurpose::QuadWord("r9"),
-            SizedGeneralPurpose::QuadWord("r8"),
+            GeneralPurposeRegister::R15,
+            GeneralPurposeRegister::R14,
+            GeneralPurposeRegister::R13,
+            GeneralPurposeRegister::R12,
+            GeneralPurposeRegister::R11,
+            GeneralPurposeRegister::R10,
+            GeneralPurposeRegister::R9,
+            GeneralPurposeRegister::R8,
         ])
     }
 }
@@ -308,14 +243,17 @@ impl Default for GPRegisterAllocator {
 mod tests {
     use super::*;
     use crate::stage::codegen::machine::arch::x86_64;
-    use crate::stage::codegen::register::Register;
 
     #[test]
     fn should_allocate_a_register_from_an_unutilized_pool() {
         assert_eq!(
             ["r14", "r15"],
             x86_64::GPRegisterAllocator::default().allocate_then(|allocator, reg| {
-                [allocator.allocate_then(|_, reg| reg.id()), reg.id()]
+                [
+                    allocator
+                        .allocate_then(|_, reg| reg.fmt_with_operand_width(OperandWidth::QuadWord)),
+                    reg.fmt_with_operand_width(OperandWidth::QuadWord),
+                ]
             })
         )
     }
@@ -326,18 +264,14 @@ mod tests {
         let mut guards = Vec::new();
 
         for _ in 0..9 {
-            guards.push(allocator.allocate_with_width(OperandWidth::QuadWord));
+            guards.push(allocator.allocate());
         }
 
         // pool should be empty
-        assert!(allocator
-            .allocate_with_width(OperandWidth::QuadWord)
-            .is_none());
+        assert!(allocator.allocate().is_none());
 
         // should free up register leases.
         drop(guards);
-        assert!(allocator
-            .allocate_with_width(OperandWidth::QuadWord)
-            .is_some());
+        assert!(allocator.allocate().is_some());
     }
 }
