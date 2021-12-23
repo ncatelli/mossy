@@ -404,8 +404,8 @@ fn codegen_expr(
             codegen_load_global(ty, ret_val, &identifier)
         }
 
-        TypedExprNode::FunctionCall(_, func_name, optional_arg) => {
-            codegen_call(allocator, ret_val, &func_name, optional_arg)
+        TypedExprNode::FunctionCall(ty, func_name, optional_arg) => {
+            codegen_call(allocator, ty, ret_val, &func_name, optional_arg)
         }
 
         ast::TypedExprNode::IdentifierAssignment(ty, identifier, expr) => {
@@ -834,12 +834,12 @@ fn codegen_compare_and_jmp(
 
 fn codegen_call(
     allocator: &mut GPRegisterAllocator,
+    ty: Type,
     ret_val: &mut GeneralPurposeRegister,
     func_name: &str,
     arg: Option<Box<ast::TypedExprNode>>,
 ) -> Vec<String> {
-    // FIXME: This needs to be passed to the function from the function type
-    let placeholder_ret_val_width = OperandWidth::QuadWord;
+    let width = operand_width_of_type(ty);
     if let Some(arg_expr) = arg {
         let width = operand_width_of_type(arg_expr.r#type());
 
@@ -858,9 +858,9 @@ fn codegen_call(
                     format!("\tcall\t{}\n", func_name),
                     format!(
                         "\tmov{}\t%{}, {}\n",
-                        operator_suffix(placeholder_ret_val_width),
-                        ScalarRegister::A.fmt_with_operand_width(placeholder_ret_val_width),
-                        ret_val.fmt_with_operand_width(placeholder_ret_val_width),
+                        operator_suffix(width),
+                        ScalarRegister::A.fmt_with_operand_width(width),
+                        ret_val.fmt_with_operand_width(width),
                     ),
                 ],
             )
@@ -870,9 +870,9 @@ fn codegen_call(
             format!("\tcall\t{}\n", func_name),
             format!(
                 "\tmov{}\t%{}, %{}\n",
-                operator_suffix(placeholder_ret_val_width),
-                ScalarRegister::A.fmt_with_operand_width(placeholder_ret_val_width),
-                ret_val.fmt_with_operand_width(placeholder_ret_val_width),
+                operator_suffix(width),
+                ScalarRegister::A.fmt_with_operand_width(width),
+                ret_val.fmt_with_operand_width(width),
             ),
         ]
     }
