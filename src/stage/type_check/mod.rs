@@ -50,12 +50,14 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
             crate::parser::ast::GlobalDecls::Func(fd) => {
                 self.apply(fd).map(ast::TypedGlobalDecls::Func)
             }
-            crate::parser::ast::GlobalDecls::Var(Declaration(ty, ids)) => {
+            crate::parser::ast::GlobalDecls::Var(Declaration::Scalar(ty, ids)) => {
                 for id in ids.iter() {
                     self.scopes.define_mut(id, ty.clone());
                 }
 
-                Ok(ast::TypedGlobalDecls::Var(ast::Declaration(ty, ids)))
+                Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Scalar(
+                    ty, ids,
+                )))
             }
         }
     }
@@ -138,12 +140,14 @@ impl TypeAnalysis {
             crate::parser::ast::StmtNode::Expression(expr) => self
                 .analyze_expression(expr)
                 .map(ast::TypedStmtNode::Expression),
-            crate::parser::ast::StmtNode::Declaration(ast::Declaration(ty, ids)) => {
+            crate::parser::ast::StmtNode::Declaration(ast::Declaration::Scalar(ty, ids)) => {
                 for id in ids.iter() {
                     self.scopes.define_mut(id, ty.clone());
                 }
 
-                Ok(ast::TypedStmtNode::Declaration(ast::Declaration(ty, ids)))
+                Ok(ast::TypedStmtNode::Declaration(ast::Declaration::Scalar(
+                    ty, ids,
+                )))
             }
             crate::parser::ast::StmtNode::Return(Some(rt_expr)) => {
                 if let Some((id, proto)) = self.in_func.as_ref() {

@@ -84,7 +84,7 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
             whitespace_wrapped(expect_character(',').optional()),
         )))),
     )
-    .map(|(ty, ids)| crate::stage::ast::Declaration(ty, ids))
+    .map(|(ty, ids)| crate::stage::ast::Declaration::Scalar(ty, ids))
     .map(StmtNode::Declaration)
 }
 

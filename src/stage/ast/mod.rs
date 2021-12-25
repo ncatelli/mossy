@@ -49,7 +49,9 @@ impl From<TypedCompoundStmts> for Vec<TypedStmtNode> {
 /// Declaration represents a declaration statement with the enclosed type and
 /// one or more IDs.
 #[derive(PartialEq, Debug, Clone)]
-pub struct Declaration(pub Type, pub Vec<String>);
+pub enum Declaration {
+    Scalar(Type, Vec<String>),
+}
 
 /// AstNode representing any allowable statement in the ast.
 #[derive(PartialEq, Debug, Clone)]

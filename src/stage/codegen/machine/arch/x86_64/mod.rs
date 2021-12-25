@@ -39,7 +39,7 @@ impl CompilationStage<ast::TypedProgram, Vec<String>, String> for X86_64 {
                             })
                             .map(|output| output.into_iter().flatten().collect())
                     }
-                    ast::TypedGlobalDecls::Var(ast::Declaration(ty, identifiers)) => {
+                    ast::TypedGlobalDecls::Var(ast::Declaration::Scalar(ty, identifiers)) => {
                         let globals = identifiers
                             .iter()
                             .map(|id| codegen_global_symbol(&ty, id))
@@ -103,7 +103,7 @@ fn codegen_statement(
     match input {
         ast::TypedStmtNode::Expression(expr) => allocator
             .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
-        ast::TypedStmtNode::Declaration(ast::Declaration(ty, identifiers)) => {
+        ast::TypedStmtNode::Declaration(ast::Declaration::Scalar(ty, identifiers)) => {
             let var_decls = identifiers
                 .iter()
                 .map(|id| codegen_global_symbol(&ty, id))
