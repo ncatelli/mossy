@@ -59,15 +59,14 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                     ty, ids,
                 )))
             }
-            crate::parser::ast::GlobalDecls::Var(Declaration::Array { .. }) => {
-                /*for id in ids.iter() {
-                    self.scopes.define_mut(id, ty.clone());
-                }
+            crate::parser::ast::GlobalDecls::Var(Declaration::Array { ty, id, size }) => {
+                self.scopes.define_sized_mut(&id, ty.clone(), size);
 
-                Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Scalar(
-                    ty, ids,
-                )))*/
-                todo!()
+                Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Array {
+                    ty,
+                    id,
+                    size,
+                }))
             }
         }
     }

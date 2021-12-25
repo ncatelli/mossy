@@ -42,13 +42,13 @@ impl CompilationStage<ast::TypedProgram, Vec<String>, String> for X86_64 {
                     ast::TypedGlobalDecls::Var(ast::Declaration::Scalar(ty, identifiers)) => {
                         let globals = identifiers
                             .iter()
-                            .map(|id| codegen_global_symbol(&ty, id))
+                            .map(|id| codegen_global_symbol(&ty, id, 1))
                             .flatten()
                             .collect();
                         Ok(globals)
                     }
-                    ast::TypedGlobalDecls::Var(ast::Declaration::Array { .. }) => {
-                        todo!()
+                    ast::TypedGlobalDecls::Var(ast::Declaration::Array { ty, id, size }) => {
+                        Ok(codegen_global_symbol(&ty, &id, size))
                     }
                 };
 
@@ -109,12 +109,12 @@ fn codegen_statement(
         ast::TypedStmtNode::Declaration(ast::Declaration::Scalar(ty, identifiers)) => {
             let var_decls = identifiers
                 .iter()
-                .map(|id| codegen_global_symbol(&ty, id))
+                .map(|id| codegen_global_symbol(&ty, id, 1))
                 .collect();
             Ok(var_decls)
         }
-        ast::TypedStmtNode::Declaration(ast::Declaration::Array { .. }) => {
-            todo!()
+        ast::TypedStmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
+            Ok(vec![codegen_global_symbol(&ty, &id, size)])
         }
         ast::TypedStmtNode::Return(ty, id, arg) => allocator.allocate_then(|allocator, ret_val| {
             let res: Vec<String> = if let Some(expr) = arg {
@@ -288,12 +288,12 @@ pub fn codegen_function_postamble(identifier: &str) -> Vec<String> {
         .collect()
 }
 
-fn codegen_global_symbol(ty: &Type, identifier: &str) -> Vec<String> {
-    let reserve_bytes = ty.size();
+fn codegen_global_symbol(ty: &Type, identifier: &str, count: usize) -> Vec<String> {
+    let reserve_bytes = ty.size() * count;
 
     vec![format!(
-        ".data\nvar_{}:\n\t.zero\t{}\n",
-        identifier, reserve_bytes
+        "\t.data\n\t.globl\t{}\n{}:\n\t.zero\t{}\n",
+        identifier, identifier, reserve_bytes
     )]
 }
 
@@ -304,7 +304,7 @@ fn codegen_store_global(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
     vec![format!(
-        "\tmov{}\t%{}, var_{}(%{})\n",
+        "\tmov{}\t%{}, {}(%{})\n",
         operator_suffix(width),
         ret.fmt_with_operand_width(width),
         identifier,
@@ -320,7 +320,7 @@ fn codegen_load_global(
     let width = operand_width_of_type(ty);
 
     vec![format!(
-        "\tmov{}\tvar_{}(%{}), %{}\n",
+        "\tmov{}\t{}(%{}), %{}\n",
         operator_suffix(width),
         identifier,
         PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),

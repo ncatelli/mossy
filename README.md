@@ -28,8 +28,8 @@ statement:
         | return_stmt
         ;
 
-var_declaration:   type_declarator identifier_list ';'
-        | type_declarator  '[' integer_literal ']' ';'
+var_declaration: type_declarator  '[' integer_literal ']' ';'
+        | type_declarator identifier_list ';'
         ;
 
 if_statement: if_head

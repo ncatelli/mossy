@@ -79,13 +79,31 @@ where
 fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     parcel::join(
         type_declarator(),
-        whitespace_wrapped(parcel::one_or_more(parcel::left(parcel::join(
+        whitespace_wrapped(parcel::join(
             identifier(),
-            whitespace_wrapped(expect_character(',').optional()),
-        )))),
+            character_wrapped('[', ']', number()),
+        )),
     )
-    .map(|(ty, ids)| crate::stage::ast::Declaration::Scalar(ty, ids))
+    .map(|(ty, (id, size))| {
+        let size = match size {
+            Primary::Integer { value, .. } => value as usize,
+            Primary::Identifier(_) => todo!(),
+        };
+        (ty, id, size)
+    })
+    .map(|(ty, id, size)| crate::stage::ast::Declaration::Array { ty, id, size })
     .map(StmtNode::Declaration)
+    .or(|| {
+        parcel::join(
+            type_declarator(),
+            whitespace_wrapped(parcel::one_or_more(parcel::left(parcel::join(
+                identifier(),
+                whitespace_wrapped(expect_character(',').optional()),
+            )))),
+        )
+        .map(|(ty, ids)| crate::stage::ast::Declaration::Scalar(ty, ids))
+        .map(StmtNode::Declaration)
+    })
 }
 
 fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
