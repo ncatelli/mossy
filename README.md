@@ -29,6 +29,7 @@ statement:
         ;
 
 var_declaration:   type_declarator identifier_list ';'
+        | type_declarator  '[' integer_literal ']' ';'
         ;
 
 if_statement: if_head
@@ -83,7 +84,7 @@ prefix_expression: '*' prefix_expression
         ;
 
 primary: identifier
-        | integer_constant
+        | integer_literal
         | grouping 
         ;
 
@@ -114,7 +115,7 @@ type_specifier: 'char'
         ;
 
 
-integer_constant:  [0-9]*;
+integer_literal:  [0-9]*;
 
 alphabetic: [a-zA-Z]+;
 ```
