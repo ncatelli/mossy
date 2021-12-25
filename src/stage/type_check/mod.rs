@@ -59,6 +59,16 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                     ty, ids,
                 )))
             }
+            crate::parser::ast::GlobalDecls::Var(Declaration::Array { .. }) => {
+                /*for id in ids.iter() {
+                    self.scopes.define_mut(id, ty.clone());
+                }
+
+                Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Scalar(
+                    ty, ids,
+                )))*/
+                todo!()
+            }
         }
     }
 }
@@ -148,6 +158,15 @@ impl TypeAnalysis {
                 Ok(ast::TypedStmtNode::Declaration(ast::Declaration::Scalar(
                     ty, ids,
                 )))
+            }
+            crate::parser::ast::StmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
+                self.scopes.define_sized_mut(&id, ty.clone(), size);
+
+                Ok(ast::TypedStmtNode::Declaration(ast::Declaration::Array {
+                    ty,
+                    id,
+                    size,
+                }))
             }
             crate::parser::ast::StmtNode::Return(Some(rt_expr)) => {
                 if let Some((id, proto)) = self.in_func.as_ref() {
@@ -255,10 +274,10 @@ impl TypeAnalysis {
             ExprNode::Primary(Primary::Identifier(identifier)) => self
                 .scopes
                 .lookup(&identifier)
-                .map(|r#type| {
+                .map(|dm| {
                     ast::TypedExprNode::Primary(
-                        r#type.clone(),
-                        ast::Primary::Identifier(r#type, identifier),
+                        dm.r#type.clone(),
+                        ast::Primary::Identifier(dm.r#type, identifier),
                     )
                 })
                 .ok_or_else(|| "invalid type".to_string()),
@@ -274,7 +293,7 @@ impl TypeAnalysis {
                 self.scopes
                     .lookup(&identifier)
                     .ok_or_else(|| format!("undefined_function: {}", &identifier))
-                    .and_then(|r#type| match r#type {
+                    .and_then(|dm| match dm.r#type {
                         ast::Type::Func(FuncProto {
                             return_type,
                             args: func_args,
@@ -287,7 +306,7 @@ impl TypeAnalysis {
                         }
                         _ => Err(format!(
                             "type mismatch, cannot call non-function type: {:?}",
-                            &r#type
+                            &dm.r#type
                         )),
                     })
             }
@@ -302,7 +321,7 @@ impl TypeAnalysis {
                     TypedExprNode::Primary(lhs_ty, Primary::Identifier(_, id)) => self
                         .scopes
                         .lookup(&id)
-                        .map(|var_type| var_type.type_compatible(&rhs.r#type(), true))
+                        .map(|dm| dm.r#type.type_compatible(&rhs.r#type(), true))
                         .ok_or(format!("symbol {} undefined", &id))
                         .and_then(|type_compat| match type_compat {
                             ast::CompatibilityResult::Equivalent => Ok(lhs_ty),
@@ -397,7 +416,7 @@ impl TypeAnalysis {
             ExprNode::Ref(identifier) => self
                 .scopes
                 .lookup(&identifier)
-                .map(|r#type| ast::TypedExprNode::Ref(r#type.pointer_to(), identifier))
+                .map(|dm| ast::TypedExprNode::Ref(dm.r#type.pointer_to(), identifier))
                 .ok_or_else(|| "invalid type".to_string()),
             ExprNode::Deref(expr) => self
                 .analyze_expression(*expr)

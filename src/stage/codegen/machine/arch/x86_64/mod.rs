@@ -47,6 +47,9 @@ impl CompilationStage<ast::TypedProgram, Vec<String>, String> for X86_64 {
                             .collect();
                         Ok(globals)
                     }
+                    ast::TypedGlobalDecls::Var(ast::Declaration::Array { .. }) => {
+                        todo!()
+                    }
                 };
 
                 res
@@ -109,6 +112,9 @@ fn codegen_statement(
                 .map(|id| codegen_global_symbol(&ty, id))
                 .collect();
             Ok(var_decls)
+        }
+        ast::TypedStmtNode::Declaration(ast::Declaration::Array { .. }) => {
+            todo!()
         }
         ast::TypedStmtNode::Return(ty, id, arg) => allocator.allocate_then(|allocator, ret_val| {
             let res: Vec<String> = if let Some(expr) = arg {

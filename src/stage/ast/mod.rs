@@ -51,6 +51,7 @@ impl From<TypedCompoundStmts> for Vec<TypedStmtNode> {
 #[derive(PartialEq, Debug, Clone)]
 pub enum Declaration {
     Scalar(Type, Vec<String>),
+    Array { ty: Type, id: String, size: usize },
 }
 
 /// AstNode representing any allowable statement in the ast.
