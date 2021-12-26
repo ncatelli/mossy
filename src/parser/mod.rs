@@ -79,13 +79,31 @@ where
 fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     parcel::join(
         type_declarator(),
-        whitespace_wrapped(parcel::one_or_more(parcel::left(parcel::join(
+        whitespace_wrapped(parcel::join(
             identifier(),
-            whitespace_wrapped(expect_character(',').optional()),
-        )))),
+            character_wrapped('[', ']', number()),
+        )),
     )
-    .map(|(ty, ids)| crate::stage::ast::Declaration(ty, ids))
+    .map(|(ty, (id, size))| {
+        let size = match size {
+            Primary::Integer { value, .. } => value as usize,
+            Primary::Identifier(_) => todo!(),
+        };
+        (ty, id, size)
+    })
+    .map(|(ty, id, size)| crate::stage::ast::Declaration::Array { ty, id, size })
     .map(StmtNode::Declaration)
+    .or(|| {
+        parcel::join(
+            type_declarator(),
+            whitespace_wrapped(parcel::one_or_more(parcel::left(parcel::join(
+                identifier(),
+                whitespace_wrapped(expect_character(',').optional()),
+            )))),
+        )
+        .map(|(ty, ids)| crate::stage::ast::Declaration::Scalar(ty, ids))
+        .map(StmtNode::Declaration)
+    })
 }
 
 fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -338,7 +356,19 @@ fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprN
                 .and_then(|_| identifier())
                 .map(ExprNode::Ref)
         })
-        .or(primary)
+        .or(postfix_expression)
+}
+
+fn postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+    parcel::join(
+        identifier(),
+        parcel::left(parcel::join(
+            whitespace_wrapped(expect_character('[')).and_then(|_| expression()),
+            whitespace_wrapped(expect_character(']')),
+        )),
+    )
+    .map(|(id, expr)| ExprNode::Index(id, Box::new(expr)))
+    .or(primary)
 }
 
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
@@ -573,6 +603,38 @@ mod tests {
                 value: $value,
             })
         };
+
+        (u8 $value:expr) => {
+            $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+                sign: $crate::stage::ast::Signed::Unsigned,
+                width: $crate::stage::ast::IntegerWidth::Eight,
+                value: $value,
+            })
+        };
+
+        (u16 $value:expr) => {
+            $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+                sign: $crate::stage::ast::Signed::Unsigned,
+                width: $crate::stage::ast::IntegerWidth::Sixteen,
+                value: $value,
+            })
+        };
+
+        (u32 $value:expr) => {
+            $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+                sign: $crate::stage::ast::Signed::Unsigned,
+                width: $crate::stage::ast::IntegerWidth::ThirtyTwo,
+                value: $value,
+            })
+        };
+
+        (u64 $value:expr) => {
+            $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+                sign: $crate::stage::ast::Signed::Unsigned,
+                width: $crate::stage::ast::IntegerWidth::SixtyFour,
+                value: $value,
+            })
+        };
     }
 
     macro_rules! grouping_expr {
@@ -680,6 +742,27 @@ mod tests {
                 '*',
                 grouping_expr!(term_expr!(primary_expr!(3), '+', primary_expr!(4)))
             ),
+        )]));
+
+        assert_eq!(&expected_result, &res);
+    }
+
+    #[test]
+    fn should_parse_index_expressions_in_correct_precedence() {
+        use parcel::Parser;
+
+        let input: Vec<(usize, char)> = "{
+    x[1];
+}"
+        .chars()
+        .enumerate()
+        .collect();
+        let res = crate::parser::compound_statements()
+            .parse(&input)
+            .map(|ms| ms.unwrap());
+
+        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
+            ExprNode::Index("x".to_string(), Box::new(primary_expr!(u8 1))),
         )]));
 
         assert_eq!(&expected_result, &res);

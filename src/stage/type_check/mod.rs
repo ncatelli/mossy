@@ -50,12 +50,23 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
             crate::parser::ast::GlobalDecls::Func(fd) => {
                 self.apply(fd).map(ast::TypedGlobalDecls::Func)
             }
-            crate::parser::ast::GlobalDecls::Var(Declaration(ty, ids)) => {
+            crate::parser::ast::GlobalDecls::Var(Declaration::Scalar(ty, ids)) => {
                 for id in ids.iter() {
                     self.scopes.define_mut(id, ty.clone());
                 }
 
-                Ok(ast::TypedGlobalDecls::Var(ast::Declaration(ty, ids)))
+                Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Scalar(
+                    ty, ids,
+                )))
+            }
+            crate::parser::ast::GlobalDecls::Var(Declaration::Array { ty, id, size }) => {
+                self.scopes.define_sized_mut(&id, ty.clone(), size);
+
+                Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Array {
+                    ty,
+                    id,
+                    size,
+                }))
             }
         }
     }
@@ -138,12 +149,23 @@ impl TypeAnalysis {
             crate::parser::ast::StmtNode::Expression(expr) => self
                 .analyze_expression(expr)
                 .map(ast::TypedStmtNode::Expression),
-            crate::parser::ast::StmtNode::Declaration(ast::Declaration(ty, ids)) => {
+            crate::parser::ast::StmtNode::Declaration(ast::Declaration::Scalar(ty, ids)) => {
                 for id in ids.iter() {
                     self.scopes.define_mut(id, ty.clone());
                 }
 
-                Ok(ast::TypedStmtNode::Declaration(ast::Declaration(ty, ids)))
+                Ok(ast::TypedStmtNode::Declaration(ast::Declaration::Scalar(
+                    ty, ids,
+                )))
+            }
+            crate::parser::ast::StmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
+                self.scopes.define_sized_mut(&id, ty.clone(), size);
+
+                Ok(ast::TypedStmtNode::Declaration(ast::Declaration::Array {
+                    ty,
+                    id,
+                    size,
+                }))
             }
             crate::parser::ast::StmtNode::Return(Some(rt_expr)) => {
                 if let Some((id, proto)) = self.in_func.as_ref() {
@@ -251,10 +273,10 @@ impl TypeAnalysis {
             ExprNode::Primary(Primary::Identifier(identifier)) => self
                 .scopes
                 .lookup(&identifier)
-                .map(|r#type| {
+                .map(|dm| {
                     ast::TypedExprNode::Primary(
-                        r#type.clone(),
-                        ast::Primary::Identifier(r#type, identifier),
+                        dm.r#type.clone(),
+                        ast::Primary::Identifier(dm.r#type, identifier),
                     )
                 })
                 .ok_or_else(|| "invalid type".to_string()),
@@ -270,7 +292,7 @@ impl TypeAnalysis {
                 self.scopes
                     .lookup(&identifier)
                     .ok_or_else(|| format!("undefined_function: {}", &identifier))
-                    .and_then(|r#type| match r#type {
+                    .and_then(|dm| match dm.r#type {
                         ast::Type::Func(FuncProto {
                             return_type,
                             args: func_args,
@@ -283,7 +305,7 @@ impl TypeAnalysis {
                         }
                         _ => Err(format!(
                             "type mismatch, cannot call non-function type: {:?}",
-                            &r#type
+                            &dm.r#type
                         )),
                     })
             }
@@ -298,7 +320,7 @@ impl TypeAnalysis {
                     TypedExprNode::Primary(lhs_ty, Primary::Identifier(_, id)) => self
                         .scopes
                         .lookup(&id)
-                        .map(|var_type| var_type.type_compatible(&rhs.r#type(), true))
+                        .map(|dm| dm.r#type.type_compatible(&rhs.r#type(), true))
                         .ok_or(format!("symbol {} undefined", &id))
                         .and_then(|type_compat| match type_compat {
                             ast::CompatibilityResult::Equivalent => Ok(lhs_ty),
@@ -320,7 +342,7 @@ impl TypeAnalysis {
                     }
                     .map(|ty| ast::TypedExprNode::DerefAssignment(ty, expr, Box::new(rhs))),
                     // Fail on any other type
-                    _ => Err(format!("invalid type: ({:?})", lhs.r#type())),
+                    _ => Err(format!("invalid assignment type: ({:?})", lhs.r#type(),)),
                 }
             }
             ExprNode::Equal(lhs, rhs) => self
@@ -393,7 +415,7 @@ impl TypeAnalysis {
             ExprNode::Ref(identifier) => self
                 .scopes
                 .lookup(&identifier)
-                .map(|r#type| ast::TypedExprNode::Ref(r#type.pointer_to(), identifier))
+                .map(|dm| ast::TypedExprNode::Ref(dm.r#type.pointer_to(), identifier))
                 .ok_or_else(|| "invalid type".to_string()),
             ExprNode::Deref(expr) => self
                 .analyze_expression(*expr)
@@ -405,6 +427,36 @@ impl TypeAnalysis {
                         .map(|ty| (ty, ty_expr))
                 })
                 .map(|(ty, expr)| ast::TypedExprNode::Deref(ty, Box::new(expr))),
+            ExprNode::Index(identifier, index) => {
+                let index_expr = self.analyze_expression(*index)?;
+                match index_expr.r#type() {
+                    ast::Type::Integer(Signed::Unsigned, _) => self
+                        .scopes
+                        .lookup(&identifier)
+                        .and_then(|dm| {
+                            if dm.size > 1 {
+                                Some(ast::TypedExprNode::ScaleBy(dm.r#type, Box::new(index_expr)))
+                            } else {
+                                None
+                            }
+                        })
+                        .map(|scale| {
+                            ast::TypedExprNode::Addition(
+                                scale.r#type(),
+                                Box::new(ast::TypedExprNode::Ref(
+                                    scale.r#type().pointer_to(),
+                                    identifier.clone(),
+                                )),
+                                Box::new(scale),
+                            )
+                        })
+                        .map(|reference| {
+                            ast::TypedExprNode::Deref(reference.r#type(), Box::new(reference))
+                        })
+                        .ok_or_else(|| "invalid type".to_string()),
+                    _ => Err("invalid type".to_string()),
+                }
+            }
         }
     }
 

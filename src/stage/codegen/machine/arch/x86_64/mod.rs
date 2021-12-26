@@ -39,13 +39,16 @@ impl CompilationStage<ast::TypedProgram, Vec<String>, String> for X86_64 {
                             })
                             .map(|output| output.into_iter().flatten().collect())
                     }
-                    ast::TypedGlobalDecls::Var(ast::Declaration(ty, identifiers)) => {
+                    ast::TypedGlobalDecls::Var(ast::Declaration::Scalar(ty, identifiers)) => {
                         let globals = identifiers
                             .iter()
-                            .map(|id| codegen_global_symbol(&ty, id))
+                            .map(|id| codegen_global_symbol(&ty, id, 1))
                             .flatten()
                             .collect();
                         Ok(globals)
+                    }
+                    ast::TypedGlobalDecls::Var(ast::Declaration::Array { ty, id, size }) => {
+                        Ok(codegen_global_symbol(&ty, &id, size))
                     }
                 };
 
@@ -103,12 +106,15 @@ fn codegen_statement(
     match input {
         ast::TypedStmtNode::Expression(expr) => allocator
             .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
-        ast::TypedStmtNode::Declaration(ast::Declaration(ty, identifiers)) => {
+        ast::TypedStmtNode::Declaration(ast::Declaration::Scalar(ty, identifiers)) => {
             let var_decls = identifiers
                 .iter()
-                .map(|id| codegen_global_symbol(&ty, id))
+                .map(|id| codegen_global_symbol(&ty, id, 1))
                 .collect();
             Ok(var_decls)
+        }
+        ast::TypedStmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
+            Ok(vec![codegen_global_symbol(&ty, &id, size)])
         }
         ast::TypedStmtNode::Return(ty, id, arg) => allocator.allocate_then(|allocator, ret_val| {
             let res: Vec<String> = if let Some(expr) = arg {
@@ -282,12 +288,12 @@ pub fn codegen_function_postamble(identifier: &str) -> Vec<String> {
         .collect()
 }
 
-fn codegen_global_symbol(ty: &Type, identifier: &str) -> Vec<String> {
-    let reserve_bytes = ty.size();
+fn codegen_global_symbol(ty: &Type, identifier: &str, count: usize) -> Vec<String> {
+    let reserve_bytes = ty.size() * count;
 
     vec![format!(
-        ".data\nvar_{}:\n\t.zero\t{}\n",
-        identifier, reserve_bytes
+        "\t.data\n\t.globl\t{}\n{}:\n\t.zero\t{}\n",
+        identifier, identifier, reserve_bytes
     )]
 }
 
@@ -298,7 +304,7 @@ fn codegen_store_global(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
     vec![format!(
-        "\tmov{}\t%{}, var_{}(%{})\n",
+        "\tmov{}\t%{}, {}(%{})\n",
         operator_suffix(width),
         ret.fmt_with_operand_width(width),
         identifier,
@@ -314,7 +320,7 @@ fn codegen_load_global(
     let width = operand_width_of_type(ty);
 
     vec![format!(
-        "\tmov{}\tvar_{}(%{}), %{}\n",
+        "\tmov{}\t{}(%{}), %{}\n",
         operator_suffix(width),
         identifier,
         PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
@@ -575,17 +581,17 @@ fn codegen_scaleby(
     size_of: usize,
     expr: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    if let ast::Type::Integer(sign, width) = expr.r#type() {
+    if let ast::Type::Integer(sign, _) = expr.r#type() {
         let scale_by_expr = ast::TypedExprNode::Primary(
-            ast::Type::Integer(sign, width),
+            ast::Type::Integer(sign, ast::IntegerWidth::SixtyFour),
             ast::Primary::Integer {
                 sign,
-                width,
+                width: ast::IntegerWidth::SixtyFour,
                 value: size_of as u64,
             },
         );
 
-        codegen_multiplication(allocator, ret_val, expr, Box::new(scale_by_expr))
+        codegen_multiplication(allocator, ret_val, Box::new(scale_by_expr), expr)
     } else {
         panic!("invalid scale_by types")
     }
@@ -995,6 +1001,41 @@ mod tests {
                 .to_string()
             ]),
             X86_64.apply(compound_statements!(modulo_expr_stmt, div_expr_stmt,))
+        );
+    }
+
+    #[test]
+    fn should_scale_on_array_deref() {
+        use crate::stage::CompilationStage;
+        use ast::{IntegerWidth, Primary, Signed, TypedExprNode, TypedStmtNode};
+
+        let index_expression = TypedStmtNode::Expression(ast::TypedExprNode::Deref(
+            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            Box::new(ast::TypedExprNode::Addition(
+                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                Box::new(ast::TypedExprNode::Ref(
+                    Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                    "x".to_string(),
+                )),
+                Box::new(TypedExprNode::Primary(
+                    Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                    Primary::Integer {
+                        sign: Signed::Unsigned,
+                        width: IntegerWidth::Eight,
+                        value: 1,
+                    },
+                )),
+            )),
+        ));
+
+        assert_eq!(
+            Ok(vec!["\tleaq\tx(%rip), %r14
+\tmovq\t$1, %r15
+\taddb\t%r14b, %r15b
+\tmovb\t(%r15), %r15b
+"
+            .to_string()]),
+            X86_64.apply(compound_statements!(index_expression,))
         );
     }
 }
