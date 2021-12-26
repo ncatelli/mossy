@@ -83,6 +83,10 @@ prefix_expression: '*' prefix_expression
         | primary
         ;
 
+postfix_expression: primary
+        | postfix_expression '[' expression ']'
+        ;
+
 primary: identifier
         | integer_literal
         | grouping 

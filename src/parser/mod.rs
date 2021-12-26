@@ -356,7 +356,19 @@ fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprN
                 .and_then(|_| identifier())
                 .map(ExprNode::Ref)
         })
-        .or(primary)
+        .or(postfix_expression)
+}
+
+fn postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+    parcel::join(
+        identifier(),
+        parcel::left(parcel::join(
+            whitespace_wrapped(expect_character('[')).and_then(|_| expression()),
+            whitespace_wrapped(expect_character(']')),
+        )),
+    )
+    .map(|(id, expr)| ExprNode::Index(id, Box::new(expr)))
+    .or(primary)
 }
 
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {

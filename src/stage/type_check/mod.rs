@@ -342,7 +342,7 @@ impl TypeAnalysis {
                     }
                     .map(|ty| ast::TypedExprNode::DerefAssignment(ty, expr, Box::new(rhs))),
                     // Fail on any other type
-                    _ => Err(format!("invalid type: ({:?})", lhs.r#type())),
+                    _ => Err(format!("invalid assignment type: ({:?})", lhs.r#type(),)),
                 }
             }
             ExprNode::Equal(lhs, rhs) => self
@@ -427,6 +427,36 @@ impl TypeAnalysis {
                         .map(|ty| (ty, ty_expr))
                 })
                 .map(|(ty, expr)| ast::TypedExprNode::Deref(ty, Box::new(expr))),
+            ExprNode::Index(identifier, index) => {
+                let index_expr = self.analyze_expression(*index)?;
+                match index_expr.r#type() {
+                    ast::Type::Integer(Signed::Unsigned, _) => self
+                        .scopes
+                        .lookup(&identifier)
+                        .and_then(|dm| {
+                            if dm.size > 1 {
+                                Some(ast::TypedExprNode::ScaleBy(dm.r#type, Box::new(index_expr)))
+                            } else {
+                                None
+                            }
+                        })
+                        .map(|scale| {
+                            ast::TypedExprNode::Addition(
+                                scale.r#type(),
+                                Box::new(ast::TypedExprNode::Ref(
+                                    scale.r#type().pointer_to(),
+                                    identifier.clone(),
+                                )),
+                                Box::new(scale),
+                            )
+                        })
+                        .map(|reference| {
+                            ast::TypedExprNode::Deref(reference.r#type(), Box::new(reference))
+                        })
+                        .ok_or_else(|| "invalid type".to_string()),
+                    _ => Err("invalid type".to_string()),
+                }
+            }
         }
     }
 

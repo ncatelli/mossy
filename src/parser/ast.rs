@@ -100,6 +100,9 @@ pub enum ExprNode {
     Ref(String),
     Deref(Box<ExprNode>),
 
+    // Array Access
+    Index(String, Box<ExprNode>),
+
     Grouping(Box<ExprNode>),
 }
 

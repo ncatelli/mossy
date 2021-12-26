@@ -581,17 +581,17 @@ fn codegen_scaleby(
     size_of: usize,
     expr: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    if let ast::Type::Integer(sign, width) = expr.r#type() {
+    if let ast::Type::Integer(sign, _) = expr.r#type() {
         let scale_by_expr = ast::TypedExprNode::Primary(
-            ast::Type::Integer(sign, width),
+            ast::Type::Integer(sign, ast::IntegerWidth::SixtyFour),
             ast::Primary::Integer {
                 sign,
-                width,
+                width: ast::IntegerWidth::SixtyFour,
                 value: size_of as u64,
             },
         );
 
-        codegen_multiplication(allocator, ret_val, expr, Box::new(scale_by_expr))
+        codegen_multiplication(allocator, ret_val, Box::new(scale_by_expr), expr)
     } else {
         panic!("invalid scale_by types")
     }
