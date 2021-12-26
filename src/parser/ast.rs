@@ -116,3 +116,73 @@ pub enum Primary {
     },
     Identifier(String),
 }
+
+macro_rules! term_expr {
+    ($lhs:expr, '+', $rhs:expr) => {
+        $crate::parser::ast::ExprNode::Addition(Box::new($lhs), Box::new($rhs))
+    };
+    ($lhs:expr, '-', $rhs:expr) => {
+        $crate::parser::ast::ExprNode::Subtraction(Box::new($lhs), Box::new($rhs))
+    };
+}
+
+macro_rules! factor_expr {
+    ($lhs:expr, '*', $rhs:expr) => {
+        $crate::parser::ast::ExprNode::Multiplication(Box::new($lhs), Box::new($rhs))
+    };
+    ($lhs:expr, '/', $rhs:expr) => {
+        $crate::parser::ast::ExprNode::Division(Box::new($lhs), Box::new($rhs))
+    };
+    ($lhs:expr, '%', $rhs:expr) => {
+        $crate::parser::ast::ExprNode::Modulo(Box::new($lhs), Box::new($rhs))
+    };
+}
+
+#[allow(unused)]
+macro_rules! primary_expr {
+    ($value:expr) => {
+        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+            sign: $crate::stage::ast::Signed::Unsigned,
+            width: $crate::stage::ast::IntegerWidth::Eight,
+            value: $value,
+        })
+    };
+
+    (u8 $value:expr) => {
+        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+            sign: $crate::stage::ast::Signed::Unsigned,
+            width: $crate::stage::ast::IntegerWidth::Eight,
+            value: $value,
+        })
+    };
+
+    (u16 $value:expr) => {
+        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+            sign: $crate::stage::ast::Signed::Unsigned,
+            width: $crate::stage::ast::IntegerWidth::Sixteen,
+            value: $value,
+        })
+    };
+
+    (u32 $value:expr) => {
+        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+            sign: $crate::stage::ast::Signed::Unsigned,
+            width: $crate::stage::ast::IntegerWidth::ThirtyTwo,
+            value: $value,
+        })
+    };
+
+    (u64 $value:expr) => {
+        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+            sign: $crate::stage::ast::Signed::Unsigned,
+            width: $crate::stage::ast::IntegerWidth::SixtyFour,
+            value: $value,
+        })
+    };
+}
+
+macro_rules! grouping_expr {
+    ($value:expr) => {
+        $crate::parser::ast::ExprNode::Grouping(Box::new($value))
+    };
+}
