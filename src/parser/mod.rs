@@ -603,6 +603,38 @@ mod tests {
                 value: $value,
             })
         };
+
+        (u8 $value:expr) => {
+            $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+                sign: $crate::stage::ast::Signed::Unsigned,
+                width: $crate::stage::ast::IntegerWidth::Eight,
+                value: $value,
+            })
+        };
+
+        (u16 $value:expr) => {
+            $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+                sign: $crate::stage::ast::Signed::Unsigned,
+                width: $crate::stage::ast::IntegerWidth::Sixteen,
+                value: $value,
+            })
+        };
+
+        (u32 $value:expr) => {
+            $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+                sign: $crate::stage::ast::Signed::Unsigned,
+                width: $crate::stage::ast::IntegerWidth::ThirtyTwo,
+                value: $value,
+            })
+        };
+
+        (u64 $value:expr) => {
+            $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+                sign: $crate::stage::ast::Signed::Unsigned,
+                width: $crate::stage::ast::IntegerWidth::SixtyFour,
+                value: $value,
+            })
+        };
     }
 
     macro_rules! grouping_expr {
@@ -710,6 +742,27 @@ mod tests {
                 '*',
                 grouping_expr!(term_expr!(primary_expr!(3), '+', primary_expr!(4)))
             ),
+        )]));
+
+        assert_eq!(&expected_result, &res);
+    }
+
+    #[test]
+    fn should_parse_index_expressions_in_correct_precedence() {
+        use parcel::Parser;
+
+        let input: Vec<(usize, char)> = "{
+    x[1];
+}"
+        .chars()
+        .enumerate()
+        .collect();
+        let res = crate::parser::compound_statements()
+            .parse(&input)
+            .map(|ms| ms.unwrap());
+
+        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
+            ExprNode::Index("x".to_string(), Box::new(primary_expr!(u8 1))),
         )]));
 
         assert_eq!(&expected_result, &res);
