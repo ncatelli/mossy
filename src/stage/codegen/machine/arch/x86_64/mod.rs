@@ -1003,4 +1003,39 @@ mod tests {
             X86_64.apply(compound_statements!(modulo_expr_stmt, div_expr_stmt,))
         );
     }
+
+    #[test]
+    fn should_scale_on_array_deref() {
+        use crate::stage::CompilationStage;
+        use ast::{IntegerWidth, Primary, Signed, TypedExprNode, TypedStmtNode};
+
+        let index_expression = TypedStmtNode::Expression(ast::TypedExprNode::Deref(
+            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            Box::new(ast::TypedExprNode::Addition(
+                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                Box::new(ast::TypedExprNode::Ref(
+                    Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                    "x".to_string(),
+                )),
+                Box::new(TypedExprNode::Primary(
+                    Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                    Primary::Integer {
+                        sign: Signed::Unsigned,
+                        width: IntegerWidth::Eight,
+                        value: 1,
+                    },
+                )),
+            )),
+        ));
+
+        assert_eq!(
+            Ok(vec!["\tleaq\tx(%rip), %r14
+\tmovq\t$1, %r15
+\taddb\t%r14b, %r15b
+\tmovb\t(%r15), %r15b
+"
+            .to_string()]),
+            X86_64.apply(compound_statements!(index_expression,))
+        );
+    }
 }
