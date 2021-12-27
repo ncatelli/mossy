@@ -117,6 +117,21 @@ pub enum Primary {
     Identifier(String),
 }
 
+macro_rules! assignment_expr {
+    ($lhs:expr, '=', $rhs:expr) => {
+        $crate::parser::ast::ExprNode::Assignment(Box::new($lhs), Box::new($rhs))
+    };
+}
+
+macro_rules! equality_expr {
+    ($lhs:expr, "==", $rhs:expr) => {
+        $crate::parser::ast::ExprNode::Equal(Box::new($lhs), Box::new($rhs))
+    };
+    ($lhs:expr, "!=", $rhs:expr) => {
+        $crate::parser::ast::ExprNode::NotEqual(Box::new($lhs), Box::new($rhs))
+    };
+}
+
 macro_rules! term_expr {
     ($lhs:expr, '+', $rhs:expr) => {
         $crate::parser::ast::ExprNode::Addition(Box::new($lhs), Box::new($rhs))

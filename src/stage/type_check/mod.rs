@@ -257,18 +257,17 @@ impl TypeAnalysis {
                 sign: Signed::Unsigned,
                 width,
                 value,
-            }) => {
-                let sign = Signed::Unsigned;
-
-                Ok(ast::TypedExprNode::Primary(
-                    ast::Type::Integer(sign, width),
-                    ast::Primary::Integer { sign, width, value },
-                ))
-            }
+            }) => Ok(ast::TypedExprNode::Primary(
+                ast::Type::Integer(Signed::Unsigned, width),
+                ast::Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width,
+                    value,
+                },
+            )),
             ExprNode::Primary(Primary::Integer {
                 sign: Signed::Signed,
-                width: _,
-                value: _,
+                ..
             }) => Err("unimplemented: signed integers".to_string()),
             ExprNode::Primary(Primary::Identifier(identifier)) => self
                 .scopes
