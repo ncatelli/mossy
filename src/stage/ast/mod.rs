@@ -1,3 +1,6 @@
+use crate::parser::ast::ExprNode;
+
+#[allow(unused)]
 macro_rules! generate_type_specifier {
     (integer, $sign:expr, $width:expr) => {
         $crate::stage::ast::Type::Integer($sign, $width)
@@ -168,7 +171,7 @@ pub enum Primary {
         value: u64,
     },
     Identifier(Type, String),
-    Str(String),
+    Array(Type, Vec<ExprNode>),
 }
 
 impl Typed for Primary {
@@ -180,7 +183,7 @@ impl Typed for Primary {
                 value: _,
             } => Type::Integer(*sign, *width),
             Primary::Identifier(ty, _) => ty.clone(),
-            Primary::Str(_) => generate_type_specifier!(ptr => generate_type_specifier!(char)),
+            Primary::Array(ty, _) => ty.clone(),
         }
     }
 }
