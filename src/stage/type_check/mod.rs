@@ -279,7 +279,10 @@ impl TypeAnalysis {
                     )
                 })
                 .ok_or_else(|| "invalid type".to_string()),
-            ExprNode::Primary(Primary::Array(_)) => todo!(),
+            ExprNode::Primary(Primary::Str(elems)) => Ok(ast::TypedExprNode::Primary(
+                generate_type_specifier!(ptr => generate_type_specifier!(char)),
+                ast::Primary::Str(elems),
+            )),
 
             ExprNode::Grouping(expr) => self
                 .analyze_expression(*expr)

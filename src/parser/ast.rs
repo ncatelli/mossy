@@ -115,8 +115,7 @@ pub enum Primary {
         value: u64,
     },
     Identifier(String),
-    // Array literals
-    Array(Vec<ExprNode>),
+    Str(Vec<u8>),
 }
 
 macro_rules! assignment_expr {

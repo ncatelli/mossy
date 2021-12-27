@@ -292,7 +292,7 @@ fn codegen_global_symbol(ty: &Type, identifier: &str, count: usize) -> Vec<Strin
     let reserve_bytes = ty.size() * count;
 
     vec![format!(
-        "\t.data\n\t.globl\t{}\n{}:\n\t.zero\t{}\n",
+        "\t.data\n\t.globl\t{}\n{}:\n\t.zero\t{}\n\t.text\n",
         identifier, identifier, reserve_bytes
     )]
 }
@@ -328,20 +328,32 @@ fn codegen_load_global(
     )]
 }
 
+fn codegen_global_str(identifier: &str, str_literal: &[u8]) -> Vec<String> {
+    flattenable_instructions!(
+        vec!["\t.data\n".to_string()],
+        codegen_label(identifier),
+        str_literal
+            .iter()
+            .map(|c| format!("\t.byte\t{}\n", c))
+            .collect::<Vec<String>>(),
+        vec!["\t.byte\t0\n".to_string(), "\t.text\n".to_string()],
+    )
+}
+
 type BlockId = usize;
 
 fn codegen_label<T>(block_id: T) -> Vec<String>
 where
     T: core::fmt::Display,
 {
-    vec![format!("L{}:\n", block_id)]
+    vec![format!("{}:\n", block_id)]
 }
 
 fn codegen_jump<T>(block_id: T) -> Vec<String>
 where
     T: core::fmt::Display,
 {
-    vec![format!("\tjmp\tL{}\n", block_id)]
+    vec![format!("\tjmp\t{}\n", block_id)]
 }
 
 fn codegen_expr(
@@ -408,7 +420,13 @@ fn codegen_expr(
         TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
             codegen_load_global(ty, ret_val, &identifier)
         }
-        TypedExprNode::Primary(_, Primary::Array(_, _)) => todo!(),
+        TypedExprNode::Primary(_, Primary::Str(lit)) => {
+            let identifier = format!("V{}", BLOCK_ID.fetch_add(1, Ordering::SeqCst));
+            flattenable_instructions!(
+                codegen_global_str(&identifier, &lit),
+                codegen_reference(ret_val, &identifier),
+            )
+        }
 
         TypedExprNode::FunctionCall(ty, func_name, optional_arg) => {
             codegen_call(allocator, ty, ret_val, &func_name, optional_arg)
