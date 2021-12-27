@@ -86,10 +86,10 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
         )),
     )
     .map(|(ty, (id, size))| {
-        let size = match &size {
-            Primary::Integer { value, .. } => *value as usize,
-            Primary::Identifier(_) => unimplemented!(),
-            Primary::Str(lit) => lit.len(),
+        let size = match size {
+            Primary::Integer { value, .. } => value as usize,
+            Primary::Identifier(_) => todo!(),
+            Primary::Array(_) => panic!("cannot use array literal as size specifier,"),
         };
         (ty, id, size)
     })
@@ -398,8 +398,14 @@ fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary>
         '"',
         parcel::zero_or_more(alphabetic().or(|| digit(10))),
     )
-    .map(|chars| chars.into_iter().collect::<String>())
-    .map(Primary::Str)
+    .map(|chars| {
+        ast::Primary::Array(
+            chars
+                .into_iter()
+                .map(|c| primary_expr!(u8 c as u64))
+                .collect::<Vec<ExprNode>>(),
+        )
+    })
 }
 
 fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {

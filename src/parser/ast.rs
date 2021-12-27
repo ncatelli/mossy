@@ -115,7 +115,8 @@ pub enum Primary {
         value: u64,
     },
     Identifier(String),
-    Str(String),
+    // Array literals
+    Array(Vec<ExprNode>),
 }
 
 macro_rules! assignment_expr {
@@ -197,7 +198,9 @@ macro_rules! primary_expr {
     };
 
     (str $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::String($value))
+        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Array(
+            $value.into_iter().map(|c| primary_expr!(u8(c as u8))),
+        ))
     };
 }
 

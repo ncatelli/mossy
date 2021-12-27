@@ -400,8 +400,7 @@ fn codegen_expr(
             _,
             Primary::Integer {
                 sign: Signed::Signed,
-                width: _,
-                value: _,
+                ..
             },
         ) => {
             todo!();
@@ -409,6 +408,7 @@ fn codegen_expr(
         TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
             codegen_load_global(ty, ret_val, &identifier)
         }
+        TypedExprNode::Primary(_, Primary::Str(_)) => todo!(),
 
         TypedExprNode::FunctionCall(ty, func_name, optional_arg) => {
             codegen_call(allocator, ty, ret_val, &func_name, optional_arg)
