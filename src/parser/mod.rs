@@ -86,9 +86,10 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
         )),
     )
     .map(|(ty, (id, size))| {
-        let size = match size {
-            Primary::Integer { value, .. } => value as usize,
-            Primary::Identifier(_) => todo!(),
+        let size = match &size {
+            Primary::Integer { value, .. } => *value as usize,
+            Primary::Identifier(_) => unimplemented!(),
+            Primary::Str(lit) => lit.len(),
         };
         (ty, id, size)
     })
@@ -375,6 +376,7 @@ fn postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Expr
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     identifier()
         .map(|id| ExprNode::Primary(Primary::Identifier(id)))
+        .or(|| string_literal().map(ExprNode::Primary))
         .or(|| number().map(ExprNode::Primary))
         .or(grouping)
 }
@@ -388,6 +390,16 @@ fn grouping<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
             ))
         })
         .map(|expr| grouping_expr!(expr))
+}
+
+fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
+    character_wrapped(
+        '"',
+        '"',
+        parcel::zero_or_more(alphabetic().or(|| digit(10))),
+    )
+    .map(|chars| chars.into_iter().collect::<String>())
+    .map(Primary::Str)
 }
 
 fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {

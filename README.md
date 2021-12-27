@@ -88,6 +88,7 @@ postfix_expression: primary
         ;
 
 primary: identifier
+        | string_literal
         | integer_literal
         | grouping 
         ;
@@ -119,7 +120,10 @@ type_specifier: 'char'
         ;
 
 
+string_literal: '"' (alphabetic | integer_literal) '"'
+
 integer_literal:  [0-9]*;
+
 
 alphabetic: [a-zA-Z]+;
 ```
