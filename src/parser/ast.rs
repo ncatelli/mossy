@@ -115,6 +115,7 @@ pub enum Primary {
         value: u64,
     },
     Identifier(String),
+    Str(Vec<u8>),
 }
 
 macro_rules! assignment_expr {
@@ -193,6 +194,12 @@ macro_rules! primary_expr {
             width: $crate::stage::ast::IntegerWidth::SixtyFour,
             value: $value,
         })
+    };
+
+    (str $value:expr) => {
+        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Str(
+            $value.chars().map(|c| c as u8).collect(),
+        ))
     };
 }
 

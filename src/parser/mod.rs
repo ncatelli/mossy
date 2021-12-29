@@ -89,6 +89,7 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
         let size = match size {
             Primary::Integer { value, .. } => value as usize,
             Primary::Identifier(_) => todo!(),
+            Primary::Str(_) => panic!("cannot use string literals as size specifier"),
         };
         (ty, id, size)
     })
@@ -375,6 +376,7 @@ fn postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Expr
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     identifier()
         .map(|id| ExprNode::Primary(Primary::Identifier(id)))
+        .or(|| string_literal().map(ExprNode::Primary))
         .or(|| number().map(ExprNode::Primary))
         .or(grouping)
 }
@@ -388,6 +390,15 @@ fn grouping<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
             ))
         })
         .map(|expr| grouping_expr!(expr))
+}
+
+fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
+    character_wrapped(
+        '"',
+        '"',
+        parcel::zero_or_more(alphabetic().or(|| digit(10))),
+    )
+    .map(|chars| ast::Primary::Str(chars.into_iter().map(|c| c as u8).collect::<Vec<u8>>()))
 }
 
 fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {

@@ -272,13 +272,17 @@ impl TypeAnalysis {
             ExprNode::Primary(Primary::Identifier(identifier)) => self
                 .scopes
                 .lookup(&identifier)
+                .ok_or_else(|| format!("identifier ({}) undefined", &identifier))
                 .map(|dm| {
                     ast::TypedExprNode::Primary(
                         dm.r#type.clone(),
                         ast::Primary::Identifier(dm.r#type, identifier),
                     )
-                })
-                .ok_or_else(|| "invalid type".to_string()),
+                }),
+            ExprNode::Primary(Primary::Str(elems)) => Ok(ast::TypedExprNode::Primary(
+                generate_type_specifier!(ptr => generate_type_specifier!(char)),
+                ast::Primary::Str(elems),
+            )),
 
             ExprNode::Grouping(expr) => self
                 .analyze_expression(*expr)
@@ -594,6 +598,34 @@ mod tests {
                         },
                     )),
                 )),
+            )),
+        );
+
+        assert_eq!(Ok(expected), typed_ast);
+    }
+
+    #[test]
+    fn test_string_assignment_correctly_assigns_pointer_ref() {
+        let mut analyzer = super::TypeAnalysis::default();
+        let pre_typed_ast = assignment_expr!(
+            ast::ExprNode::Primary(ast::Primary::Identifier("x".to_string())),
+            '=',
+            primary_expr!(str "hello")
+        );
+
+        // allocate x with predefined type prior to analysis
+        analyzer.scopes.push_new_scope_mut();
+        analyzer
+            .scopes
+            .define_mut("x", generate_type_specifier!(char).pointer_to());
+
+        let typed_ast = analyzer.analyze_expression(pre_typed_ast);
+        let expected = TypedExprNode::IdentifierAssignment(
+            generate_type_specifier!(u8).pointer_to(),
+            "x".to_string(),
+            Box::new(TypedExprNode::Primary(
+                generate_type_specifier!(u8).pointer_to(),
+                stage::ast::Primary::Str("hello".chars().map(|c| c as u8).collect()),
             )),
         );
 

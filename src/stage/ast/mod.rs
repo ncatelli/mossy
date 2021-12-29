@@ -1,3 +1,29 @@
+macro_rules! generate_type_specifier {
+    (integer, $sign:expr, $width:expr) => {
+        $crate::stage::ast::Type::Integer($sign, $width)
+    };
+    (char) => {
+        generate_type_specifier!(u8)
+    };
+    (ptr => $ty:expr) => {
+        $crate::stage::ast::Type::Pointer(Box::new($ty))
+    };
+    (u8) => {
+        generate_type_specifier!(
+            integer,
+            $crate::stage::ast::Signed::Unsigned,
+            $crate::stage::ast::IntegerWidth::Eight
+        )
+    };
+    (u64) => {
+        generate_type_specifier!(
+            integer,
+            $crate::stage::ast::Signed::Unsigned,
+            $crate::stage::ast::IntegerWidth::SixtyFour
+        )
+    };
+}
+
 #[derive(Debug)]
 pub struct TypedProgram {
     pub defs: Vec<TypedGlobalDecls>,
@@ -149,6 +175,7 @@ pub enum Primary {
         value: u64,
     },
     Identifier(Type, String),
+    Str(Vec<u8>),
 }
 
 impl Typed for Primary {
@@ -160,6 +187,7 @@ impl Typed for Primary {
                 value: _,
             } => Type::Integer(*sign, *width),
             Primary::Identifier(ty, _) => ty.clone(),
+            Primary::Str(_) => generate_type_specifier!(ptr => generate_type_specifier!(char)),
         }
     }
 }

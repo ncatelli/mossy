@@ -1,5 +1,6 @@
 use core::marker::PhantomData;
 
+#[macro_use]
 pub mod ast;
 pub mod codegen;
 pub mod type_check;

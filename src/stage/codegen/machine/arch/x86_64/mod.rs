@@ -292,7 +292,7 @@ fn codegen_global_symbol(ty: &Type, identifier: &str, count: usize) -> Vec<Strin
     let reserve_bytes = ty.size() * count;
 
     vec![format!(
-        "\t.data\n\t.globl\t{}\n{}:\n\t.zero\t{}\n",
+        "\t.data\n\t.globl\t{}\n{}:\n\t.zero\t{}\n\t.text\n",
         identifier, identifier, reserve_bytes
     )]
 }
@@ -328,20 +328,32 @@ fn codegen_load_global(
     )]
 }
 
+fn codegen_global_str(identifier: &str, str_literal: &[u8]) -> Vec<String> {
+    flattenable_instructions!(
+        vec!["\t.data\n".to_string()],
+        codegen_label(identifier),
+        str_literal
+            .iter()
+            .map(|c| format!("\t.byte\t{}\n", c))
+            .collect::<Vec<String>>(),
+        vec!["\t.byte\t0\n".to_string(), "\t.text\n".to_string()],
+    )
+}
+
 type BlockId = usize;
 
 fn codegen_label<T>(block_id: T) -> Vec<String>
 where
     T: core::fmt::Display,
 {
-    vec![format!("L{}:\n", block_id)]
+    vec![format!("{}:\n", block_id)]
 }
 
 fn codegen_jump<T>(block_id: T) -> Vec<String>
 where
     T: core::fmt::Display,
 {
-    vec![format!("\tjmp\tL{}\n", block_id)]
+    vec![format!("\tjmp\t{}\n", block_id)]
 }
 
 fn codegen_expr(
@@ -400,14 +412,22 @@ fn codegen_expr(
             _,
             Primary::Integer {
                 sign: Signed::Signed,
-                width: _,
-                value: _,
+                ..
             },
         ) => {
             todo!();
         }
         TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
             codegen_load_global(ty, ret_val, &identifier)
+        }
+        TypedExprNode::Primary(_, Primary::Str(lit)) => {
+            let identifier = format!("V{}", BLOCK_ID.fetch_add(1, Ordering::SeqCst));
+
+            flattenable_instructions!(
+                codegen_global_str(&identifier, &lit),
+                codegen_load_global(generate_type_specifier!(u64), ret_val, &identifier),
+                //codegen_reference(ret_val, &identifier),
+            )
         }
 
         TypedExprNode::FunctionCall(ty, func_name, optional_arg) => {
@@ -942,9 +962,9 @@ mod tests {
         use ast::{IntegerWidth, Primary, Signed, TypedExprNode, TypedStmtNode};
 
         let modulo_expr_stmt = TypedStmtNode::Expression(TypedExprNode::Modulo(
-            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            generate_type_specifier!(u8),
             Box::new(TypedExprNode::Primary(
-                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                generate_type_specifier!(u8),
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
@@ -952,7 +972,7 @@ mod tests {
                 },
             )),
             Box::new(TypedExprNode::Primary(
-                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                generate_type_specifier!(u8),
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
@@ -962,9 +982,9 @@ mod tests {
         ));
 
         let div_expr_stmt = TypedStmtNode::Expression(TypedExprNode::Division(
-            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            generate_type_specifier!(u8),
             Box::new(TypedExprNode::Primary(
-                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                generate_type_specifier!(u8),
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
@@ -972,7 +992,7 @@ mod tests {
                 },
             )),
             Box::new(TypedExprNode::Primary(
-                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                generate_type_specifier!(u8),
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
@@ -1010,19 +1030,19 @@ mod tests {
         use ast::{IntegerWidth, Primary, Signed, TypedExprNode, TypedStmtNode};
 
         let index_expression = TypedStmtNode::Expression(ast::TypedExprNode::Deref(
-            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            generate_type_specifier!(u8),
             Box::new(ast::TypedExprNode::Addition(
-                Type::Integer(Signed::Unsigned, IntegerWidth::Eight).pointer_to(),
+                generate_type_specifier!(u8).pointer_to(),
                 Box::new(ast::TypedExprNode::Ref(
-                    Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                    generate_type_specifier!(u8),
                     "x".to_string(),
                 )),
                 Box::new(TypedExprNode::ScaleBy(
-                    Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                    generate_type_specifier!(u8),
                     Box::new(TypedExprNode::Grouping(
-                        Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour),
+                        generate_type_specifier!(u64),
                         Box::new(TypedExprNode::Primary(
-                            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                            generate_type_specifier!(u8),
                             Primary::Integer {
                                 sign: Signed::Unsigned,
                                 width: IntegerWidth::Eight,
