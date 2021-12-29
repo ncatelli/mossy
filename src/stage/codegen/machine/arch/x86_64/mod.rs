@@ -422,9 +422,11 @@ fn codegen_expr(
         }
         TypedExprNode::Primary(_, Primary::Str(lit)) => {
             let identifier = format!("V{}", BLOCK_ID.fetch_add(1, Ordering::SeqCst));
+
             flattenable_instructions!(
                 codegen_global_str(&identifier, &lit),
-                codegen_reference(ret_val, &identifier),
+                codegen_load_global(generate_type_specifier!(u64), ret_val, &identifier),
+                //codegen_reference(ret_val, &identifier),
             )
         }
 
