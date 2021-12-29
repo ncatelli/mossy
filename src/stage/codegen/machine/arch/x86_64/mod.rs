@@ -962,9 +962,9 @@ mod tests {
         use ast::{IntegerWidth, Primary, Signed, TypedExprNode, TypedStmtNode};
 
         let modulo_expr_stmt = TypedStmtNode::Expression(TypedExprNode::Modulo(
-            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            generate_type_specifier!(u8),
             Box::new(TypedExprNode::Primary(
-                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                generate_type_specifier!(u8),
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
@@ -972,7 +972,7 @@ mod tests {
                 },
             )),
             Box::new(TypedExprNode::Primary(
-                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                generate_type_specifier!(u8),
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
@@ -982,9 +982,9 @@ mod tests {
         ));
 
         let div_expr_stmt = TypedStmtNode::Expression(TypedExprNode::Division(
-            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            generate_type_specifier!(u8),
             Box::new(TypedExprNode::Primary(
-                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                generate_type_specifier!(u8),
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
@@ -992,7 +992,7 @@ mod tests {
                 },
             )),
             Box::new(TypedExprNode::Primary(
-                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                generate_type_specifier!(u8),
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
@@ -1030,19 +1030,19 @@ mod tests {
         use ast::{IntegerWidth, Primary, Signed, TypedExprNode, TypedStmtNode};
 
         let index_expression = TypedStmtNode::Expression(ast::TypedExprNode::Deref(
-            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            generate_type_specifier!(u8),
             Box::new(ast::TypedExprNode::Addition(
-                Type::Integer(Signed::Unsigned, IntegerWidth::Eight).pointer_to(),
+                generate_type_specifier!(u8).pointer_to(),
                 Box::new(ast::TypedExprNode::Ref(
-                    Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                    generate_type_specifier!(u8),
                     "x".to_string(),
                 )),
                 Box::new(TypedExprNode::ScaleBy(
-                    Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                    generate_type_specifier!(u8),
                     Box::new(TypedExprNode::Grouping(
-                        Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour),
+                        generate_type_specifier!(u64),
                         Box::new(TypedExprNode::Primary(
-                            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                            generate_type_specifier!(u8),
                             Primary::Integer {
                                 sign: Signed::Unsigned,
                                 width: IntegerWidth::Eight,
