@@ -1012,25 +1012,33 @@ mod tests {
         let index_expression = TypedStmtNode::Expression(ast::TypedExprNode::Deref(
             Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
             Box::new(ast::TypedExprNode::Addition(
-                Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                Type::Integer(Signed::Unsigned, IntegerWidth::Eight).pointer_to(),
                 Box::new(ast::TypedExprNode::Ref(
                     Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
                     "x".to_string(),
                 )),
-                Box::new(TypedExprNode::Primary(
+                Box::new(TypedExprNode::ScaleBy(
                     Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
-                    Primary::Integer {
-                        sign: Signed::Unsigned,
-                        width: IntegerWidth::Eight,
-                        value: 1,
-                    },
+                    Box::new(TypedExprNode::Grouping(
+                        Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour),
+                        Box::new(TypedExprNode::Primary(
+                            Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+                            Primary::Integer {
+                                sign: Signed::Unsigned,
+                                width: IntegerWidth::Eight,
+                                value: 1,
+                            },
+                        )),
+                    )),
                 )),
             )),
         ));
 
         assert_eq!(
             Ok(vec!["\tleaq\tx(%rip), %r14
+\tmovq\t$1, %r13
 \tmovq\t$1, %r15
+\timulq\t%r13, %r15
 \taddb\t%r14b, %r15b
 \tmovb\t(%r15), %r15b
 "
