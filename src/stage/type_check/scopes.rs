@@ -3,12 +3,11 @@ use crate::stage::ast::Type;
 #[derive(Debug, Clone)]
 pub struct DeclarationMetadata {
     pub r#type: Type,
-    pub size: usize,
 }
 
 impl DeclarationMetadata {
-    pub fn new(ty: Type, size: usize) -> Self {
-        Self { r#type: ty, size }
+    pub fn new(ty: Type) -> Self {
+        Self { r#type: ty }
     }
 }
 
@@ -41,14 +40,7 @@ impl ScopeStack {
     pub fn define_mut(&mut self, id: &str, ty: Type) {
         self.scopes
             .last_mut()
-            .map(|scope| scope.insert(id.to_string(), DeclarationMetadata::new(ty, 1)));
-    }
-
-    /// Defines a new variable in place.
-    pub fn define_sized_mut(&mut self, id: &str, ty: Type, size: usize) {
-        self.scopes
-            .last_mut()
-            .map(|scope| scope.insert(id.to_string(), DeclarationMetadata::new(ty, size)));
+            .map(|scope| scope.insert(id.to_string(), DeclarationMetadata::new(ty)));
     }
 
     /// looks up variable in place.

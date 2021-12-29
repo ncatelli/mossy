@@ -60,7 +60,7 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                 )))
             }
             crate::parser::ast::GlobalDecls::Var(Declaration::Array { ty, id, size }) => {
-                self.scopes.define_sized_mut(&id, ty.clone(), size);
+                self.scopes.define_mut(&id, ty.pointer_to());
 
                 Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Array {
                     ty,
@@ -159,7 +159,7 @@ impl TypeAnalysis {
                 )))
             }
             crate::parser::ast::StmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
-                self.scopes.define_sized_mut(&id, ty.clone(), size);
+                self.scopes.define_mut(&id, ty.clone());
 
                 Ok(ast::TypedStmtNode::Declaration(ast::Declaration::Array {
                     ty,
@@ -325,7 +325,7 @@ impl TypeAnalysis {
                             ast::CompatibilityResult::Equivalent => Ok(lhs_ty),
                             ast::CompatibilityResult::WidenTo(ty) => Ok(ty),
                             ast::CompatibilityResult::Incompatible => {
-                                Err(format!("invalid type: ({:?})", lhs_ty))
+                                Err(format!("invalid type in identifier lookup for ({}):\n\texpected: lhs({:?})\n\tgot: rhs({:?})", &id, lhs_ty, &rhs.r#type()))
                             }
                             ast::CompatibilityResult::Scale(t) => Ok(t),
                         })
@@ -427,34 +427,61 @@ impl TypeAnalysis {
                 })
                 .map(|(ty, expr)| ast::TypedExprNode::Deref(ty, Box::new(expr))),
             ExprNode::Index(identifier, index) => {
+                let ptr_width =
+                    ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::SixtyFour);
+
                 let index_expr = self.analyze_expression(*index)?;
-                match index_expr.r#type() {
-                    ast::Type::Integer(Signed::Unsigned, _) => self
-                        .scopes
-                        .lookup(&identifier)
-                        .and_then(|dm| {
-                            if dm.size > 1 {
-                                Some(ast::TypedExprNode::ScaleBy(dm.r#type, Box::new(index_expr)))
-                            } else {
-                                None
-                            }
-                        })
-                        .map(|scale| {
-                            ast::TypedExprNode::Addition(
-                                scale.r#type(),
-                                Box::new(ast::TypedExprNode::Ref(
-                                    scale.r#type().pointer_to(),
-                                    identifier.clone(),
-                                )),
-                                Box::new(scale),
-                            )
-                        })
-                        .map(|reference| {
-                            ast::TypedExprNode::Deref(reference.r#type(), Box::new(reference))
-                        })
-                        .ok_or_else(|| "invalid type".to_string()),
-                    _ => Err("invalid type".to_string()),
+                let index_expr_ty = &index_expr.r#type();
+
+                let index_expr = match ptr_width.type_compatible(&index_expr.r#type(), true) {
+                    ast::CompatibilityResult::Equivalent => Some(index_expr),
+                    ast::CompatibilityResult::WidenTo(ty) => {
+                        Some(ast::TypedExprNode::Grouping(ty, Box::new(index_expr)))
+                    }
+                    ast::CompatibilityResult::Scale(_) | ast::CompatibilityResult::Incompatible => {
+                        None
+                    }
                 }
+                .ok_or_else(|| {
+                    format!(
+                        "array index cannot be widened to pointer width: {:?}",
+                        &index_expr_ty
+                    )
+                })?;
+
+                self.scopes
+                    .lookup(&identifier)
+                    // validate that the reference is a pointer type
+                    .and_then(|reference| {
+                        reference
+                            .r#type
+                            .value_at()
+                            .map(|ptr_to_ty| (reference.r#type.clone(), ptr_to_ty))
+                    })
+                    .map(|(ref_ty, scale_by_ty)| {
+                        (
+                            ref_ty,
+                            ast::TypedExprNode::ScaleBy(scale_by_ty, Box::new(index_expr)),
+                        )
+                    })
+                    .map(|(ref_ty, scale)| {
+                        // recast to a pointer as pulled from the above reference
+                        ast::TypedExprNode::Addition(
+                            ref_ty.clone(),
+                            Box::new(ast::TypedExprNode::Ref(ref_ty, identifier.clone())),
+                            Box::new(scale),
+                        )
+                    })
+                    .and_then(|reference| {
+                        reference
+                            .r#type()
+                            .value_at()
+                            .map(|points_to_ty| (points_to_ty, reference))
+                    })
+                    .map(|(ref_points_to_ty, reference)| {
+                        ast::TypedExprNode::Deref(ref_points_to_ty, Box::new(reference))
+                    })
+                    .ok_or_else(|| "invalid type".to_string())
             }
         }
     }
