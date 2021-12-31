@@ -506,8 +506,8 @@ fn codegen_expr(
             DivisionVariant::Modulo,
         ),
 
-        TypedExprNode::Not(_, _) => todo!(),
-        TypedExprNode::Negate(_, _) => todo!(),
+        TypedExprNode::Not(_, expr) => codegen_not(allocator, ret_val, *expr),
+        TypedExprNode::Negate(_, expr) => codegen_negate(allocator, ret_val, *expr),
 
         TypedExprNode::Ref(_, identifier) => codegen_reference(ret_val, &identifier),
         TypedExprNode::Deref(ty, expr) => {
@@ -768,6 +768,81 @@ fn codegen_division(
             ],
         )
     })
+}
+
+// Unary expressions
+
+/// Negate a register's value.
+fn codegen_negate(
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut GeneralPurposeRegister,
+    expr: ast::TypedExprNode,
+) -> Vec<String> {
+    let width = operand_width_of_type(expr.r#type());
+    let expr_ctx = codegen_expr(allocator, ret_val, expr);
+
+    flattenable_instructions!(
+        expr_ctx,
+        vec![format!(
+            "\tneg{}\t{}\n",
+            operator_suffix(width),
+            ret_val.fmt_with_operand_width(width)
+        )],
+    )
+}
+
+/// Logically negate a register's value.
+fn codegen_not(
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut GeneralPurposeRegister,
+    expr: ast::TypedExprNode,
+) -> Vec<String> {
+    let expr_ctx = codegen_expr(allocator, ret_val, expr);
+    let byte_ret_val_reg = ret_val.fmt_with_operand_width(OperandWidth::Byte);
+    let quadword_ret_val_reg = ret_val.fmt_with_operand_width(OperandWidth::QuadWord);
+
+    flattenable_instructions!(
+        expr_ctx,
+        vec![
+            format!(
+                "\ttestq\t{width_adj_reg}, {width_adj_reg}\n",
+                width_adj_reg = quadword_ret_val_reg
+            ),
+            format!("\tsete\t{}\n", byte_ret_val_reg),
+            format!("\tmovzbq\t{}, {}\n", byte_ret_val_reg, quadword_ret_val_reg)
+        ],
+    )
+}
+
+/*
+// Logically negate a register's value
+int cglognot(int r) {
+  fprintf(Outfile, "\ttest\t%s, %s\n", reglist[r], reglist[r]);
+  fprintf(Outfile, "\tsete\t%s\n", breglist[r]);
+  fprintf(Outfile, "\tmovzbq\t%s, %s\n", breglist[r], reglist[r]);
+  return (r);
+}*/
+
+// Binary
+
+/// Invert a register's value.
+#[allow(unused)]
+fn codegen_invert(
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut GeneralPurposeRegister,
+    expr: ast::TypedExprNode,
+) -> Vec<String> {
+    let width = operand_width_of_type(expr.r#type());
+    let expr_ctx = codegen_expr(allocator, ret_val, expr);
+
+    flattenable_instructions!(
+        expr_ctx,
+        vec![format!(
+            "\tnot{}\t{}\n",
+            operator_suffix(width),
+            ret_val.fmt_with_operand_width(width)
+        )],
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
