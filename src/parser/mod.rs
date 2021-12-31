@@ -222,7 +222,6 @@ fn equality<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
                 EqualityExprOp::NotEqual => equality_expr!(lhs, "!=", rhs),
             })
     })
-    .or(|| relational())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -264,7 +263,6 @@ fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
                 }
             })
     })
-    .or(|| addition())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -296,7 +294,6 @@ fn addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
                 AdditionExprOp::Minus => term_expr!(lhs, '-', rhs),
             })
     })
-    .or(|| multiplication())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -309,7 +306,7 @@ enum MultiplicationExprOp {
 #[allow(clippy::redundant_closure)]
 fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
-        call(),
+        unary(),
         parcel::zero_or_more(parcel::join(
             whitespace_wrapped(
                 expect_character('*')
@@ -317,7 +314,7 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
                     .or(|| expect_character('/').map(|_| MultiplicationExprOp::Slash))
                     .or(|| expect_character('%').map(|_| MultiplicationExprOp::Mod)),
             ),
-            whitespace_wrapped(call()),
+            whitespace_wrapped(unary()),
         ))
         .map(unzip),
     )
@@ -333,7 +330,10 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
                 MultiplicationExprOp::Mod => factor_expr!(lhs, '%', rhs),
             })
     })
-    .or(|| call())
+}
+
+fn unary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+    call()
 }
 
 fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
