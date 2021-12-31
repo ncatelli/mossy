@@ -415,6 +415,15 @@ impl TypeAnalysis {
                 })
                 .ok_or_else(|| "invalid type".to_string()),
 
+            ExprNode::Not(expr) => self
+                .analyze_expression(*expr)
+                .map(|expr| (expr.r#type(), expr))
+                .map(|(expr_type, expr)| ast::TypedExprNode::Not(expr_type, Box::new(expr))),
+            ExprNode::Negate(expr) => self
+                .analyze_expression(*expr)
+                .map(|expr| (expr.r#type(), expr))
+                .map(|(expr_type, expr)| ast::TypedExprNode::Negate(expr_type, Box::new(expr))),
+
             ExprNode::Ref(identifier) => self
                 .scopes
                 .lookup(&identifier)
@@ -487,8 +496,6 @@ impl TypeAnalysis {
                     })
                     .ok_or_else(|| "invalid type".to_string())
             }
-            ExprNode::Not(_) => todo!(),
-            ExprNode::Negate(_) => todo!(),
         }
     }
 

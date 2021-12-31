@@ -784,7 +784,7 @@ fn codegen_negate(
     flattenable_instructions!(
         expr_ctx,
         vec![format!(
-            "\tneg{}\t{}\n",
+            "\tneg{}\t%{}\n",
             operator_suffix(width),
             ret_val.fmt_with_operand_width(width)
         )],
@@ -805,23 +805,17 @@ fn codegen_not(
         expr_ctx,
         vec![
             format!(
-                "\ttestq\t{width_adj_reg}, {width_adj_reg}\n",
+                "\ttestq\t%{width_adj_reg}, %{width_adj_reg}\n",
                 width_adj_reg = quadword_ret_val_reg
             ),
-            format!("\tsete\t{}\n", byte_ret_val_reg),
-            format!("\tmovzbq\t{}, {}\n", byte_ret_val_reg, quadword_ret_val_reg)
+            format!("\tsete\t%{}\n", byte_ret_val_reg),
+            format!(
+                "\tmovzbq\t%{}, %{}\n",
+                byte_ret_val_reg, quadword_ret_val_reg
+            )
         ],
     )
 }
-
-/*
-// Logically negate a register's value
-int cglognot(int r) {
-  fprintf(Outfile, "\ttest\t%s, %s\n", reglist[r], reglist[r]);
-  fprintf(Outfile, "\tsete\t%s\n", breglist[r]);
-  fprintf(Outfile, "\tmovzbq\t%s, %s\n", breglist[r], reglist[r]);
-  return (r);
-}*/
 
 // Binary
 
@@ -838,7 +832,7 @@ fn codegen_invert(
     flattenable_instructions!(
         expr_ctx,
         vec![format!(
-            "\tnot{}\t{}\n",
+            "\tnot{}\t%{}\n",
             operator_suffix(width),
             ret_val.fmt_with_operand_width(width)
         )],
