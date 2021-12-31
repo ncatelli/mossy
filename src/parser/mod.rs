@@ -302,7 +302,7 @@ enum MultiplicationExprOp {
 
 fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
-        unary(),
+        call(),
         parcel::zero_or_more(parcel::join(
             whitespace_wrapped(
                 expect_character('*')
@@ -310,7 +310,7 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
                     .or(|| expect_character('/').map(|_| MultiplicationExprOp::Slash))
                     .or(|| expect_character('%').map(|_| MultiplicationExprOp::Mod)),
             ),
-            whitespace_wrapped(unary()),
+            whitespace_wrapped(call()),
         ))
         .map(unzip),
     )
@@ -326,10 +326,6 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
                 MultiplicationExprOp::Mod => factor_expr!(lhs, '%', rhs),
             })
     })
-}
-
-fn unary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
-    call()
 }
 
 fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
@@ -353,6 +349,18 @@ fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprN
             whitespace_wrapped(expect_character('&'))
                 .and_then(|_| identifier())
                 .map(ExprNode::Ref)
+        })
+        .or(|| {
+            whitespace_wrapped(expect_character('-'))
+                .and_then(|_| prefix_expression())
+                .map(Box::new)
+                .map(ExprNode::Negate)
+        })
+        .or(|| {
+            whitespace_wrapped(expect_character('!'))
+                .and_then(|_| prefix_expression())
+                .map(Box::new)
+                .map(ExprNode::Not)
         })
         .or(postfix_expression)
 }

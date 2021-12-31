@@ -74,7 +74,8 @@ addition: multiplication ( ( '-' | '+' ) multiplication )*
 multiplication: unary ( ( '/' | '%' | '*' ) unary )* 
         ;
 
-unary: call
+unary: '!' expresion
+        | call
 
 call: identifier '(' expression? ')'
         | prefix_expression
@@ -82,6 +83,8 @@ call: identifier '(' expression? ')'
 
 prefix_expression: '*' prefix_expression
         | '&' identifier
+        | '-' prefix_expression
+        | '!' prefix_expression
         | primary
         ;
 

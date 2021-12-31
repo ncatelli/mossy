@@ -487,6 +487,8 @@ impl TypeAnalysis {
                     })
                     .ok_or_else(|| "invalid type".to_string())
             }
+            ExprNode::Not(_) => todo!(),
+            ExprNode::Negate(_) => todo!(),
         }
     }
 
