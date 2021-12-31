@@ -505,6 +505,10 @@ fn codegen_expr(
             Signed::Unsigned,
             DivisionVariant::Modulo,
         ),
+
+        TypedExprNode::Not(_, _) => todo!(),
+        TypedExprNode::Negate(_, _) => todo!(),
+
         TypedExprNode::Ref(_, identifier) => codegen_reference(ret_val, &identifier),
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(
