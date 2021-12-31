@@ -457,104 +457,57 @@ fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
     ]))
 }
 
-fn dec_u64<'a>() -> impl Parser<'a, &'a [(usize, char)], u64> {
-    move |input: &'a [(usize, char)]| {
-        let preparsed_input = input;
-        let res = parcel::one_or_more(digit(10))
-            .map(|digits| {
-                let vd: String = digits.into_iter().collect();
-                vd.parse::<u64>()
-            })
-            .parse(input);
+macro_rules! numeric_type_parser {
+    ($($parser_name:ident, $ret_type:ty,)*) => {
+        $(
+        #[allow(unused)]
+        fn $parser_name<'a>() -> impl Parser<'a, &'a [(usize, char)], $ret_type> {
+            move |input: &'a [(usize, char)]| {
+                let preparsed_input = input;
+                let res = parcel::one_or_more(digit(10))
+                    .map(|digits| {
+                        let vd: String = digits.into_iter().collect();
+                        vd.parse::<$ret_type>()
+                    })
+                    .parse(input);
 
-        match res {
-            Ok(MatchStatus::Match {
-                span,
-                remainder,
-                inner: Ok(u),
-            }) => Ok(MatchStatus::Match {
-                span,
-                remainder,
-                inner: u,
-            }),
+                match res {
+                    Ok(MatchStatus::Match {
+                        span,
+                        remainder,
+                        inner: Ok(u),
+                    }) => Ok(MatchStatus::Match {
+                        span,
+                        remainder,
+                        inner: u,
+                    }),
 
-            Ok(MatchStatus::Match {
-                span: _,
-                remainder: _,
-                inner: Err(_),
-            }) => Ok(MatchStatus::NoMatch(preparsed_input)),
+                    Ok(MatchStatus::Match {
+                        span: _,
+                        remainder: _,
+                        inner: Err(_),
+                    }) => Ok(MatchStatus::NoMatch(preparsed_input)),
 
-            Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
-            Err(e) => Err(e),
+                    Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
+                    Err(e) => Err(e),
+                }
+            }
         }
-    }
+    )*
+    };
 }
 
-fn dec_u32<'a>() -> impl Parser<'a, &'a [(usize, char)], u32> {
-    move |input: &'a [(usize, char)]| {
-        let preparsed_input = input;
-        let res = parcel::one_or_more(digit(10))
-            .map(|digits| {
-                let vd: String = digits.into_iter().collect();
-                vd.parse::<u32>()
-            })
-            .parse(input);
-
-        match res {
-            Ok(MatchStatus::Match {
-                span,
-                remainder,
-                inner: Ok(u),
-            }) => Ok(MatchStatus::Match {
-                span,
-                remainder,
-                inner: u,
-            }),
-
-            Ok(MatchStatus::Match {
-                span: _,
-                remainder: _,
-                inner: Err(_),
-            }) => Ok(MatchStatus::NoMatch(preparsed_input)),
-
-            Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
-            Err(e) => Err(e),
-        }
-    }
-}
-
-fn dec_u8<'a>() -> impl Parser<'a, &'a [(usize, char)], u8> {
-    move |input: &'a [(usize, char)]| {
-        let preparsed_input = input;
-        let res = parcel::one_or_more(digit(10))
-            .map(|digits| {
-                let vd: String = digits.into_iter().collect();
-                vd.parse::<u8>()
-            })
-            .parse(input);
-
-        match res {
-            Ok(MatchStatus::Match {
-                span,
-                remainder,
-                inner: Ok(u),
-            }) => Ok(MatchStatus::Match {
-                span,
-                remainder,
-                inner: u,
-            }),
-
-            Ok(MatchStatus::Match {
-                span: _,
-                remainder: _,
-                inner: Err(_),
-            }) => Ok(MatchStatus::NoMatch(preparsed_input)),
-
-            Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
-            Err(e) => Err(e),
-        }
-    }
-}
+#[rustfmt::skip]
+numeric_type_parser!(
+    dec_i8, i8,
+    dec_u8, u8,
+    dec_i16, i16,
+    dec_u16, u16,
+    dec_i32, i32,
+    dec_u32, u32,
+    dec_i64, i64,
+    dec_u64, u64,
+);
 
 fn whitespace_wrapped<'a, P, B>(parser: P) -> impl Parser<'a, &'a [(usize, char)], B>
 where
