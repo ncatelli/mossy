@@ -199,7 +199,6 @@ enum EqualityExprOp {
     NotEqual,
 }
 
-#[allow(clippy::redundant_closure)]
 fn equality<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         relational(),
@@ -232,7 +231,6 @@ enum RelationalExprOp {
     GreaterEqual,
 }
 
-#[allow(clippy::redundant_closure)]
 fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         addition(),
@@ -271,7 +269,6 @@ enum AdditionExprOp {
     Minus,
 }
 
-#[allow(clippy::redundant_closure)]
 fn addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         multiplication(),
@@ -303,7 +300,6 @@ enum MultiplicationExprOp {
     Mod,
 }
 
-#[allow(clippy::redundant_closure)]
 fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         unary(),
