@@ -6,12 +6,6 @@ use std::io::prelude::*;
 
 type RuntimeResult<T> = Result<T, RuntimeError>;
 
-/// Represents an error that can return an exit code.
-trait ErrorWithExitCode {
-    /// Returns an exit status for a given error;
-    fn exit_code(&self) -> i32;
-}
-
 enum RuntimeError {
     FileUnreadable,
     Undefined(String),
@@ -22,15 +16,6 @@ impl fmt::Debug for RuntimeError {
         match self {
             Self::FileUnreadable => write!(f, "source file unreadable"),
             Self::Undefined(s) => write!(f, "{}", s),
-        }
-    }
-}
-
-impl ErrorWithExitCode for RuntimeError {
-    fn exit_code(&self) -> i32 {
-        match self {
-            Self::FileUnreadable => 1,
-            Self::Undefined(_) => 127,
         }
     }
 }
@@ -83,11 +68,12 @@ fn compile(source: &str) -> RuntimeResult<String> {
         .map_err(RuntimeError::Undefined)
 }
 
-fn main() {
+fn main() -> RuntimeResult<()> {
     let raw_args: Vec<String> = env::args().into_iter().collect::<Vec<String>>();
     let args = raw_args.iter().map(|a| a.as_str()).collect::<Vec<&str>>();
 
     // Flag Definitions
+    let help = scrap::Flag::store_true("help", "h", "display usage information.").optional();
     let in_file = scrap::Flag::expect_string("in-file", "i", "an input path for a source file.");
     let out_file = scrap::Flag::expect_string("out-file", "o", "an assembly output path.")
         .optional()
@@ -109,28 +95,21 @@ fn main() {
         .with_flag(in_file)
         .with_flag(out_file)
         .with_flag(backend)
-        .with_handler(|((inf, ouf), _)| {
+        .with_flag(help)
+        .with_handler(|(((inf, ouf), _), _)| {
             read_src_file(&inf)
                 .and_then(|input| compile(&input))
                 .and_then(|asm| write_dest_file(&ouf, asm.as_bytes()))
         });
 
-    let help_string = cmd.help();
-    let eval_res = cmd
-        .evaluate(&args[..])
+    cmd.evaluate(&args[..])
         .map_err(|e| RuntimeError::Undefined(e.to_string()))
-        .and_then(|flags| cmd.dispatch(flags));
-
-    match eval_res {
-        Ok(_) => (),
-        Err(RuntimeError::FileUnreadable) => {
-            println!("unknown input file\n{}", &help_string);
-            std::process::exit(1)
-        }
-
-        Err(RuntimeError::Undefined(e)) => {
-            println!("error: {}", e);
-            std::process::exit(RuntimeError::Undefined(e).exit_code())
-        }
-    }
+        .and_then(|(flags, help)| {
+            if help.is_some() {
+                println!("{}", cmd.help());
+                Ok(())
+            } else {
+                cmd.dispatch((flags, None))
+            }
+        })
 }
