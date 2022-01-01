@@ -558,12 +558,12 @@ mod tests {
         assert_eq!(
             Ok(CompoundStmts::new(vec![StmtNode::Expression(term_expr!(
                 term_expr!(
-                    term_expr!(primary_expr!(13), '-', primary_expr!(6)),
+                    term_expr!(primary_expr!(u8 13), '-', primary_expr!(u8 6)),
                     '+',
-                    factor_expr!(primary_expr!(4), '*', primary_expr!(5))
+                    factor_expr!(primary_expr!(u8 4), '*', primary_expr!(u8 5))
                 ),
                 '+',
-                factor_expr!(primary_expr!(8), '/', primary_expr!(3))
+                factor_expr!(primary_expr!(u8 8), '/', primary_expr!(u8 3))
             ))])),
             res
         )
@@ -615,7 +615,7 @@ mod tests {
                 ExprNode::Primary(Primary::Identifier("x".to_string())),
                 assignment_expr!(
                     ExprNode::Primary(Primary::Identifier("y".to_string())),
-                    primary_expr!(5)
+                    primary_expr!(u8 5)
                 )
             ),
         )]));
@@ -639,9 +639,9 @@ mod tests {
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
             factor_expr!(
-                primary_expr!(2),
+                primary_expr!(u8 2),
                 '*',
-                grouping_expr!(term_expr!(primary_expr!(3), '+', primary_expr!(4)))
+                grouping_expr!(term_expr!(primary_expr!(u8 3), '+', primary_expr!(u8 4)))
             ),
         )]));
 

@@ -160,14 +160,6 @@ macro_rules! factor_expr {
 
 #[allow(unused)]
 macro_rules! primary_expr {
-    ($value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::ast::Signed::Unsigned,
-            width: $crate::stage::ast::IntegerWidth::Eight,
-            value: $value,
-        })
-    };
-
     (u8 $value:expr) => {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
             sign: $crate::stage::ast::Signed::Unsigned,
