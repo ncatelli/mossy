@@ -528,6 +528,12 @@ mod tests {
         ast::{IntegerWidth, Signed, Type, TypedExprNode},
     };
 
+    macro_rules! pad_to_le_64bit_array {
+        ($val:literal) => {
+            $crate::util::pad_to_le_64bit_array($val.to_le_bytes())
+        };
+    }
+
     #[test]
     fn test_grouping_assigns_correct_type() {
         let analyzer = super::TypeAnalysis::default();

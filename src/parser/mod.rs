@@ -410,17 +410,17 @@ fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
         dec_u8().map(|num| Primary::Integer {
             sign: Signed::Unsigned,
             width: IntegerWidth::Eight,
-            value: pad_to_le_64bit_array!(num),
+            value: crate::util::pad_to_le_64bit_array(num.to_le_bytes()),
         }),
         dec_u32().map(|num| Primary::Integer {
             sign: Signed::Unsigned,
             width: IntegerWidth::ThirtyTwo,
-            value: pad_to_le_64bit_array!(num),
+            value: crate::util::pad_to_le_64bit_array(num.to_le_bytes()),
         }),
         dec_u64().map(|num| Primary::Integer {
             sign: Signed::Unsigned,
             width: IntegerWidth::SixtyFour,
-            value: pad_to_le_64bit_array!(num),
+            value: crate::util::pad_to_le_64bit_array(num.to_le_bytes()),
         }),
     ])
 }

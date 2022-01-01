@@ -160,29 +160,12 @@ macro_rules! factor_expr {
 }
 
 #[allow(unused)]
-macro_rules! pad_to_le_64bit_array {
-    ($bytes:expr) => {
-        $bytes
-            .to_le_bytes()
-            .iter()
-            .copied()
-            .chain(core::iter::repeat(0u8))
-            .take(8)
-            .enumerate()
-            .fold([0u8; 8], |mut acc, (idx, byte)| {
-                acc[idx] = byte;
-                acc
-            })
-    };
-}
-
-#[allow(unused)]
 macro_rules! primary_expr {
     (u8 $value:expr) => {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
             sign: $crate::stage::ast::Signed::Unsigned,
             width: $crate::stage::ast::IntegerWidth::Eight,
-            value: pad_to_le_64bit_array!($value as u8),
+            value: $crate::util::pad_to_le_64bit_array(($value as u8).to_le_bytes()),
         })
     };
 
@@ -190,7 +173,7 @@ macro_rules! primary_expr {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
             sign: $crate::stage::ast::Signed::Unsigned,
             width: $crate::stage::ast::IntegerWidth::Sixteen,
-            value: pad_to_le_64bit_array!($value as u16),
+            value: $crate::util::pad_to_le_64bit_array(($value as u16).to_le_bytes()),
         })
     };
 
@@ -198,7 +181,7 @@ macro_rules! primary_expr {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
             sign: $crate::stage::ast::Signed::Unsigned,
             width: $crate::stage::ast::IntegerWidth::ThirtyTwo,
-            value: pad_to_le_64bit_array!($value as u32),
+            value: $crate::util::pad_to_le_64bit_array(($value as u32).to_le_bytes()),
         })
     };
 
@@ -206,7 +189,7 @@ macro_rules! primary_expr {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
             sign: $crate::stage::ast::Signed::Unsigned,
             width: $crate::stage::ast::IntegerWidth::SixtyFour,
-            value: pad_to_le_64bit_array!($value as u64),
+            value: $crate::util::pad_to_le_64bit_array(($value as u64).to_le_bytes()),
         })
     };
 

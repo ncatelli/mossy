@@ -611,7 +611,7 @@ fn codegen_scaleby(
             ast::Primary::Integer {
                 sign,
                 width: ast::IntegerWidth::SixtyFour,
-                value: pad_to_le_64bit_array!(size_of as u64),
+                value: crate::util::pad_to_le_64bit_array((size_of as u64).to_le_bytes()),
             },
         );
 
@@ -1026,6 +1026,12 @@ mod tests {
                    ]
                )
 
+        };
+    }
+
+    macro_rules! pad_to_le_64bit_array {
+        ($val:literal) => {
+            $crate::util::pad_to_le_64bit_array($val.to_le_bytes())
         };
     }
 
