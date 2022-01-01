@@ -692,9 +692,9 @@ fn codegen_subtraction(
 ) -> Vec<String> {
     let width = operand_width_of_type(lhs.r#type());
 
-    allocator.allocate_then(|allocator, rhs_retval| {
+    allocator.allocate_then(|allocator, rhs_ret_val| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
-        let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
+        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, *rhs);
 
         flattenable_instructions!(
             lhs_ctx,
@@ -702,8 +702,8 @@ fn codegen_subtraction(
             vec![format!(
                 "\tsub{}\t%{}, %{}\n",
                 operator_suffix(width),
-                ret_val.fmt_with_operand_width(width),
-                rhs_retval.fmt_with_operand_width(width)
+                rhs_ret_val.fmt_with_operand_width(width),
+                ret_val.fmt_with_operand_width(width)
             )],
         )
     })
