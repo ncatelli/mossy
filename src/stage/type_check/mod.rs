@@ -250,25 +250,13 @@ impl TypeAnalysis {
         use crate::parser::ast::ExprNode;
         use crate::parser::ast::Primary;
 
-        use ast::Signed;
-
         match expr {
-            ExprNode::Primary(Primary::Integer {
-                sign: Signed::Unsigned,
-                width,
-                value,
-            }) => Ok(ast::TypedExprNode::Primary(
-                ast::Type::Integer(Signed::Unsigned, width),
-                ast::Primary::Integer {
-                    sign: Signed::Unsigned,
-                    width,
-                    value,
-                },
-            )),
-            ExprNode::Primary(Primary::Integer {
-                sign: Signed::Signed,
-                ..
-            }) => Err("unimplemented: signed integers".to_string()),
+            ExprNode::Primary(Primary::Integer { sign, width, value }) => {
+                Ok(ast::TypedExprNode::Primary(
+                    ast::Type::Integer(sign, width),
+                    ast::Primary::Integer { sign, width, value },
+                ))
+            }
             ExprNode::Primary(Primary::Identifier(identifier)) => self
                 .scopes
                 .lookup(&identifier)
@@ -414,15 +402,6 @@ impl TypeAnalysis {
                     ast::TypedExprNode::Modulo(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
-
-            ExprNode::LogicalNot(expr) => self
-                .analyze_expression(*expr)
-                .map(|expr| (expr.r#type(), expr))
-                .map(|(expr_type, expr)| ast::TypedExprNode::LogicalNot(expr_type, Box::new(expr))),
-            ExprNode::Negate(expr) => self
-                .analyze_expression(*expr)
-                .map(|expr| (expr.r#type(), expr))
-                .map(|(expr_type, expr)| ast::TypedExprNode::Negate(expr_type, Box::new(expr))),
 
             ExprNode::Ref(identifier) => self
                 .scopes

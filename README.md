@@ -83,8 +83,6 @@ call: identifier '(' expression? ')'
 
 prefix_expression: '*' prefix_expression
         | '&' identifier
-        | '-' prefix_expression
-        | '!' prefix_expression
         | primary
         ;
 
@@ -122,7 +120,6 @@ type_specifier: 'char'
         | 'int'
         | 'long'
         | 'void'
-        | 'unsigned'
         ;
 
 type_specifier_modifier: 'unsigned'

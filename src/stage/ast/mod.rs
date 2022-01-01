@@ -132,10 +132,6 @@ pub enum TypedExprNode {
     Modulo(Type, Box<TypedExprNode>, Box<TypedExprNode>),
     Multiplication(Type, Box<TypedExprNode>, Box<TypedExprNode>),
 
-    // Unary
-    LogicalNot(Type, Box<TypedExprNode>),
-    Negate(Type, Box<TypedExprNode>),
-
     // Pointer Operations
     Ref(Type, String),
     Deref(Type, Box<TypedExprNode>),
@@ -162,8 +158,6 @@ impl Typed for TypedExprNode {
             | TypedExprNode::Division(ty, _, _)
             | TypedExprNode::Multiplication(ty, _, _)
             | TypedExprNode::Modulo(ty, _, _)
-            | TypedExprNode::LogicalNot(ty, _)
-            | TypedExprNode::Negate(ty, _)
             | TypedExprNode::Ref(ty, _)
             | TypedExprNode::Deref(ty, _)
             | TypedExprNode::ScaleBy(ty, _)
