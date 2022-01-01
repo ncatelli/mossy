@@ -161,6 +161,13 @@ macro_rules! factor_expr {
 
 #[allow(unused)]
 macro_rules! primary_expr {
+    (i8 $value:expr) => {
+        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+            sign: $crate::stage::ast::Signed::Signed,
+            width: $crate::stage::ast::IntegerWidth::Eight,
+            value: $crate::util::pad_to_64bit_array(($value as i8).to_le_bytes()),
+        })
+    };
     (u8 $value:expr) => {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
             sign: $crate::stage::ast::Signed::Unsigned,
@@ -169,6 +176,13 @@ macro_rules! primary_expr {
         })
     };
 
+    (i16 $value:expr) => {
+        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+            sign: $crate::stage::ast::Signed::Signed,
+            width: $crate::stage::ast::IntegerWidth::Sixteen,
+            value: $crate::util::pad_to_64bit_array(($value as i16).to_le_bytes()),
+        })
+    };
     (u16 $value:expr) => {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
             sign: $crate::stage::ast::Signed::Unsigned,
@@ -177,6 +191,13 @@ macro_rules! primary_expr {
         })
     };
 
+    (i32 $value:expr) => {
+        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+            sign: $crate::stage::ast::Signed::Signed,
+            width: $crate::stage::ast::IntegerWidth::ThirtyTwo,
+            value: $crate::util::pad_to_64bit_array(($value as i32).to_le_bytes()),
+        })
+    };
     (u32 $value:expr) => {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
             sign: $crate::stage::ast::Signed::Unsigned,
@@ -185,6 +206,13 @@ macro_rules! primary_expr {
         })
     };
 
+    (i64 $value:expr) => {
+        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+            sign: $crate::stage::ast::Signed::Signed,
+            width: $crate::stage::ast::IntegerWidth::SixtyFour,
+            value: $crate::util::pad_to_64bit_array(($value as i64).to_le_bytes()),
+        })
+    };
     (u64 $value:expr) => {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
             sign: $crate::stage::ast::Signed::Unsigned,

@@ -82,14 +82,19 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
         type_declarator(),
         whitespace_wrapped(parcel::join(
             identifier(),
-            character_wrapped('[', ']', number()),
+            character_wrapped('[', ']', unsigned_number()),
         )),
     )
     .map(|(ty, (id, size))| {
         let size = match size {
-            Primary::Integer { value, .. } => usize::from_le_bytes(value),
-            Primary::Identifier(_) => todo!(),
-            Primary::Str(_) => panic!("cannot use string literals as size specifier"),
+            Primary::Integer {
+                value,
+                sign: Signed::Unsigned,
+                ..
+            } => usize::from_le_bytes(value),
+            // The remaining three variants are guaranteed to be unreachable by
+            // the parser.
+            _ => unreachable!(),
         };
         (ty, id, size)
     })
@@ -407,9 +412,59 @@ fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary>
 
 fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
     parcel::one_of(vec![
+        dec_i8().map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::Eight,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
         dec_u8().map(|num| Primary::Integer {
             sign: Signed::Unsigned,
             width: IntegerWidth::Eight,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        dec_i16().map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::Sixteen,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        dec_u16().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::Sixteen,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        dec_i32().map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::ThirtyTwo,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        dec_u32().map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::ThirtyTwo,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        dec_i64().map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::SixtyFour,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        dec_u64().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::SixtyFour,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+    ])
+}
+
+fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
+    parcel::one_of(vec![
+        dec_u8().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::Eight,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        dec_u16().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::Sixteen,
             value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
         }),
         dec_u32().map(|num| Primary::Integer {
@@ -432,9 +487,22 @@ fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
 fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
     whitespace_wrapped(
         parcel::join(
-            type_specifier(),
+            parcel::join(type_specifier_modifier().optional(), type_specifier()),
             whitespace_wrapped(expect_character('*').one_or_more()),
         )
+        .map(|(type_with_modifier, pointer_depth)| {
+            let ty = match type_with_modifier {
+                (Some(TypeSpecifierModifier::Signed), Type::Integer(_, width)) => {
+                    Type::Integer(Signed::Signed, width)
+                }
+                (Some(TypeSpecifierModifier::Unsigned), Type::Integer(_, width)) => {
+                    Type::Integer(Signed::Unsigned, width)
+                }
+                (_, ty) => ty,
+            };
+
+            (ty, pointer_depth)
+        })
         .map(|(ty, pointer_depth)| {
             let nested_pointers = pointer_depth.len() - 1;
             (0..nested_pointers)
@@ -444,15 +512,41 @@ fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
                 })
         }),
     )
-    .or(type_specifier)
+    .or(|| {
+        parcel::join(type_specifier_modifier().optional(), type_specifier()).map(
+            |type_with_modifier| match type_with_modifier {
+                (Some(TypeSpecifierModifier::Signed), Type::Integer(_, width)) => {
+                    Type::Integer(Signed::Signed, width)
+                }
+                (Some(TypeSpecifierModifier::Unsigned), Type::Integer(_, width)) => {
+                    Type::Integer(Signed::Unsigned, width)
+                }
+                (_, ty) => ty,
+            },
+        )
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TypeSpecifierModifier {
+    Signed,
+    Unsigned,
+}
+
+fn type_specifier_modifier<'a>(
+) -> impl parcel::Parser<'a, &'a [(usize, char)], TypeSpecifierModifier> {
+    whitespace_wrapped(parcel::one_of(vec![
+        expect_str("signed").map(|_| TypeSpecifierModifier::Signed),
+        expect_str("unsigned").map(|_| TypeSpecifierModifier::Unsigned),
+    ]))
 }
 
 fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
     whitespace_wrapped(parcel::one_of(vec![
-        expect_str("long").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour)),
-        expect_str("int").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::ThirtyTwo)),
-        expect_str("short").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Sixteen)),
-        expect_str("char").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Eight)),
+        expect_str("long").map(|_| Type::Integer(Signed::Signed, IntegerWidth::SixtyFour)),
+        expect_str("int").map(|_| Type::Integer(Signed::Signed, IntegerWidth::ThirtyTwo)),
+        expect_str("short").map(|_| Type::Integer(Signed::Signed, IntegerWidth::Sixteen)),
+        expect_str("char").map(|_| Type::Integer(Signed::Signed, IntegerWidth::Eight)),
         expect_str("void").map(|_| Type::Void),
     ]))
 }
@@ -558,12 +652,12 @@ mod tests {
         assert_eq!(
             Ok(CompoundStmts::new(vec![StmtNode::Expression(term_expr!(
                 term_expr!(
-                    term_expr!(primary_expr!(u8 13), '-', primary_expr!(u8 6)),
+                    term_expr!(primary_expr!(i8 13), '-', primary_expr!(i8 6)),
                     '+',
-                    factor_expr!(primary_expr!(u8 4), '*', primary_expr!(u8 5))
+                    factor_expr!(primary_expr!(i8 4), '*', primary_expr!(i8 5))
                 ),
                 '+',
-                factor_expr!(primary_expr!(u8 8), '/', primary_expr!(u8 3))
+                factor_expr!(primary_expr!(i8 8), '/', primary_expr!(i8 3))
             ))])),
             res
         )
@@ -615,7 +709,7 @@ mod tests {
                 ExprNode::Primary(Primary::Identifier("x".to_string())),
                 assignment_expr!(
                     ExprNode::Primary(Primary::Identifier("y".to_string())),
-                    primary_expr!(u8 5)
+                    primary_expr!(i8 5)
                 )
             ),
         )]));
@@ -639,9 +733,9 @@ mod tests {
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
             factor_expr!(
-                primary_expr!(u8 2),
+                primary_expr!(i8 2),
                 '*',
-                grouping_expr!(term_expr!(primary_expr!(u8 3), '+', primary_expr!(u8 4)))
+                grouping_expr!(term_expr!(primary_expr!(i8 3), '+', primary_expr!(i8 4)))
             ),
         )]));
 
@@ -663,7 +757,7 @@ mod tests {
             .map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
-            ExprNode::Index("x".to_string(), Box::new(primary_expr!(u8 1))),
+            ExprNode::Index("x".to_string(), Box::new(primary_expr!(i8 1))),
         )]));
 
         assert_eq!(&expected_result, &res);
