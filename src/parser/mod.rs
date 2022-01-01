@@ -360,7 +360,7 @@ fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprN
             whitespace_wrapped(expect_character('!'))
                 .and_then(|_| prefix_expression())
                 .map(Box::new)
-                .map(ExprNode::Not)
+                .map(ExprNode::LogicalNot)
         })
         .or(postfix_expression)
 }

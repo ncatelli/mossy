@@ -97,7 +97,7 @@ pub enum ExprNode {
     Modulo(Box<ExprNode>, Box<ExprNode>),
 
     // Unary
-    Not(Box<ExprNode>),
+    LogicalNot(Box<ExprNode>),
     Negate(Box<ExprNode>),
 
     // Pointer Operations
