@@ -371,7 +371,7 @@ fn codegen_expr(
                 width: IntegerWidth::SixtyFour,
                 value,
             },
-        ) => codegen_constant_u64(ret_val, value),
+        ) => codegen_constant_u64(ret_val, u64::from_le_bytes(value)),
         TypedExprNode::Primary(
             _,
             Primary::Integer {
@@ -380,7 +380,7 @@ fn codegen_expr(
                 value,
             },
         ) => {
-            let uc = core::convert::TryFrom::try_from(value)
+            let uc = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
                 .expect("value exceeds unsigned 32-bit integer");
             codegen_constant_u32(ret_val, uc)
         }
@@ -392,7 +392,7 @@ fn codegen_expr(
                 value,
             },
         ) => {
-            let uc = core::convert::TryFrom::try_from(value)
+            let uc = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
                 .expect("value exceeds unsigned 32-bit integer");
             codegen_constant_u16(ret_val, uc)
         }
@@ -404,7 +404,7 @@ fn codegen_expr(
                 value,
             },
         ) => {
-            let uc = core::convert::TryFrom::try_from(value)
+            let uc = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
                 .expect("value exceeds unsigned 8-bit integer");
             codegen_constant_u8(ret_val, uc)
         }
@@ -611,7 +611,7 @@ fn codegen_scaleby(
             ast::Primary::Integer {
                 sign,
                 width: ast::IntegerWidth::SixtyFour,
-                value: size_of as u64,
+                value: pad_to_le_64bit_array!(size_of as u64),
             },
         );
 
@@ -1041,7 +1041,7 @@ mod tests {
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
-                    value: 10,
+                    value: pad_to_le_64bit_array!(10u8),
                 },
             )),
             Box::new(TypedExprNode::Primary(
@@ -1049,7 +1049,7 @@ mod tests {
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
-                    value: 3,
+                    value: pad_to_le_64bit_array!(3u8),
                 },
             )),
         ));
@@ -1061,7 +1061,7 @@ mod tests {
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
-                    value: 10,
+                    value: pad_to_le_64bit_array!(10u8),
                 },
             )),
             Box::new(TypedExprNode::Primary(
@@ -1069,7 +1069,7 @@ mod tests {
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
-                    value: 3,
+                    value: pad_to_le_64bit_array!(3u8),
                 },
             )),
         ));
@@ -1119,7 +1119,7 @@ mod tests {
                             Primary::Integer {
                                 sign: Signed::Unsigned,
                                 width: IntegerWidth::Eight,
-                                value: 1,
+                                value: pad_to_le_64bit_array!(1u8),
                             },
                         )),
                     )),

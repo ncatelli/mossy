@@ -87,7 +87,7 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     )
     .map(|(ty, (id, size))| {
         let size = match size {
-            Primary::Integer { value, .. } => value as usize,
+            Primary::Integer { value, .. } => usize::from_le_bytes(value),
             Primary::Identifier(_) => todo!(),
             Primary::Str(_) => panic!("cannot use string literals as size specifier"),
         };
@@ -410,17 +410,17 @@ fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
         dec_u8().map(|num| Primary::Integer {
             sign: Signed::Unsigned,
             width: IntegerWidth::Eight,
-            value: u64::from(num),
+            value: pad_to_le_64bit_array!(num),
         }),
         dec_u32().map(|num| Primary::Integer {
             sign: Signed::Unsigned,
             width: IntegerWidth::ThirtyTwo,
-            value: u64::from(num),
+            value: pad_to_le_64bit_array!(num),
         }),
         dec_u64().map(|num| Primary::Integer {
             sign: Signed::Unsigned,
             width: IntegerWidth::SixtyFour,
-            value: num,
+            value: pad_to_le_64bit_array!(num),
         }),
     ])
 }

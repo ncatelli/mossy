@@ -535,7 +535,7 @@ mod tests {
             ast::ExprNode::Grouping(Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
                 sign: Signed::Unsigned,
                 width: IntegerWidth::Eight,
-                value: 1,
+                value: pad_to_le_64bit_array!(1u8),
             })));
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
@@ -546,7 +546,7 @@ mod tests {
                 stage::ast::Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
-                    value: 1,
+                    value: pad_to_le_64bit_array!(1u8),
                 },
             )),
         );
@@ -559,18 +559,18 @@ mod tests {
             Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
                 sign: Signed::Unsigned,
                 width: IntegerWidth::Eight,
-                value: 2,
+                value: pad_to_le_64bit_array!(2u8),
             })),
             Box::new(ast::ExprNode::Addition(
                 Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
-                    value: 3,
+                    value: pad_to_le_64bit_array!(3u8),
                 })),
                 Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
-                    value: 4,
+                    value: pad_to_le_64bit_array!(4u8),
                 })),
             )),
         )));
@@ -585,7 +585,7 @@ mod tests {
                     stage::ast::Primary::Integer {
                         sign: Signed::Unsigned,
                         width: IntegerWidth::Eight,
-                        value: 2,
+                        value: pad_to_le_64bit_array!(2u8),
                     },
                 )),
                 Box::new(TypedExprNode::Addition(
@@ -595,7 +595,7 @@ mod tests {
                         stage::ast::Primary::Integer {
                             sign: Signed::Unsigned,
                             width: IntegerWidth::Eight,
-                            value: 3,
+                            value: pad_to_le_64bit_array!(3u8),
                         },
                     )),
                     Box::new(TypedExprNode::Primary(
@@ -603,7 +603,7 @@ mod tests {
                         stage::ast::Primary::Integer {
                             sign: Signed::Unsigned,
                             width: IntegerWidth::Eight,
-                            value: 4,
+                            value: pad_to_le_64bit_array!(4u8),
                         },
                     )),
                 )),
