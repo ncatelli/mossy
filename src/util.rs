@@ -1,4 +1,4 @@
-pub(crate) fn pad_to_le_64bit_array<I>(bytes: I) -> [u8; 8]
+pub(crate) fn pad_to_64bit_array<I>(bytes: I) -> [u8; 8]
 where
     I: IntoIterator<Item = u8>,
 {

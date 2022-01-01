@@ -530,7 +530,7 @@ mod tests {
 
     macro_rules! pad_to_le_64bit_array {
         ($val:literal) => {
-            $crate::util::pad_to_le_64bit_array($val.to_le_bytes())
+            $crate::util::pad_to_64bit_array($val.to_le_bytes())
         };
     }
 
