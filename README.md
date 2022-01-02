@@ -109,21 +109,21 @@ identifier_list: identifier
 identifier: alphabetic+
         ;
 
-type_declarator:   type_specifier_modifier? type_specifier optional_pointer
+type_declarator:   type_specifier optional_pointer
         ;
 
 optional_pointer: ('*' optional_pointer)?
         ;
 
 type_specifier: 'char'
+        | 'short int'
         | 'short'
         | 'int'
+        | 'long long int'
+        | 'long long'
+        | 'long int'
         | 'long'
         | 'void'
-        ;
-
-type_specifier_modifier: 'unsigned'
-        | 'signed'
         ;
 
 string_literal: '"' (alphabetic | integer_literal) '"'

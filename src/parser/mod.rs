@@ -475,22 +475,9 @@ fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
 fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
     whitespace_wrapped(
         parcel::join(
-            parcel::join(type_specifier_modifier().optional(), type_specifier()),
+            type_specifier(),
             whitespace_wrapped(expect_character('*').one_or_more()),
         )
-        .map(|(type_with_modifier, pointer_depth)| {
-            let ty = match type_with_modifier {
-                (Some(TypeSpecifierModifier::Signed), Type::Integer(_, width)) => {
-                    Type::Integer(Signed::Signed, width)
-                }
-                (Some(TypeSpecifierModifier::Unsigned), Type::Integer(_, width)) => {
-                    Type::Integer(Signed::Unsigned, width)
-                }
-                (_, ty) => ty,
-            };
-
-            (ty, pointer_depth)
-        })
         .map(|(ty, pointer_depth)| {
             let nested_pointers = pointer_depth.len() - 1;
             (0..nested_pointers)
@@ -500,43 +487,35 @@ fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
                 })
         }),
     )
-    .or(|| {
-        parcel::join(type_specifier_modifier().optional(), type_specifier()).map(
-            |type_with_modifier| match type_with_modifier {
-                (Some(TypeSpecifierModifier::Signed), Type::Integer(_, width)) => {
-                    Type::Integer(Signed::Signed, width)
-                }
-                (Some(TypeSpecifierModifier::Unsigned), Type::Integer(_, width)) => {
-                    Type::Integer(Signed::Unsigned, width)
-                }
-                (_, ty) => ty,
-            },
-        )
-    })
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum TypeSpecifierModifier {
-    Signed,
-    Unsigned,
-}
-
-fn type_specifier_modifier<'a>(
-) -> impl parcel::Parser<'a, &'a [(usize, char)], TypeSpecifierModifier> {
-    whitespace_wrapped(parcel::one_of(vec![
-        expect_str("signed").map(|_| TypeSpecifierModifier::Signed),
-        expect_str("unsigned").map(|_| TypeSpecifierModifier::Unsigned),
-    ]))
+    .or(type_specifier)
 }
 
 fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
-    whitespace_wrapped(parcel::one_of(vec![
-        expect_str("long").map(|_| Type::Integer(Signed::Signed, IntegerWidth::SixtyFour)),
-        expect_str("int").map(|_| Type::Integer(Signed::Signed, IntegerWidth::ThirtyTwo)),
-        expect_str("short").map(|_| Type::Integer(Signed::Signed, IntegerWidth::Sixteen)),
-        expect_str("char").map(|_| Type::Integer(Signed::Signed, IntegerWidth::Eight)),
-        expect_str("void").map(|_| Type::Void),
-    ]))
+    parcel::join(
+        whitespace_wrapped(parcel::one_of(vec![
+            expect_str("signed").map(|_| Signed::Signed),
+            expect_str("unsigned").map(|_| Signed::Unsigned),
+        ]))
+        .optional(),
+        whitespace_wrapped(parcel::one_of(vec![
+            parcel::one_of(vec![
+                expect_str("long long int"),
+                expect_str("long long"),
+                expect_str("long int"),
+                expect_str("long"),
+            ])
+            .map(|_| Type::Integer(Signed::Signed, IntegerWidth::SixtyFour)),
+            expect_str("int").map(|_| Type::Integer(Signed::Signed, IntegerWidth::ThirtyTwo)),
+            parcel::one_of(vec![expect_str("short int"), expect_str("short")])
+                .map(|_| Type::Integer(Signed::Signed, IntegerWidth::Sixteen)),
+            expect_str("char").map(|_| Type::Integer(Signed::Signed, IntegerWidth::Eight)),
+            expect_str("void").map(|_| Type::Void),
+        ])),
+    )
+    .map(|(sign, ty)| match (sign, ty) {
+        (Some(sign), Type::Integer(_, width)) => Type::Integer(sign, width),
+        (_, ty) => ty,
+    })
 }
 
 macro_rules! numeric_type_parser {
