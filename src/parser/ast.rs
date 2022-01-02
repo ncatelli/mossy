@@ -96,6 +96,9 @@ pub enum ExprNode {
     Division(Box<ExprNode>, Box<ExprNode>),
     Modulo(Box<ExprNode>, Box<ExprNode>),
 
+    // Unary
+    LogicalNot(Box<ExprNode>),
+
     // Pointer Operations
     Ref(String),
     Deref(Box<ExprNode>),

@@ -307,7 +307,7 @@ enum MultiplicationExprOp {
 
 fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
-        call(),
+        unary(),
         parcel::zero_or_more(parcel::join(
             whitespace_wrapped(
                 expect_character('*')
@@ -315,7 +315,7 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
                     .or(|| expect_character('/').map(|_| MultiplicationExprOp::Slash))
                     .or(|| expect_character('%').map(|_| MultiplicationExprOp::Mod)),
             ),
-            whitespace_wrapped(call()),
+            whitespace_wrapped(unary()),
         ))
         .map(unzip),
     )
@@ -331,6 +331,14 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
                 MultiplicationExprOp::Mod => factor_expr!(lhs, '%', rhs),
             })
     })
+}
+
+fn unary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+    whitespace_wrapped(expect_character('!'))
+        .and_then(|_| expression())
+        .map(Box::new)
+        .map(ExprNode::LogicalNot)
+        .or(call)
 }
 
 fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
