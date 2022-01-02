@@ -498,17 +498,46 @@ fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
         ]))
         .optional(),
         whitespace_wrapped(parcel::one_of(vec![
+            //
+            // long parser
+            //
             parcel::one_of(vec![
-                expect_str("long long int"),
-                expect_str("long long"),
-                expect_str("long int"),
-                expect_str("long"),
+                // long long int
+                whitespace_wrapped(expect_str("long"))
+                    .and_then(|_| whitespace_wrapped(expect_str("long")))
+                    .and_then(|_| whitespace_wrapped(expect_str("int"))),
+                // long long
+                whitespace_wrapped(expect_str("long"))
+                    .and_then(|_| whitespace_wrapped(expect_str("long"))),
+                // long int
+                whitespace_wrapped(expect_str("long"))
+                    .and_then(|_| whitespace_wrapped(expect_str("int"))),
+                // long
+                parcel::BoxedParser::new(expect_str("long")),
             ])
             .map(|_| Type::Integer(Signed::Signed, IntegerWidth::SixtyFour)),
+            //
+            // int parser
+            //
             expect_str("int").map(|_| Type::Integer(Signed::Signed, IntegerWidth::ThirtyTwo)),
-            parcel::one_of(vec![expect_str("short int"), expect_str("short")])
-                .map(|_| Type::Integer(Signed::Signed, IntegerWidth::Sixteen)),
+            //
+            // short parser
+            //
+            parcel::one_of(vec![
+                // short int
+                whitespace_wrapped(expect_str("short"))
+                    .and_then(|_| whitespace_wrapped(expect_str("int"))),
+                // short
+                parcel::BoxedParser::new(expect_str("short")),
+            ])
+            .map(|_| Type::Integer(Signed::Signed, IntegerWidth::Sixteen)),
+            //
+            // char parser
+            //
             expect_str("char").map(|_| Type::Integer(Signed::Signed, IntegerWidth::Eight)),
+            //
+            // void parser
+            //
             expect_str("void").map(|_| Type::Void),
         ])),
     )
