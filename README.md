@@ -75,6 +75,7 @@ multiplication: unary ( ( '/' | '%' | '*' ) unary )*
         ;
 
 unary: '!' expresion
+        | '-' expression
         | call
 
 call: identifier '(' expression? ')'

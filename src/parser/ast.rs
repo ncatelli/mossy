@@ -98,6 +98,7 @@ pub enum ExprNode {
 
     // Unary
     LogicalNot(Box<ExprNode>),
+    Negate(Box<ExprNode>),
 
     // Pointer Operations
     Ref(String),

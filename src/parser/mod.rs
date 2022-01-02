@@ -338,6 +338,14 @@ fn unary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
         .and_then(|_| expression())
         .map(Box::new)
         .map(ExprNode::LogicalNot)
+        .or(|| {
+            whitespace_wrapped(expect_character('-'))
+                .and_then(|_| expression())
+                // prevent negate from eating `-` on integer literals.
+                .predicate(|e| !matches!(e, ExprNode::Primary(Primary::Integer { .. })))
+                .map(Box::new)
+                .map(ExprNode::Negate)
+        })
         .or(call)
 }
 
