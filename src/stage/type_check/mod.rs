@@ -250,25 +250,13 @@ impl TypeAnalysis {
         use crate::parser::ast::ExprNode;
         use crate::parser::ast::Primary;
 
-        use ast::Signed;
-
         match expr {
-            ExprNode::Primary(Primary::Integer {
-                sign: Signed::Unsigned,
-                width,
-                value,
-            }) => Ok(ast::TypedExprNode::Primary(
-                ast::Type::Integer(Signed::Unsigned, width),
-                ast::Primary::Integer {
-                    sign: Signed::Unsigned,
-                    width,
-                    value,
-                },
-            )),
-            ExprNode::Primary(Primary::Integer {
-                sign: Signed::Signed,
-                ..
-            }) => Err("unimplemented: signed integers".to_string()),
+            ExprNode::Primary(Primary::Integer { sign, width, value }) => {
+                Ok(ast::TypedExprNode::Primary(
+                    ast::Type::Integer(sign, width),
+                    ast::Primary::Integer { sign, width, value },
+                ))
+            }
             ExprNode::Primary(Primary::Identifier(identifier)) => self
                 .scopes
                 .lookup(&identifier)
@@ -519,6 +507,12 @@ mod tests {
         ast::{IntegerWidth, Signed, Type, TypedExprNode},
     };
 
+    macro_rules! pad_to_le_64bit_array {
+        ($val:literal) => {
+            $crate::util::pad_to_64bit_array($val.to_le_bytes())
+        };
+    }
+
     #[test]
     fn test_grouping_assigns_correct_type() {
         let analyzer = super::TypeAnalysis::default();
@@ -526,7 +520,7 @@ mod tests {
             ast::ExprNode::Grouping(Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
                 sign: Signed::Unsigned,
                 width: IntegerWidth::Eight,
-                value: 1,
+                value: pad_to_le_64bit_array!(1u8),
             })));
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
@@ -537,7 +531,7 @@ mod tests {
                 stage::ast::Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
-                    value: 1,
+                    value: pad_to_le_64bit_array!(1u8),
                 },
             )),
         );
@@ -550,18 +544,18 @@ mod tests {
             Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
                 sign: Signed::Unsigned,
                 width: IntegerWidth::Eight,
-                value: 2,
+                value: pad_to_le_64bit_array!(2u8),
             })),
             Box::new(ast::ExprNode::Addition(
                 Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
-                    value: 3,
+                    value: pad_to_le_64bit_array!(3u8),
                 })),
                 Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
-                    value: 4,
+                    value: pad_to_le_64bit_array!(4u8),
                 })),
             )),
         )));
@@ -576,7 +570,7 @@ mod tests {
                     stage::ast::Primary::Integer {
                         sign: Signed::Unsigned,
                         width: IntegerWidth::Eight,
-                        value: 2,
+                        value: pad_to_le_64bit_array!(2u8),
                     },
                 )),
                 Box::new(TypedExprNode::Addition(
@@ -586,7 +580,7 @@ mod tests {
                         stage::ast::Primary::Integer {
                             sign: Signed::Unsigned,
                             width: IntegerWidth::Eight,
-                            value: 3,
+                            value: pad_to_le_64bit_array!(3u8),
                         },
                     )),
                     Box::new(TypedExprNode::Primary(
@@ -594,7 +588,7 @@ mod tests {
                         stage::ast::Primary::Integer {
                             sign: Signed::Unsigned,
                             width: IntegerWidth::Eight,
-                            value: 4,
+                            value: pad_to_le_64bit_array!(4u8),
                         },
                     )),
                 )),

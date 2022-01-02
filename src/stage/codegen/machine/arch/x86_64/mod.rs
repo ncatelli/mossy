@@ -364,59 +364,54 @@ fn codegen_expr(
     use crate::stage::ast::{IntegerWidth, Primary, Signed, TypedExprNode};
 
     match expr {
-        TypedExprNode::Primary(
-            _,
-            Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::SixtyFour,
-                value,
-            },
-        ) => codegen_constant_u64(ret_val, value),
-        TypedExprNode::Primary(
-            _,
-            Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::ThirtyTwo,
-                value,
-            },
-        ) => {
-            let uc = core::convert::TryFrom::try_from(value)
-                .expect("value exceeds unsigned 32-bit integer");
-            codegen_constant_u32(ret_val, uc)
-        }
-        TypedExprNode::Primary(
-            _,
-            Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Sixteen,
-                value,
-            },
-        ) => {
-            let uc = core::convert::TryFrom::try_from(value)
-                .expect("value exceeds unsigned 32-bit integer");
-            codegen_constant_u16(ret_val, uc)
-        }
-        TypedExprNode::Primary(
-            _,
-            Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Eight,
-                value,
-            },
-        ) => {
-            let uc = core::convert::TryFrom::try_from(value)
-                .expect("value exceeds unsigned 8-bit integer");
-            codegen_constant_u8(ret_val, uc)
-        }
-        TypedExprNode::Primary(
-            _,
-            Primary::Integer {
-                sign: Signed::Signed,
-                ..
-            },
-        ) => {
-            todo!();
-        }
+        TypedExprNode::Primary(_, Primary::Integer { sign, width, value }) => match (sign, width) {
+            (Signed::Signed, IntegerWidth::Eight) => {
+                let signed_val = u64::from_le_bytes(value);
+                if signed_val.leading_zeros() >= 56 {
+                    codegen_constant_i8(ret_val, signed_val as i8)
+                } else {
+                    panic!("value exceeds signed 8-bit integer")
+                }
+            }
+            (Signed::Signed, IntegerWidth::Sixteen) => {
+                let signed_val = u64::from_le_bytes(value);
+                if signed_val.leading_zeros() >= 48 {
+                    codegen_constant_i16(ret_val, signed_val as i16)
+                } else {
+                    panic!("value exceeds signed 16-bit integer")
+                }
+            }
+            (Signed::Signed, IntegerWidth::ThirtyTwo) => {
+                let signed_val = u64::from_le_bytes(value);
+                if signed_val.leading_zeros() >= 32 {
+                    codegen_constant_i32(ret_val, signed_val as i32)
+                } else {
+                    panic!("value exceeds signed 32-bit integer")
+                }
+            }
+            (Signed::Signed, IntegerWidth::SixtyFour) => {
+                codegen_constant_i64(ret_val, i64::from_le_bytes(value))
+            }
+            (Signed::Unsigned, IntegerWidth::Eight) => {
+                let unsigned_constant = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
+                    .expect("value exceeds unsigned 8-bit integer");
+                codegen_constant_u8(ret_val, unsigned_constant)
+            }
+            (Signed::Unsigned, IntegerWidth::Sixteen) => {
+                let unsigned_constant = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
+                    .expect("value exceeds unsigned 32-bit integer");
+                codegen_constant_u16(ret_val, unsigned_constant)
+            }
+            (Signed::Unsigned, IntegerWidth::ThirtyTwo) => {
+                let unsigned_constant = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
+                    .expect("value exceeds unsigned 32-bit integer");
+                codegen_constant_u32(ret_val, unsigned_constant)
+            }
+            (Signed::Unsigned, IntegerWidth::SixtyFour) => {
+                codegen_constant_u64(ret_val, u64::from_le_bytes(value))
+            }
+        },
+
         TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
             codegen_load_global(ty, ret_val, &identifier)
         }
@@ -505,6 +500,7 @@ fn codegen_expr(
             Signed::Unsigned,
             DivisionVariant::Modulo,
         ),
+
         TypedExprNode::Ref(_, identifier) => codegen_reference(ret_val, &identifier),
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(
@@ -520,9 +516,8 @@ fn codegen_expr(
     }
 }
 
-fn codegen_constant_u64(ret_val: &mut GeneralPurposeRegister, constant: u64) -> Vec<String> {
+fn codegen_constant_i8(ret_val: &mut GeneralPurposeRegister, constant: i8) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
-
     vec![format!(
         "\tmov{}\t${}, %{}\n",
         operator_suffix(WIDTH),
@@ -531,7 +526,17 @@ fn codegen_constant_u64(ret_val: &mut GeneralPurposeRegister, constant: u64) -> 
     )]
 }
 
-fn codegen_constant_u32(ret_val: &mut GeneralPurposeRegister, constant: u32) -> Vec<String> {
+fn codegen_constant_u8(ret_val: &mut GeneralPurposeRegister, constant: u8) -> Vec<String> {
+    const WIDTH: OperandWidth = OperandWidth::QuadWord;
+    vec![format!(
+        "\tmov{}\t${}, %{}\n",
+        operator_suffix(WIDTH),
+        constant,
+        ret_val.fmt_with_operand_width(WIDTH)
+    )]
+}
+
+fn codegen_constant_i16(ret_val: &mut GeneralPurposeRegister, constant: i16) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
@@ -553,8 +558,42 @@ fn codegen_constant_u16(ret_val: &mut GeneralPurposeRegister, constant: u16) -> 
     )]
 }
 
-fn codegen_constant_u8(ret_val: &mut GeneralPurposeRegister, constant: u8) -> Vec<String> {
+fn codegen_constant_i32(ret_val: &mut GeneralPurposeRegister, constant: i32) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
+
+    vec![format!(
+        "\tmov{}\t${}, %{}\n",
+        operator_suffix(WIDTH),
+        constant,
+        ret_val.fmt_with_operand_width(WIDTH)
+    )]
+}
+
+fn codegen_constant_u32(ret_val: &mut GeneralPurposeRegister, constant: u32) -> Vec<String> {
+    const WIDTH: OperandWidth = OperandWidth::QuadWord;
+
+    vec![format!(
+        "\tmov{}\t${}, %{}\n",
+        operator_suffix(WIDTH),
+        constant,
+        ret_val.fmt_with_operand_width(WIDTH)
+    )]
+}
+
+fn codegen_constant_i64(ret_val: &mut GeneralPurposeRegister, constant: i64) -> Vec<String> {
+    const WIDTH: OperandWidth = OperandWidth::QuadWord;
+
+    vec![format!(
+        "\tmov{}\t${}, %{}\n",
+        operator_suffix(WIDTH),
+        constant,
+        ret_val.fmt_with_operand_width(WIDTH)
+    )]
+}
+
+fn codegen_constant_u64(ret_val: &mut GeneralPurposeRegister, constant: u64) -> Vec<String> {
+    const WIDTH: OperandWidth = OperandWidth::QuadWord;
+
     vec![format!(
         "\tmov{}\t${}, %{}\n",
         operator_suffix(WIDTH),
@@ -607,7 +646,7 @@ fn codegen_scaleby(
             ast::Primary::Integer {
                 sign,
                 width: ast::IntegerWidth::SixtyFour,
-                value: size_of as u64,
+                value: crate::util::pad_to_64bit_array((size_of as u64).to_le_bytes()),
             },
         );
 
@@ -653,9 +692,9 @@ fn codegen_subtraction(
 ) -> Vec<String> {
     let width = operand_width_of_type(lhs.r#type());
 
-    allocator.allocate_then(|allocator, rhs_retval| {
+    allocator.allocate_then(|allocator, rhs_ret_val| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
-        let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
+        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, *rhs);
 
         flattenable_instructions!(
             lhs_ctx,
@@ -663,8 +702,8 @@ fn codegen_subtraction(
             vec![format!(
                 "\tsub{}\t%{}, %{}\n",
                 operator_suffix(width),
-                ret_val.fmt_with_operand_width(width),
-                rhs_retval.fmt_with_operand_width(width)
+                rhs_ret_val.fmt_with_operand_width(width),
+                ret_val.fmt_with_operand_width(width)
             )],
         )
     })
@@ -764,6 +803,28 @@ fn codegen_division(
             ],
         )
     })
+}
+
+// Binary
+
+/// Invert a register's value.
+#[allow(unused)]
+fn codegen_invert(
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut GeneralPurposeRegister,
+    expr: ast::TypedExprNode,
+) -> Vec<String> {
+    let width = operand_width_of_type(expr.r#type());
+    let expr_ctx = codegen_expr(allocator, ret_val, expr);
+
+    flattenable_instructions!(
+        expr_ctx,
+        vec![format!(
+            "\tnot{}\t%{}\n",
+            operator_suffix(width),
+            ret_val.fmt_with_operand_width(width)
+        )],
+    )
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -956,6 +1017,12 @@ mod tests {
         };
     }
 
+    macro_rules! pad_to_le_64bit_array {
+        ($val:literal) => {
+            $crate::util::pad_to_64bit_array($val.to_le_bytes())
+        };
+    }
+
     #[test]
     fn should_use_correct_return_register_for_modulo_operations() {
         use crate::stage::CompilationStage;
@@ -968,7 +1035,7 @@ mod tests {
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
-                    value: 10,
+                    value: pad_to_le_64bit_array!(10u8),
                 },
             )),
             Box::new(TypedExprNode::Primary(
@@ -976,7 +1043,7 @@ mod tests {
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
-                    value: 3,
+                    value: pad_to_le_64bit_array!(3u8),
                 },
             )),
         ));
@@ -988,7 +1055,7 @@ mod tests {
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
-                    value: 10,
+                    value: pad_to_le_64bit_array!(10u8),
                 },
             )),
             Box::new(TypedExprNode::Primary(
@@ -996,7 +1063,7 @@ mod tests {
                 Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
-                    value: 3,
+                    value: pad_to_le_64bit_array!(3u8),
                 },
             )),
         ));
@@ -1046,7 +1113,7 @@ mod tests {
                             Primary::Integer {
                                 sign: Signed::Unsigned,
                                 width: IntegerWidth::Eight,
-                                value: 1,
+                                value: pad_to_le_64bit_array!(1u8),
                             },
                         )),
                     )),

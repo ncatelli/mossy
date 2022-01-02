@@ -82,14 +82,19 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
         type_declarator(),
         whitespace_wrapped(parcel::join(
             identifier(),
-            character_wrapped('[', ']', number()),
+            character_wrapped('[', ']', unsigned_number()),
         )),
     )
     .map(|(ty, (id, size))| {
         let size = match size {
-            Primary::Integer { value, .. } => value as usize,
-            Primary::Identifier(_) => todo!(),
-            Primary::Str(_) => panic!("cannot use string literals as size specifier"),
+            Primary::Integer {
+                value,
+                sign: Signed::Unsigned,
+                ..
+            } => usize::from_le_bytes(value),
+            // The remaining three variants are guaranteed to be unreachable by
+            // the parser.
+            _ => unreachable!(),
         };
         (ty, id, size)
     })
@@ -199,7 +204,6 @@ enum EqualityExprOp {
     NotEqual,
 }
 
-#[allow(clippy::redundant_closure)]
 fn equality<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         relational(),
@@ -222,7 +226,6 @@ fn equality<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
                 EqualityExprOp::NotEqual => equality_expr!(lhs, "!=", rhs),
             })
     })
-    .or(|| relational())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -233,7 +236,6 @@ enum RelationalExprOp {
     GreaterEqual,
 }
 
-#[allow(clippy::redundant_closure)]
 fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         addition(),
@@ -264,7 +266,6 @@ fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
                 }
             })
     })
-    .or(|| addition())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -273,7 +274,6 @@ enum AdditionExprOp {
     Minus,
 }
 
-#[allow(clippy::redundant_closure)]
 fn addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         multiplication(),
@@ -296,7 +296,6 @@ fn addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
                 AdditionExprOp::Minus => term_expr!(lhs, '-', rhs),
             })
     })
-    .or(|| multiplication())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -306,7 +305,6 @@ enum MultiplicationExprOp {
     Mod,
 }
 
-#[allow(clippy::redundant_closure)]
 fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         call(),
@@ -333,7 +331,6 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
                 MultiplicationExprOp::Mod => factor_expr!(lhs, '%', rhs),
             })
     })
-    .or(|| call())
 }
 
 fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
@@ -403,20 +400,70 @@ fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary>
 
 fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
     parcel::one_of(vec![
+        dec_i8().map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::Eight,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
         dec_u8().map(|num| Primary::Integer {
             sign: Signed::Unsigned,
             width: IntegerWidth::Eight,
-            value: u64::from(num),
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        dec_i16().map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::Sixteen,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        dec_u16().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::Sixteen,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        dec_i32().map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::ThirtyTwo,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
         }),
         dec_u32().map(|num| Primary::Integer {
-            sign: Signed::Unsigned,
+            sign: Signed::Signed,
             width: IntegerWidth::ThirtyTwo,
-            value: u64::from(num),
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        dec_i64().map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::SixtyFour,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
         }),
         dec_u64().map(|num| Primary::Integer {
             sign: Signed::Unsigned,
             width: IntegerWidth::SixtyFour,
-            value: num,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+    ])
+}
+
+fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
+    parcel::one_of(vec![
+        dec_u8().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::Eight,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        dec_u16().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::Sixteen,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        dec_u32().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::ThirtyTwo,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        dec_u64().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::SixtyFour,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
         }),
     ])
 }
@@ -444,113 +491,158 @@ fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
 }
 
 fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
-    whitespace_wrapped(parcel::one_of(vec![
-        expect_str("long").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour)),
-        expect_str("int").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::ThirtyTwo)),
-        expect_str("short").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Sixteen)),
-        expect_str("char").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Eight)),
-        expect_str("void").map(|_| Type::Void),
-    ]))
+    parcel::join(
+        whitespace_wrapped(parcel::one_of(vec![
+            expect_str("signed").map(|_| Signed::Signed),
+            expect_str("unsigned").map(|_| Signed::Unsigned),
+        ]))
+        .optional(),
+        whitespace_wrapped(parcel::one_of(vec![
+            //
+            // long parser
+            //
+            parcel::one_of(vec![
+                // long long int
+                whitespace_wrapped(expect_str("long"))
+                    .and_then(|_| whitespace_wrapped(expect_str("long")))
+                    .and_then(|_| whitespace_wrapped(expect_str("int"))),
+                // long long
+                whitespace_wrapped(expect_str("long"))
+                    .and_then(|_| whitespace_wrapped(expect_str("long"))),
+                // long int
+                whitespace_wrapped(expect_str("long"))
+                    .and_then(|_| whitespace_wrapped(expect_str("int"))),
+                // long
+                parcel::BoxedParser::new(expect_str("long")),
+            ])
+            .map(|_| Type::Integer(Signed::Signed, IntegerWidth::SixtyFour)),
+            //
+            // int parser
+            //
+            expect_str("int").map(|_| Type::Integer(Signed::Signed, IntegerWidth::ThirtyTwo)),
+            //
+            // short parser
+            //
+            parcel::one_of(vec![
+                // short int
+                whitespace_wrapped(expect_str("short"))
+                    .and_then(|_| whitespace_wrapped(expect_str("int"))),
+                // short
+                parcel::BoxedParser::new(expect_str("short")),
+            ])
+            .map(|_| Type::Integer(Signed::Signed, IntegerWidth::Sixteen)),
+            //
+            // char parser
+            //
+            expect_str("char").map(|_| Type::Integer(Signed::Signed, IntegerWidth::Eight)),
+            //
+            // void parser
+            //
+            expect_str("void").map(|_| Type::Void),
+        ])),
+    )
+    .map(|(sign, ty)| match (sign, ty) {
+        (Some(sign), Type::Integer(_, width)) => Type::Integer(sign, width),
+        (_, ty) => ty,
+    })
 }
 
-fn dec_u64<'a>() -> impl Parser<'a, &'a [(usize, char)], u64> {
-    move |input: &'a [(usize, char)]| {
-        let preparsed_input = input;
-        let res = parcel::one_or_more(digit(10))
-            .map(|digits| {
-                let vd: String = digits.into_iter().collect();
-                vd.parse::<u64>()
-            })
-            .parse(input);
+macro_rules! numeric_type_parser {
+    ($(unsigned, $parser_name:ident, $ret_type:ty,)*) => {
+        $(
+        #[allow(unused)]
+        fn $parser_name<'a>() -> impl Parser<'a, &'a [(usize, char)], $ret_type> {
+            move |input: &'a [(usize, char)]| {
+                let preparsed_input = input;
+                let res = parcel::one_or_more(digit(10))
+                    .map(|digits| {
+                        let vd: String = digits.into_iter().collect();
+                        vd.parse::<$ret_type>()
+                    })
+                    .parse(input);
 
-        match res {
-            Ok(MatchStatus::Match {
-                span,
-                remainder,
-                inner: Ok(u),
-            }) => Ok(MatchStatus::Match {
-                span,
-                remainder,
-                inner: u,
-            }),
+                match res {
+                    Ok(MatchStatus::Match {
+                        span,
+                        remainder,
+                        inner: Ok(u),
+                    }) => Ok(MatchStatus::Match {
+                        span,
+                        remainder,
+                        inner: u,
+                    }),
 
-            Ok(MatchStatus::Match {
-                span: _,
-                remainder: _,
-                inner: Err(_),
-            }) => Ok(MatchStatus::NoMatch(preparsed_input)),
+                    Ok(MatchStatus::Match {
+                        span: _,
+                        remainder: _,
+                        inner: Err(_),
+                    }) => Ok(MatchStatus::NoMatch(preparsed_input)),
 
-            Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
-            Err(e) => Err(e),
+                    Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
+                    Err(e) => Err(e),
+                }
+            }
         }
-    }
-}
+    )*
+    };
+    ($(signed, $parser_name:ident, $ret_type:ty,)*) => {
+        $(
+        #[allow(unused)]
+        fn $parser_name<'a>() -> impl Parser<'a, &'a [(usize, char)], $ret_type> {
+            move |input: &'a [(usize, char)]| {
+                let preparsed_input = input;
+                let res = parcel::join(whitespace_wrapped(expect_character('-')).optional(), parcel::one_or_more(digit(10)))
+                    .map(|(negative, digits)| {
+                        let vd: String = if negative.is_some() {
+                            format!("-{}", digits.into_iter().collect::<String>())
+                        } else {
+                            digits.into_iter().collect()
+                        };
+                        vd.parse::<$ret_type>()
+                    })
+                    .parse(input);
 
-fn dec_u32<'a>() -> impl Parser<'a, &'a [(usize, char)], u32> {
-    move |input: &'a [(usize, char)]| {
-        let preparsed_input = input;
-        let res = parcel::one_or_more(digit(10))
-            .map(|digits| {
-                let vd: String = digits.into_iter().collect();
-                vd.parse::<u32>()
-            })
-            .parse(input);
+                match res {
+                    Ok(MatchStatus::Match {
+                        span,
+                        remainder,
+                        inner: Ok(u),
+                    }) => Ok(MatchStatus::Match {
+                        span,
+                        remainder,
+                        inner: u,
+                    }),
 
-        match res {
-            Ok(MatchStatus::Match {
-                span,
-                remainder,
-                inner: Ok(u),
-            }) => Ok(MatchStatus::Match {
-                span,
-                remainder,
-                inner: u,
-            }),
+                    Ok(MatchStatus::Match {
+                        span: _,
+                        remainder: _,
+                        inner: Err(_),
+                    }) => Ok(MatchStatus::NoMatch(preparsed_input)),
 
-            Ok(MatchStatus::Match {
-                span: _,
-                remainder: _,
-                inner: Err(_),
-            }) => Ok(MatchStatus::NoMatch(preparsed_input)),
-
-            Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
-            Err(e) => Err(e),
+                    Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
+                    Err(e) => Err(e),
+                }
+            }
         }
-    }
+    )*
+    };
 }
 
-fn dec_u8<'a>() -> impl Parser<'a, &'a [(usize, char)], u8> {
-    move |input: &'a [(usize, char)]| {
-        let preparsed_input = input;
-        let res = parcel::one_or_more(digit(10))
-            .map(|digits| {
-                let vd: String = digits.into_iter().collect();
-                vd.parse::<u8>()
-            })
-            .parse(input);
+#[rustfmt::skip]
+numeric_type_parser!(
+    signed, dec_i8, i8,
+    signed, dec_i16, i16,
+    signed, dec_i32, i32,
+    signed, dec_i64, i64,
+);
 
-        match res {
-            Ok(MatchStatus::Match {
-                span,
-                remainder,
-                inner: Ok(u),
-            }) => Ok(MatchStatus::Match {
-                span,
-                remainder,
-                inner: u,
-            }),
-
-            Ok(MatchStatus::Match {
-                span: _,
-                remainder: _,
-                inner: Err(_),
-            }) => Ok(MatchStatus::NoMatch(preparsed_input)),
-
-            Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
-            Err(e) => Err(e),
-        }
-    }
-}
+#[rustfmt::skip]
+numeric_type_parser!(
+    unsigned, dec_u8, u8,
+    unsigned, dec_u16, u16,
+    unsigned, dec_u32, u32,
+    unsigned, dec_u64, u64,
+);
 
 fn whitespace_wrapped<'a, P, B>(parser: P) -> impl Parser<'a, &'a [(usize, char)], B>
 where
@@ -601,12 +693,12 @@ mod tests {
         assert_eq!(
             Ok(CompoundStmts::new(vec![StmtNode::Expression(term_expr!(
                 term_expr!(
-                    term_expr!(primary_expr!(13), '-', primary_expr!(6)),
+                    term_expr!(primary_expr!(i8 13), '-', primary_expr!(i8 6)),
                     '+',
-                    factor_expr!(primary_expr!(4), '*', primary_expr!(5))
+                    factor_expr!(primary_expr!(i8 4), '*', primary_expr!(i8 5))
                 ),
                 '+',
-                factor_expr!(primary_expr!(8), '/', primary_expr!(3))
+                factor_expr!(primary_expr!(i8 8), '/', primary_expr!(i8 3))
             ))])),
             res
         )
@@ -658,7 +750,7 @@ mod tests {
                 ExprNode::Primary(Primary::Identifier("x".to_string())),
                 assignment_expr!(
                     ExprNode::Primary(Primary::Identifier("y".to_string())),
-                    primary_expr!(5)
+                    primary_expr!(i8 5)
                 )
             ),
         )]));
@@ -682,9 +774,9 @@ mod tests {
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
             factor_expr!(
-                primary_expr!(2),
+                primary_expr!(i8 2),
                 '*',
-                grouping_expr!(term_expr!(primary_expr!(3), '+', primary_expr!(4)))
+                grouping_expr!(term_expr!(primary_expr!(i8 3), '+', primary_expr!(i8 4)))
             ),
         )]));
 
@@ -706,7 +798,7 @@ mod tests {
             .map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
-            ExprNode::Index("x".to_string(), Box::new(primary_expr!(u8 1))),
+            ExprNode::Index("x".to_string(), Box::new(primary_expr!(i8 1))),
         )]));
 
         assert_eq!(&expected_result, &res);

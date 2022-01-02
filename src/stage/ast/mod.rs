@@ -172,7 +172,7 @@ pub enum Primary {
     Integer {
         sign: Signed,
         width: IntegerWidth,
-        value: u64,
+        value: [u8; 8],
     },
     Identifier(Type, String),
     Str(Vec<u8>),

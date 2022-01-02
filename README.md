@@ -71,8 +71,11 @@ relational: addition ( ( '<' | '<=' | '>' | '>=' ) addition )*
 addition: multiplication ( ( '-' | '+' ) multiplication )* 
         ;
 
-multiplication: call ( ( '/' | '%' | '*' ) call )* 
+multiplication: unary ( ( '/' | '%' | '*' ) unary )* 
         ;
+
+unary: '!' expresion
+        | call
 
 call: identifier '(' expression? ')'
         | prefix_expression
@@ -113,12 +116,15 @@ optional_pointer: ('*' optional_pointer)?
         ;
 
 type_specifier: 'char'
+        | 'short int'
         | 'short'
         | 'int'
+        | 'long long int'
+        | 'long long'
+        | 'long int'
         | 'long'
         | 'void'
         ;
-
 
 string_literal: '"' (alphabetic | integer_literal) '"'
 
