@@ -387,10 +387,10 @@ fn postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Expr
 }
 
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
-    identifier()
-        .map(|id| ExprNode::Primary(Primary::Identifier(id)))
+    number()
+        .map(ExprNode::Primary)
         .or(|| string_literal().map(ExprNode::Primary))
-        .or(|| number().map(ExprNode::Primary))
+        .or(|| identifier().map(|id| ExprNode::Primary(Primary::Identifier(id))))
         .or(grouping)
 }
 
@@ -409,9 +409,16 @@ fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary>
     character_wrapped(
         '"',
         '"',
-        parcel::zero_or_more(alphabetic().or(|| digit(10))),
+        parcel::zero_or_more(
+            ascii_alphanumeric()
+                .or(ascii_whitespace)
+                .or(ascii_control)
+                // escaped quote
+                .or(|| expect_character('\\').and_then(|_| expect_character('\"')))
+                .map(|c| c as u8),
+        ),
     )
-    .map(|chars| ast::Primary::Str(chars.into_iter().map(|c| c as u8).collect::<Vec<u8>>()))
+    .map(ast::Primary::Str)
 }
 
 fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
@@ -485,7 +492,8 @@ fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary
 }
 
 fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
-    parcel::one_or_more(alphabetic()).map(|chars| chars.into_iter().collect())
+    parcel::one_or_more(ascii_alphanumeric().or(|| expect_character('_')))
+        .map(|chars| chars.into_iter().collect())
 }
 
 fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
@@ -660,6 +668,18 @@ numeric_type_parser!(
     unsigned, dec_u64, u64,
 );
 
+fn ascii_whitespace<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
+    any_character().predicate(|c| c.is_ascii_whitespace())
+}
+
+fn ascii_alphanumeric<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
+    any_character().predicate(|c| c.is_ascii_alphanumeric())
+}
+
+fn ascii_control<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
+    any_character().predicate(|c| c.is_ascii_control())
+}
+
 fn whitespace_wrapped<'a, P, B>(parser: P) -> impl Parser<'a, &'a [(usize, char)], B>
 where
     B: 'a,
@@ -813,6 +833,25 @@ mod tests {
                 '*',
                 grouping_expr!(term_expr!(primary_expr!(i8 3), '+', primary_expr!(i8 4)))
             ),
+        )]));
+
+        assert_eq!(&expected_result, &res);
+    }
+
+    #[test]
+    fn should_parse_string_literals() {
+        use parcel::Parser;
+
+        let input: Vec<(usize, char)> = "{ \"hello\n\t\\\"world\\\"\"; }"
+            .chars()
+            .enumerate()
+            .collect();
+        let res = crate::parser::compound_statements()
+            .parse(&input)
+            .map(|ms| ms.unwrap());
+
+        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
+            primary_expr!(str "hello\n\t\"world\""),
         )]));
 
         assert_eq!(&expected_result, &res);

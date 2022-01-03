@@ -28,7 +28,7 @@ statement:
         | return_stmt
         ;
 
-var_declaration: type_declarator  '[' integer_literal ']' ';'
+var_declaration: type_declarator  '[' digit ']' ';'
         | type_declarator identifier_list ';'
         ;
 
@@ -93,11 +93,11 @@ postfix_expression: primary
 
 primary: identifier
         | string_literal
-        | integer_literal
+        | digit
         | grouping 
         ;
 
-char:   alphabetic
+char:   ascii_alphabetic
         ;
 
 grouping: '(' expression ')'
@@ -107,7 +107,7 @@ identifier_list: identifier
         | identifier ',' identifier_list
         ;
 
-identifier: alphabetic+
+identifier: ( ascii_alphabetic | numeric | '_' )+
         ;
 
 type_declarator:   type_specifier optional_pointer
@@ -127,10 +127,21 @@ type_specifier: 'char'
         | 'void'
         ;
 
-string_literal: '"' (alphabetic | integer_literal) '"'
+string_literal: '"' ( ascii_alphanumeric | ' ' | ascii_whitespace | ascii_control | '\"')* '"'
 
-integer_literal:  [0-9]*;
+digit:  [0-9]*;
 
+ascii_alphabetic: [a-zA-Z]+;
 
-alphabetic: [a-zA-Z]+;
+ascii_alphanumeric: ascii_alphabetic
+        | digit
+        ;
+
+ascii_whitespace: *DEVNOTE: ascii check spec*
+        ;
+
+ascii_control: *DEVNOTE: ascii check spec*
+        ;
+
+space: ' '
 ```
