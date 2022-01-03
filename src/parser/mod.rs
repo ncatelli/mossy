@@ -387,10 +387,10 @@ fn postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Expr
 }
 
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
-    identifier()
-        .map(|id| ExprNode::Primary(Primary::Identifier(id)))
+    number()
+        .map(ExprNode::Primary)
         .or(|| string_literal().map(ExprNode::Primary))
-        .or(|| number().map(ExprNode::Primary))
+        .or(|| identifier().map(|id| ExprNode::Primary(Primary::Identifier(id))))
         .or(grouping)
 }
 
@@ -492,7 +492,7 @@ fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary
 }
 
 fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
-    parcel::one_or_more(ascii_alphabetic().or(|| expect_character('_')))
+    parcel::one_or_more(ascii_alphanumeric().or(|| expect_character('_')))
         .map(|chars| chars.into_iter().collect())
 }
 
@@ -667,10 +667,6 @@ numeric_type_parser!(
     unsigned, dec_u32, u32,
     unsigned, dec_u64, u64,
 );
-
-fn ascii_alphabetic<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
-    any_character().predicate(|c| c.is_ascii_alphabetic())
-}
 
 fn ascii_whitespace<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
     any_character().predicate(|c| c.is_ascii_whitespace())
