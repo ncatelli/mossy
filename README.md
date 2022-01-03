@@ -127,10 +127,18 @@ type_specifier: 'char'
         | 'void'
         ;
 
-string_literal: '"' (alphabetic | integer_literal) '"'
+string_literal: '"' (alphabetic | integer_literal | whitespace )* '"'
 
 integer_literal:  [0-9]*;
 
+ascii_alphabetic: [a-zA-Z]+;
 
-alphabetic: [a-zA-Z]+;
+ascii_alphanumeric: alphabetic
+        | integer_literal
+        ;
+
+whitespace: ' '
+        | '\t'
+        | '\n'
+        ;
 ```
