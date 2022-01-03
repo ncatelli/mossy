@@ -133,7 +133,7 @@ digit:  [0-9]*;
 
 ascii_alphabetic: [a-zA-Z]+;
 
-ascii_alphanumeric: alphabetic
+ascii_alphanumeric: ascii_alphabetic
         | digit
         ;
 

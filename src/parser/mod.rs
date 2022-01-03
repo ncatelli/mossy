@@ -492,7 +492,8 @@ fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary
 }
 
 fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
-    parcel::one_or_more(ascii_alphabetic()).map(|chars| chars.into_iter().collect())
+    parcel::one_or_more(ascii_alphabetic().or(|| expect_character('_')))
+        .map(|chars| chars.into_iter().collect())
 }
 
 fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
