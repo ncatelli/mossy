@@ -501,6 +501,9 @@ fn codegen_expr(
             DivisionVariant::Modulo,
         ),
 
+        TypedExprNode::LogicalNot(_, expr) => codegen_not(allocator, ret_val, *expr),
+        TypedExprNode::Negate(_, expr) => codegen_negate(allocator, ret_val, *expr),
+
         TypedExprNode::Ref(_, identifier) => codegen_reference(ret_val, &identifier),
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(
@@ -917,6 +920,54 @@ fn codegen_compare_and_jmp(
         .chain(codegen_jump(cond_false_id).into_iter())
         .collect()
     })
+}
+
+// Unary
+
+/// Negate a register's value.
+#[allow(unused)]
+fn codegen_negate(
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut GeneralPurposeRegister,
+    expr: ast::TypedExprNode,
+) -> Vec<String> {
+    let width = operand_width_of_type(expr.r#type());
+    let expr_ctx = codegen_expr(allocator, ret_val, expr);
+
+    flattenable_instructions!(
+        expr_ctx,
+        vec![format!(
+            "\tneg{}\t%{}\n",
+            operator_suffix(width),
+            ret_val.fmt_with_operand_width(width)
+        )],
+    )
+}
+
+/// Logically negate a register's value.
+fn codegen_not(
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut GeneralPurposeRegister,
+    expr: ast::TypedExprNode,
+) -> Vec<String> {
+    let expr_ctx = codegen_expr(allocator, ret_val, expr);
+    let byte_ret_val_reg = ret_val.fmt_with_operand_width(OperandWidth::Byte);
+    let quadword_ret_val_reg = ret_val.fmt_with_operand_width(OperandWidth::QuadWord);
+
+    flattenable_instructions!(
+        expr_ctx,
+        vec![
+            format!(
+                "\ttestq\t%{width_adj_reg}, %{width_adj_reg}\n",
+                width_adj_reg = quadword_ret_val_reg
+            ),
+            format!("\tsete\t%{}\n", byte_ret_val_reg),
+            format!(
+                "\tmovzbq\t%{}, %{}\n",
+                byte_ret_val_reg, quadword_ret_val_reg
+            )
+        ],
+    )
 }
 
 fn codegen_call(
