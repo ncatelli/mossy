@@ -409,7 +409,14 @@ fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary>
     character_wrapped(
         '"',
         '"',
-        parcel::zero_or_more(ascii_alphanumeric().or(ascii_whitespace).map(|c| c as u8)),
+        parcel::zero_or_more(
+            ascii_alphanumeric()
+                .or(ascii_whitespace)
+                .or(ascii_control)
+                // escaped quote
+                .or(|| expect_character('\\').and_then(|_| expect_character('\"')))
+                .map(|c| c as u8),
+        ),
     )
     .map(ast::Primary::Str)
 }
@@ -661,36 +668,19 @@ numeric_type_parser!(
 );
 
 fn ascii_alphabetic<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
-    move |input: &'a [(usize, char)]| match input.get(0) {
-        Some(&(pos, next)) if next.is_ascii_alphabetic() => Ok(MatchStatus::Match {
-            span: pos..pos + 1,
-            remainder: &input[1..],
-            inner: next,
-        }),
-        _ => Ok(MatchStatus::NoMatch(input)),
-    }
+    any_character().predicate(|c| c.is_ascii_alphabetic())
 }
 
 fn ascii_whitespace<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
-    move |input: &'a [(usize, char)]| match input.get(0) {
-        Some(&(pos, next)) if next.is_ascii_whitespace() => Ok(MatchStatus::Match {
-            span: pos..pos + 1,
-            remainder: &input[1..],
-            inner: next,
-        }),
-        _ => Ok(MatchStatus::NoMatch(input)),
-    }
+    any_character().predicate(|c| c.is_ascii_whitespace())
 }
 
 fn ascii_alphanumeric<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
-    move |input: &'a [(usize, char)]| match input.get(0) {
-        Some(&(pos, next)) if next.is_ascii_alphanumeric() => Ok(MatchStatus::Match {
-            span: pos..pos + 1,
-            remainder: &input[1..],
-            inner: next,
-        }),
-        _ => Ok(MatchStatus::NoMatch(input)),
-    }
+    any_character().predicate(|c| c.is_ascii_alphanumeric())
+}
+
+fn ascii_control<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
+    any_character().predicate(|c| c.is_ascii_control())
 }
 
 fn whitespace_wrapped<'a, P, B>(parser: P) -> impl Parser<'a, &'a [(usize, char)], B>
@@ -855,13 +845,16 @@ mod tests {
     fn should_parse_string_literals() {
         use parcel::Parser;
 
-        let input: Vec<(usize, char)> = "{ \"hello\n\tworld\"; }".chars().enumerate().collect();
+        let input: Vec<(usize, char)> = "{ \"hello\n\t\\\"world\\\"\"; }"
+            .chars()
+            .enumerate()
+            .collect();
         let res = crate::parser::compound_statements()
             .parse(&input)
             .map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
-            primary_expr!(str "hello\n\tworld"),
+            primary_expr!(str "hello\n\t\"world\""),
         )]));
 
         assert_eq!(&expected_result, &res);
