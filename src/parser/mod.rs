@@ -335,12 +335,12 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
 
 fn unary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     whitespace_wrapped(expect_character('!'))
-        .and_then(|_| expression())
+        .and_then(|_| call())
         .map(Box::new)
         .map(ExprNode::LogicalNot)
         .or(|| {
             whitespace_wrapped(expect_character('-'))
-                .and_then(|_| expression())
+                .and_then(|_| call())
                 // prevent negate from eating `-` on integer literals.
                 .predicate(|e| !matches!(e, ExprNode::Primary(Primary::Integer { .. })))
                 .map(Box::new)
@@ -716,6 +716,25 @@ mod tests {
                 '+',
                 factor_expr!(primary_expr!(i8 8), '/', primary_expr!(i8 3))
             ))])),
+            res
+        )
+    }
+
+    #[test]
+    fn should_parse_unary_expressions() {
+        use parcel::Parser;
+
+        let input: Vec<(usize, char)> = "{ !1 + -2; }".chars().enumerate().collect();
+        let res = crate::parser::compound_statements()
+            .parse(&input)
+            .map(|ms| ms.unwrap());
+
+        assert_eq!(
+            Ok(CompoundStmts::new(vec![StmtNode::Expression(term_expr!(
+                ExprNode::LogicalNot(Box::new(primary_expr!(i8 1))),
+                '+',
+                primary_expr!(i8 - 2)
+            ),)])),
             res
         )
     }

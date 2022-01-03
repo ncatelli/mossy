@@ -74,8 +74,8 @@ addition: multiplication ( ( '-' | '+' ) multiplication )*
 multiplication: unary ( ( '/' | '%' | '*' ) unary )* 
         ;
 
-unary: '!' expresion
-        | '-' expression
+unary: '!' call 
+        | '-' call
         | call
 
 call: identifier '(' expression? ')'
