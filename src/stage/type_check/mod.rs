@@ -429,7 +429,7 @@ impl TypeAnalysis {
                 .map(|(ty, expr)| ast::TypedExprNode::Deref(ty, Box::new(expr))),
             ExprNode::Index(identifier, index) => {
                 let ptr_width =
-                    ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::SixtyFour);
+                    ast::Type::Integer(ast::Signed::Signed, ast::IntegerWidth::SixtyFour);
 
                 let index_expr = self.analyze_expression(*index)?;
                 let index_expr_ty = &index_expr.r#type();
@@ -624,10 +624,10 @@ mod tests {
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
         let expected = TypedExprNode::IdentifierAssignment(
-            generate_type_specifier!(u8).pointer_to(),
+            generate_type_specifier!(i8).pointer_to(),
             "x".to_string(),
             Box::new(TypedExprNode::Primary(
-                generate_type_specifier!(u8).pointer_to(),
+                generate_type_specifier!(i8).pointer_to(),
                 stage::ast::Primary::Str("hello".chars().map(|c| c as u8).collect()),
             )),
         );

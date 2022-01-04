@@ -3,10 +3,17 @@ macro_rules! generate_type_specifier {
         $crate::stage::ast::Type::Integer($sign, $width)
     };
     (char) => {
-        generate_type_specifier!(u8)
+        generate_type_specifier!(i8)
     };
     (ptr => $ty:expr) => {
         $crate::stage::ast::Type::Pointer(Box::new($ty))
+    };
+    (i8) => {
+        generate_type_specifier!(
+            integer,
+            $crate::stage::ast::Signed::Signed,
+            $crate::stage::ast::IntegerWidth::Eight
+        )
     };
     (u8) => {
         generate_type_specifier!(

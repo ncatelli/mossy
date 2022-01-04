@@ -330,7 +330,7 @@ fn codegen_load_global(
 
 fn codegen_global_str(identifier: &str, str_literal: &[u8]) -> Vec<String> {
     flattenable_instructions!(
-        vec!["\t.data\n".to_string()],
+        vec!["\t.section .rodata\n".to_string()],
         codegen_label(identifier),
         str_literal
             .iter()
