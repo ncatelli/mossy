@@ -558,7 +558,7 @@ fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
             //
             // char parser
             //
-            expect_str("char").map(|_| Type::Integer(Signed::Unsigned, IntegerWidth::Eight)),
+            expect_str("char").map(|_| Type::Integer(Signed::Signed, IntegerWidth::Eight)),
             //
             // void parser
             //
