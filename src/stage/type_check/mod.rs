@@ -624,10 +624,10 @@ mod tests {
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
         let expected = TypedExprNode::IdentifierAssignment(
-            generate_type_specifier!(u8).pointer_to(),
+            generate_type_specifier!(i8).pointer_to(),
             "x".to_string(),
             Box::new(TypedExprNode::Primary(
-                generate_type_specifier!(u8).pointer_to(),
+                generate_type_specifier!(i8).pointer_to(),
                 stage::ast::Primary::Str("hello".chars().map(|c| c as u8).collect()),
             )),
         );
