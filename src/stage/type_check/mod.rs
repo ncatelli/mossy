@@ -2,10 +2,51 @@
 //! additional type checking and enrichment.
 
 use super::CompilationStage;
-use crate::stage::ast::{self, FuncProto, TypeCompatibility, Typed};
+use crate::stage::ast::{self, FuncProto, Typed};
 
 mod scopes;
 use scopes::ScopeStack;
+
+enum CompatibilityResult {
+    Equivalent,
+    WidenTo(ast::Type),
+    Scale(ast::Type),
+    Incompatible,
+}
+
+trait TypeCompatibility {
+    type Output;
+    type Rhs;
+
+    fn type_compatible(&self, right: &Self::Rhs, flow_left: bool) -> Self::Output;
+}
+
+impl TypeCompatibility for ast::Type {
+    type Output = CompatibilityResult;
+    type Rhs = ast::Type;
+
+    fn type_compatible(&self, right: &Self::Rhs, flow_left: bool) -> Self::Output {
+        use ast::Type;
+        match (self, right) {
+            (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,
+            (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width))
+                if l_width != r_width && l_sign == r_sign && !flow_left =>
+            {
+                let widen_to_width = if l_width > r_width { l_width } else { r_width };
+                CompatibilityResult::WidenTo(Type::Integer(*l_sign, *widen_to_width))
+            }
+            (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width))
+                if l_width >= r_width && l_sign == r_sign && flow_left =>
+            {
+                let widen_to_width = if l_width > r_width { l_width } else { r_width };
+                CompatibilityResult::WidenTo(Type::Integer(*l_sign, *widen_to_width))
+            }
+            (Type::Pointer(ty), Type::Integer(_, _)) => CompatibilityResult::Scale(*ty.clone()),
+
+            _ => CompatibilityResult::Incompatible,
+        }
+    }
+}
 
 /// TypeAnalysis stores a scope stack for maintaining local variables.
 #[derive(Default)]
@@ -173,15 +214,13 @@ impl TypeAnalysis {
                     let expr_t = typed_expr.r#type();
 
                     let rt_type = match proto.return_type.as_ref().type_compatible(&expr_t, true) {
-                        ast::CompatibilityResult::Equivalent => {
-                            Ok(proto.return_type.as_ref().clone())
-                        }
-                        ast::CompatibilityResult::WidenTo(new_type) => Ok(new_type),
-                        ast::CompatibilityResult::Incompatible => Err(format!(
+                        CompatibilityResult::Equivalent => Ok(proto.return_type.as_ref().clone()),
+                        CompatibilityResult::WidenTo(new_type) => Ok(new_type),
+                        CompatibilityResult::Incompatible => Err(format!(
                             "function type and return type are incompatible: {:?}",
                             proto.return_type.as_ref()
                         )),
-                        ast::CompatibilityResult::Scale(_) => todo!(),
+                        CompatibilityResult::Scale(_) => todo!(),
                     }?;
 
                     Ok(ast::TypedStmtNode::Return(
@@ -314,22 +353,22 @@ impl TypeAnalysis {
                         .map(|dm| dm.r#type.type_compatible(&rhs.r#type(), true))
                         .ok_or(format!("symbol {} undefined", &id))
                         .and_then(|type_compat| match type_compat {
-                            ast::CompatibilityResult::Equivalent => Ok(lhs_ty),
-                            ast::CompatibilityResult::WidenTo(ty) => Ok(ty),
-                            ast::CompatibilityResult::Incompatible => {
+                            CompatibilityResult::Equivalent => Ok(lhs_ty),
+                            CompatibilityResult::WidenTo(ty) => Ok(ty),
+                            CompatibilityResult::Incompatible => {
                                 Err(format!("invalid type in identifier lookup for ({}):\n\texpected: lhs({:?})\n\tgot: rhs({:?})", &id, lhs_ty, &rhs.r#type()))
                             }
-                            ast::CompatibilityResult::Scale(t) => Ok(t),
+                            CompatibilityResult::Scale(t) => Ok(t),
                         })
                         .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, id, Box::new(rhs))),
                     TypedExprNode::Deref(ty, expr) => match ty.type_compatible(&rhs.r#type(), true)
                     {
-                        ast::CompatibilityResult::Equivalent => Ok(ty),
-                        ast::CompatibilityResult::WidenTo(ty) => Ok(ty),
-                        ast::CompatibilityResult::Incompatible => {
+                        CompatibilityResult::Equivalent => Ok(ty),
+                        CompatibilityResult::WidenTo(ty) => Ok(ty),
+                        CompatibilityResult::Incompatible => {
                             Err(format!("invalid type: ({:?})", ty))
                         }
-                        ast::CompatibilityResult::Scale(t) => Ok(t),
+                        CompatibilityResult::Scale(t) => Ok(t),
                     }
                     .map(|ty| ast::TypedExprNode::DerefAssignment(ty, expr, Box::new(rhs))),
                     // Fail on any other type
@@ -435,13 +474,11 @@ impl TypeAnalysis {
                 let index_expr_ty = &index_expr.r#type();
 
                 let index_expr = match ptr_width.type_compatible(&index_expr.r#type(), true) {
-                    ast::CompatibilityResult::Equivalent => Some(index_expr),
-                    ast::CompatibilityResult::WidenTo(ty) => {
+                    CompatibilityResult::Equivalent => Some(index_expr),
+                    CompatibilityResult::WidenTo(ty) => {
                         Some(ast::TypedExprNode::Grouping(ty, Box::new(index_expr)))
                     }
-                    ast::CompatibilityResult::Scale(_) | ast::CompatibilityResult::Incompatible => {
-                        None
-                    }
+                    CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
                 }
                 .ok_or_else(|| {
                     format!(
@@ -496,10 +533,10 @@ impl TypeAnalysis {
         let rhs = self.analyze_expression(rhs).unwrap();
 
         match lhs.r#type().type_compatible(&rhs.r#type(), false) {
-            ast::CompatibilityResult::Equivalent => Some((lhs.r#type(), lhs, rhs)),
-            ast::CompatibilityResult::WidenTo(ty) => Some((ty, lhs, rhs)),
-            ast::CompatibilityResult::Incompatible => None,
-            ast::CompatibilityResult::Scale(ty) => Some((
+            CompatibilityResult::Equivalent => Some((lhs.r#type(), lhs, rhs)),
+            CompatibilityResult::WidenTo(ty) => Some((ty, lhs, rhs)),
+            CompatibilityResult::Incompatible => None,
+            CompatibilityResult::Scale(ty) => Some((
                 ty.clone(),
                 lhs,
                 ast::TypedExprNode::ScaleBy(ty, Box::new(rhs)),
