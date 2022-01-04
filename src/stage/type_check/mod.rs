@@ -429,7 +429,7 @@ impl TypeAnalysis {
                 .map(|(ty, expr)| ast::TypedExprNode::Deref(ty, Box::new(expr))),
             ExprNode::Index(identifier, index) => {
                 let ptr_width =
-                    ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::SixtyFour);
+                    ast::Type::Integer(ast::Signed::Signed, ast::IntegerWidth::SixtyFour);
 
                 let index_expr = self.analyze_expression(*index)?;
                 let index_expr_ty = &index_expr.r#type();
