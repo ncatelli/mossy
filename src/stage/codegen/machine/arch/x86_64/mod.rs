@@ -474,27 +474,29 @@ fn codegen_expr(
             rhs,
         ),
 
-        TypedExprNode::Addition(Type::Pointer(_), lhs, rhs) => {
-            codegen_addition(allocator, ret_val, lhs, rhs)
+        TypedExprNode::Addition(Type::Pointer(ty), lhs, rhs) => {
+            codegen_addition(allocator, ret_val, *ty, lhs, rhs)
         }
-        TypedExprNode::Addition(_, lhs, rhs) => codegen_addition(allocator, ret_val, lhs, rhs),
-        TypedExprNode::Subtraction(_, lhs, rhs) => {
-            codegen_subtraction(allocator, ret_val, lhs, rhs)
+        TypedExprNode::Addition(ty, lhs, rhs) => codegen_addition(allocator, ret_val, ty, lhs, rhs),
+        TypedExprNode::Subtraction(ty, lhs, rhs) => {
+            codegen_subtraction(allocator, ret_val, ty, lhs, rhs)
         }
-        TypedExprNode::Multiplication(_, lhs, rhs) => {
-            codegen_multiplication(allocator, ret_val, lhs, rhs)
+        TypedExprNode::Multiplication(ty, lhs, rhs) => {
+            codegen_multiplication(allocator, ret_val, ty, lhs, rhs)
         }
-        TypedExprNode::Division(_, lhs, rhs) => codegen_division(
+        TypedExprNode::Division(ty, lhs, rhs) => codegen_division(
             allocator,
             ret_val,
+            ty,
             lhs,
             rhs,
             Signed::Unsigned,
             DivisionVariant::Division,
         ),
-        TypedExprNode::Modulo(_, lhs, rhs) => codegen_division(
+        TypedExprNode::Modulo(ty, lhs, rhs) => codegen_division(
             allocator,
             ret_val,
+            ty,
             lhs,
             rhs,
             Signed::Unsigned,
@@ -653,7 +655,13 @@ fn codegen_scaleby(
             },
         );
 
-        codegen_multiplication(allocator, ret_val, Box::new(scale_by_expr), expr)
+        codegen_multiplication(
+            allocator,
+            ret_val,
+            ast::Type::Integer(sign, ast::IntegerWidth::SixtyFour),
+            Box::new(scale_by_expr),
+            expr,
+        )
     } else {
         panic!("invalid scale_by types")
     }
@@ -662,10 +670,11 @@ fn codegen_scaleby(
 fn codegen_addition(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(lhs.r#type());
+    let width = operand_width_of_type(ty);
 
     allocator.allocate_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
@@ -690,10 +699,11 @@ fn codegen_addition(
 fn codegen_subtraction(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(lhs.r#type());
+    let width = operand_width_of_type(ty);
 
     allocator.allocate_then(|allocator, rhs_ret_val| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
@@ -715,10 +725,11 @@ fn codegen_subtraction(
 fn codegen_multiplication(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(lhs.r#type());
+    let width = operand_width_of_type(ty);
 
     allocator.allocate_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
@@ -746,6 +757,7 @@ enum DivisionVariant {
 fn codegen_division(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
     sign: crate::stage::ast::Signed,
@@ -753,7 +765,7 @@ fn codegen_division(
 ) -> Vec<String> {
     use crate::stage::ast::Signed;
 
-    let width = operand_width_of_type(lhs.r#type());
+    let width = operand_width_of_type(ty);
 
     allocator.allocate_then(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
