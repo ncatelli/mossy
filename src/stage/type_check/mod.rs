@@ -771,6 +771,9 @@ mod tests {
     #[test]
     fn should_assign_nearest_ranked_size() {
         let analyzer = super::TypeAnalysis::default();
+
+        // promotion of integer size
+
         let pre_typed_ast = ast::ExprNode::Addition(
             Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
                 sign: Signed::Unsigned,
@@ -799,6 +802,44 @@ mod tests {
                 generate_type_specifier!(i8),
                 stage::ast::Primary::Integer {
                     sign: Signed::Signed,
+                    width: IntegerWidth::Eight,
+                    value: pad_to_le_64bit_array!(1u8),
+                },
+            )),
+        );
+
+        assert_eq!(Ok(expected), typed_ast);
+
+        // equivalent size
+
+        let pre_typed_ast = ast::ExprNode::Addition(
+            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
+                sign: Signed::Unsigned,
+                width: IntegerWidth::Eight,
+                value: pad_to_le_64bit_array!(1u8),
+            })),
+            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
+                sign: Signed::Unsigned,
+                width: IntegerWidth::Eight,
+                value: pad_to_le_64bit_array!(1u8),
+            })),
+        );
+
+        let typed_ast = analyzer.analyze_expression(pre_typed_ast);
+        let expected = TypedExprNode::Addition(
+            generate_type_specifier!(u8),
+            Box::new(TypedExprNode::Primary(
+                generate_type_specifier!(u8),
+                stage::ast::Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: pad_to_le_64bit_array!(1u8),
+                },
+            )),
+            Box::new(TypedExprNode::Primary(
+                generate_type_specifier!(u8),
+                stage::ast::Primary::Integer {
+                    sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
                     value: pad_to_le_64bit_array!(1u8),
                 },
