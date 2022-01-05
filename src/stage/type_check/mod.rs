@@ -85,10 +85,11 @@ fn calculate_satisfying_integer_size_from_rank(lhs: usize, rhs: usize) -> usize 
     let max = core::cmp::max(lhs, rhs);
     let min = core::cmp::min(lhs, rhs);
 
-    match (max, min) {
-        // promote to next largest signed integer
-        _ if !is_even(max) && (max - min) == 1 => max + 1,
-        _ => max,
+    // promote to next largest signed integer
+    if !is_even(max) && (max - min) == 1 {
+        max + 1
+    } else {
+        max
     }
 }
 
