@@ -128,14 +128,10 @@ impl TypeCompatibility for ast::Type {
                         calculate_satisfying_integer_size_from_rank(lhs_rank, rhs_rank);
 
                     core::convert::TryFrom::try_from(adjusted_rank)
-                        .map(
-                            |Integer {
-                                 signed: sign,
-                                 width,
-                             }| {
-                                CompatibilityResult::WidenTo(Type::Integer(sign, width))
-                            },
-                        )
+                        .map(|Integer { signed, width }| (signed, width))
+                        .map(|(sign, width)| {
+                            CompatibilityResult::WidenTo(Type::Integer(sign, width))
+                        })
                         .unwrap_or(CompatibilityResult::Incompatible)
                 }
             }
