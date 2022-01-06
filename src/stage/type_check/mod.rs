@@ -85,8 +85,6 @@ fn calculate_satisfying_integer_size_from_rank(lhs: usize, rhs: usize) -> usize 
     let max = core::cmp::max(lhs, rhs);
     let min = core::cmp::min(lhs, rhs);
 
-    println!("max:{}\nmin: {}", is_even(max), is_even(min));
-
     // promote to next largest signed integer
     if !is_even(max) && is_even(min) {
         max + 1
@@ -544,6 +542,20 @@ impl TypeAnalysis {
             ExprNode::Negate(expr) => self
                 .analyze_expression(*expr)
                 .map(|expr| (expr.r#type(), expr))
+                .and_then(|(expr_type, expr)| {
+                    match expr_type.type_compatible(&generate_type_specifier!(i8), true) {
+                        CompatibilityResult::Equivalent => Some(expr_type),
+                        CompatibilityResult::WidenTo(ty) => Some(ty),
+                        CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
+                    }
+                    .ok_or_else(|| {
+                        format!(
+                            "negate operation expected iteger type: got {:?}",
+                            expr.r#type()
+                        )
+                    })
+                    .map(|ty| (ty, expr))
+                })
                 .map(|(expr_type, expr)| ast::TypedExprNode::Negate(expr_type, Box::new(expr))),
             ExprNode::Invert(expr) => self
                 .analyze_expression(*expr)
