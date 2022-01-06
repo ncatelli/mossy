@@ -2,10 +2,144 @@
 //! additional type checking and enrichment.
 
 use super::CompilationStage;
-use crate::stage::ast::{self, FuncProto, TypeCompatibility, Typed};
+use crate::stage::ast::{self, FuncProto, Typed};
 
 mod scopes;
 use scopes::ScopeStack;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Integer {
+    signed: ast::Signed,
+    width: ast::IntegerWidth,
+}
+
+impl Integer {
+    fn new(signed: ast::Signed, width: ast::IntegerWidth) -> Self {
+        Self { signed, width }
+    }
+}
+
+impl std::convert::TryFrom<usize> for Integer {
+    type Error = String;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        use ast::{IntegerWidth, Signed};
+        match value {
+            0 => Ok(Integer::new(Signed::Signed, IntegerWidth::Eight)),
+            1 => Ok(Integer::new(Signed::Unsigned, IntegerWidth::Eight)),
+            2 => Ok(Integer::new(Signed::Signed, IntegerWidth::Sixteen)),
+            3 => Ok(Integer::new(Signed::Unsigned, IntegerWidth::Sixteen)),
+            4 => Ok(Integer::new(Signed::Signed, IntegerWidth::ThirtyTwo)),
+            5 => Ok(Integer::new(Signed::Unsigned, IntegerWidth::ThirtyTwo)),
+            6 => Ok(Integer::new(Signed::Signed, IntegerWidth::SixtyFour)),
+            7 => Ok(Integer::new(Signed::Unsigned, IntegerWidth::SixtyFour)),
+            _ => Err(format!("rank {} outside of accepted range", value)),
+        }
+    }
+}
+
+trait Ranking {
+    type Output;
+
+    fn rank(&self) -> Self::Output;
+}
+
+impl Ranking for ast::Signed {
+    type Output = usize;
+
+    fn rank(&self) -> Self::Output {
+        match self {
+            ast::Signed::Signed => 0,
+            ast::Signed::Unsigned => 1,
+        }
+    }
+}
+
+impl Ranking for ast::IntegerWidth {
+    type Output = usize;
+
+    fn rank(&self) -> Self::Output {
+        match self {
+            ast::IntegerWidth::Eight => 0,
+            ast::IntegerWidth::Sixteen => 2,
+            ast::IntegerWidth::ThirtyTwo => 4,
+            ast::IntegerWidth::SixtyFour => 6,
+        }
+    }
+}
+
+impl Ranking for Integer {
+    type Output = usize;
+
+    fn rank(&self) -> Self::Output {
+        let (sign, width) = (&self.signed, &self.width);
+        sign.rank() + width.rank()
+    }
+}
+
+const fn is_even(n: usize) -> bool {
+    (!(n & 1)) == 0
+}
+
+fn calculate_satisfying_integer_size_from_rank(lhs: usize, rhs: usize) -> usize {
+    let max = core::cmp::max(lhs, rhs);
+    let min = core::cmp::min(lhs, rhs);
+
+    // promote to next largest signed integer
+    if !is_even(max) && (max - min) == 1 {
+        max + 1
+    } else {
+        max
+    }
+}
+
+enum CompatibilityResult {
+    Equivalent,
+    WidenTo(ast::Type),
+    Scale(ast::Type),
+    Incompatible,
+}
+
+trait TypeCompatibility {
+    type Output;
+    type Rhs;
+
+    fn type_compatible(&self, right: &Self::Rhs, flow_left: bool) -> Self::Output;
+}
+
+impl TypeCompatibility for ast::Type {
+    type Output = CompatibilityResult;
+    type Rhs = ast::Type;
+
+    fn type_compatible(&self, right: &Self::Rhs, flow_left: bool) -> Self::Output {
+        use ast::Type;
+        match (self, right) {
+            (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,
+            (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width)) => {
+                let (lhs_rank, rhs_rank) = (
+                    Integer::new(*l_sign, *l_width).rank(),
+                    Integer::new(*r_sign, *r_width).rank(),
+                );
+
+                if (lhs_rank < rhs_rank) && flow_left {
+                    CompatibilityResult::Incompatible
+                } else {
+                    let adjusted_rank =
+                        calculate_satisfying_integer_size_from_rank(lhs_rank, rhs_rank);
+
+                    core::convert::TryFrom::try_from(adjusted_rank)
+                        .map(|Integer { signed, width }| (signed, width))
+                        .map(|(sign, width)| {
+                            CompatibilityResult::WidenTo(Type::Integer(sign, width))
+                        })
+                        .unwrap_or(CompatibilityResult::Incompatible)
+                }
+            }
+            (Type::Pointer(ty), Type::Integer(_, _)) => CompatibilityResult::Scale(*ty.clone()),
+            _ => CompatibilityResult::Incompatible,
+        }
+    }
+}
 
 /// TypeAnalysis stores a scope stack for maintaining local variables.
 #[derive(Default)]
@@ -173,15 +307,13 @@ impl TypeAnalysis {
                     let expr_t = typed_expr.r#type();
 
                     let rt_type = match proto.return_type.as_ref().type_compatible(&expr_t, true) {
-                        ast::CompatibilityResult::Equivalent => {
-                            Ok(proto.return_type.as_ref().clone())
-                        }
-                        ast::CompatibilityResult::WidenTo(new_type) => Ok(new_type),
-                        ast::CompatibilityResult::Incompatible => Err(format!(
+                        CompatibilityResult::Equivalent => Ok(proto.return_type.as_ref().clone()),
+                        CompatibilityResult::WidenTo(new_type) => Ok(new_type),
+                        CompatibilityResult::Incompatible => Err(format!(
                             "function type and return type are incompatible: {:?}",
                             proto.return_type.as_ref()
                         )),
-                        ast::CompatibilityResult::Scale(_) => todo!(),
+                        CompatibilityResult::Scale(_) => todo!(),
                     }?;
 
                     Ok(ast::TypedStmtNode::Return(
@@ -314,22 +446,22 @@ impl TypeAnalysis {
                         .map(|dm| dm.r#type.type_compatible(&rhs.r#type(), true))
                         .ok_or(format!("symbol {} undefined", &id))
                         .and_then(|type_compat| match type_compat {
-                            ast::CompatibilityResult::Equivalent => Ok(lhs_ty),
-                            ast::CompatibilityResult::WidenTo(ty) => Ok(ty),
-                            ast::CompatibilityResult::Incompatible => {
+                            CompatibilityResult::Equivalent => Ok(lhs_ty),
+                            CompatibilityResult::WidenTo(ty) => Ok(ty),
+                            CompatibilityResult::Incompatible => {
                                 Err(format!("invalid type in identifier lookup for ({}):\n\texpected: lhs({:?})\n\tgot: rhs({:?})", &id, lhs_ty, &rhs.r#type()))
                             }
-                            ast::CompatibilityResult::Scale(t) => Ok(t),
+                            CompatibilityResult::Scale(t) => Ok(t),
                         })
                         .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, id, Box::new(rhs))),
                     TypedExprNode::Deref(ty, expr) => match ty.type_compatible(&rhs.r#type(), true)
                     {
-                        ast::CompatibilityResult::Equivalent => Ok(ty),
-                        ast::CompatibilityResult::WidenTo(ty) => Ok(ty),
-                        ast::CompatibilityResult::Incompatible => {
+                        CompatibilityResult::Equivalent => Ok(ty),
+                        CompatibilityResult::WidenTo(ty) => Ok(ty),
+                        CompatibilityResult::Incompatible => {
                             Err(format!("invalid type: ({:?})", ty))
                         }
-                        ast::CompatibilityResult::Scale(t) => Ok(t),
+                        CompatibilityResult::Scale(t) => Ok(t),
                     }
                     .map(|ty| ast::TypedExprNode::DerefAssignment(ty, expr, Box::new(rhs))),
                     // Fail on any other type
@@ -435,13 +567,11 @@ impl TypeAnalysis {
                 let index_expr_ty = &index_expr.r#type();
 
                 let index_expr = match ptr_width.type_compatible(&index_expr.r#type(), true) {
-                    ast::CompatibilityResult::Equivalent => Some(index_expr),
-                    ast::CompatibilityResult::WidenTo(ty) => {
+                    CompatibilityResult::Equivalent => Some(index_expr),
+                    CompatibilityResult::WidenTo(ty) => {
                         Some(ast::TypedExprNode::Grouping(ty, Box::new(index_expr)))
                     }
-                    ast::CompatibilityResult::Scale(_) | ast::CompatibilityResult::Incompatible => {
-                        None
-                    }
+                    CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
                 }
                 .ok_or_else(|| {
                     format!(
@@ -496,10 +626,10 @@ impl TypeAnalysis {
         let rhs = self.analyze_expression(rhs).unwrap();
 
         match lhs.r#type().type_compatible(&rhs.r#type(), false) {
-            ast::CompatibilityResult::Equivalent => Some((lhs.r#type(), lhs, rhs)),
-            ast::CompatibilityResult::WidenTo(ty) => Some((ty, lhs, rhs)),
-            ast::CompatibilityResult::Incompatible => None,
-            ast::CompatibilityResult::Scale(ty) => Some((
+            CompatibilityResult::Equivalent => Some((lhs.r#type(), lhs, rhs)),
+            CompatibilityResult::WidenTo(ty) => Some((ty, lhs, rhs)),
+            CompatibilityResult::Incompatible => None,
+            CompatibilityResult::Scale(ty) => Some((
                 ty.clone(),
                 lhs,
                 ast::TypedExprNode::ScaleBy(ty, Box::new(rhs)),
@@ -629,6 +759,87 @@ mod tests {
             Box::new(TypedExprNode::Primary(
                 generate_type_specifier!(i8).pointer_to(),
                 stage::ast::Primary::Str("hello".chars().map(|c| c as u8).collect()),
+            )),
+        );
+
+        assert_eq!(Ok(expected), typed_ast);
+    }
+
+    #[test]
+    fn should_assign_nearest_ranked_size() {
+        let analyzer = super::TypeAnalysis::default();
+
+        // promotion of integer size
+
+        let pre_typed_ast = ast::ExprNode::Addition(
+            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
+                sign: Signed::Unsigned,
+                width: IntegerWidth::Eight,
+                value: pad_to_le_64bit_array!(1u8),
+            })),
+            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
+                sign: Signed::Signed,
+                width: IntegerWidth::Eight,
+                value: pad_to_le_64bit_array!(1u8),
+            })),
+        );
+
+        let typed_ast = analyzer.analyze_expression(pre_typed_ast);
+        let expected = TypedExprNode::Addition(
+            generate_type_specifier!(i16),
+            Box::new(TypedExprNode::Primary(
+                generate_type_specifier!(u8),
+                stage::ast::Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: pad_to_le_64bit_array!(1u8),
+                },
+            )),
+            Box::new(TypedExprNode::Primary(
+                generate_type_specifier!(i8),
+                stage::ast::Primary::Integer {
+                    sign: Signed::Signed,
+                    width: IntegerWidth::Eight,
+                    value: pad_to_le_64bit_array!(1u8),
+                },
+            )),
+        );
+
+        assert_eq!(Ok(expected), typed_ast);
+
+        // equivalent size
+
+        let pre_typed_ast = ast::ExprNode::Addition(
+            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
+                sign: Signed::Unsigned,
+                width: IntegerWidth::Eight,
+                value: pad_to_le_64bit_array!(1u8),
+            })),
+            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
+                sign: Signed::Unsigned,
+                width: IntegerWidth::Eight,
+                value: pad_to_le_64bit_array!(1u8),
+            })),
+        );
+
+        let typed_ast = analyzer.analyze_expression(pre_typed_ast);
+        let expected = TypedExprNode::Addition(
+            generate_type_specifier!(u8),
+            Box::new(TypedExprNode::Primary(
+                generate_type_specifier!(u8),
+                stage::ast::Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: pad_to_le_64bit_array!(1u8),
+                },
+            )),
+            Box::new(TypedExprNode::Primary(
+                generate_type_specifier!(u8),
+                stage::ast::Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: pad_to_le_64bit_array!(1u8),
+                },
             )),
         );
 

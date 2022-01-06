@@ -178,13 +178,18 @@ fn codegen_if_statement_with_else(
 
         Ok(flattenable_instructions!(
             cond_ctx,
-            codegen_compare_and_jmp(allocator, ret_val, true_case_block_id, else_block_id),
-            codegen_label(true_case_block_id),
+            codegen_compare_and_jmp(
+                allocator,
+                ret_val,
+                LLabelPrefix(true_case_block_id),
+                LLabelPrefix(else_block_id)
+            ),
+            codegen_label(LLabelPrefix(true_case_block_id)),
             tctx,
-            codegen_jump(exit_block_id),
-            codegen_label(else_block_id),
+            codegen_jump(LLabelPrefix(exit_block_id)),
+            codegen_label(LLabelPrefix(else_block_id)),
             block_ctx,
-            codegen_label(exit_block_id),
+            codegen_label(LLabelPrefix(exit_block_id)),
         ))
     })
 }
@@ -202,10 +207,15 @@ fn codegen_if_statement_without_else(
 
         Ok(flattenable_instructions!(
             cond_ctx,
-            codegen_compare_and_jmp(allocator, ret_val, true_case_block_id, exit_block_id),
-            codegen_label(true_case_block_id),
+            codegen_compare_and_jmp(
+                allocator,
+                ret_val,
+                LLabelPrefix(true_case_block_id),
+                LLabelPrefix(exit_block_id)
+            ),
+            codegen_label(LLabelPrefix(true_case_block_id)),
             tctx,
-            codegen_label(exit_block_id),
+            codegen_label(LLabelPrefix(exit_block_id)),
         ))
     })
 }
@@ -223,13 +233,18 @@ fn codegen_while_statement(
         let block_insts = codegen_statements(allocator, block)?;
 
         Ok(flattenable_instructions!(
-            codegen_label(loop_cond_block_id),
+            codegen_label(LLabelPrefix(loop_cond_block_id)),
             cond_ctx,
-            codegen_compare_and_jmp(allocator, ret_val, loop_start_block_id, loop_end_block_id),
-            codegen_label(loop_start_block_id),
+            codegen_compare_and_jmp(
+                allocator,
+                ret_val,
+                LLabelPrefix(loop_start_block_id),
+                LLabelPrefix(loop_end_block_id)
+            ),
+            codegen_label(LLabelPrefix(loop_start_block_id)),
             block_insts,
-            codegen_jump(loop_cond_block_id),
-            codegen_label(loop_end_block_id),
+            codegen_jump(LLabelPrefix(loop_cond_block_id)),
+            codegen_label(LLabelPrefix(loop_end_block_id)),
         ))
     })
 }
@@ -252,14 +267,19 @@ fn codegen_for_statement(
 
         Ok(flattenable_instructions!(
             preop_ctx,
-            codegen_label(loop_cond_block_id),
+            codegen_label(LLabelPrefix(loop_cond_block_id)),
             cond_ctx,
-            codegen_compare_and_jmp(allocator, ret_val, loop_start_block_id, loop_end_block_id),
-            codegen_label(loop_start_block_id),
+            codegen_compare_and_jmp(
+                allocator,
+                ret_val,
+                LLabelPrefix(loop_start_block_id),
+                LLabelPrefix(loop_end_block_id)
+            ),
+            codegen_label(LLabelPrefix(loop_start_block_id)),
             block_insts,
             postop_ctx,
-            codegen_jump(loop_cond_block_id),
-            codegen_label(loop_end_block_id),
+            codegen_jump(LLabelPrefix(loop_cond_block_id)),
+            codegen_label(LLabelPrefix(loop_end_block_id)),
         ))
     })
 }
@@ -340,18 +360,48 @@ fn codegen_global_str(identifier: &str, str_literal: &[u8]) -> Vec<String> {
     )
 }
 
-type BlockId = usize;
+/// Defines marker traits for objects that can be used to generate labels.
+trait LabelFormattable: core::fmt::Display {}
 
-fn codegen_label<T>(block_id: T) -> Vec<String>
+impl LabelFormattable for &str {}
+impl LabelFormattable for String {}
+
+trait PrefixedLabel {
+    fn fmt_with_prefix(&self) -> String;
+}
+
+struct LLabelPrefix<T: core::fmt::Display>(T);
+
+impl<T> PrefixedLabel for LLabelPrefix<T>
 where
     T: core::fmt::Display,
+{
+    fn fmt_with_prefix(&self) -> String {
+        format!("L{}", self.0)
+    }
+}
+
+impl<T> core::fmt::Display for LLabelPrefix<T>
+where
+    T: core::fmt::Display,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.fmt_with_prefix())
+    }
+}
+
+impl<T: core::fmt::Display> LabelFormattable for LLabelPrefix<T> {}
+
+fn codegen_label<L>(block_id: L) -> Vec<String>
+where
+    L: LabelFormattable,
 {
     vec![format!("{}:\n", block_id)]
 }
 
-fn codegen_jump<T>(block_id: T) -> Vec<String>
+fn codegen_jump<L>(block_id: L) -> Vec<String>
 where
-    T: core::fmt::Display,
+    L: LabelFormattable,
 {
     vec![format!("\tjmp\t{}\n", block_id)]
 }
@@ -421,7 +471,6 @@ fn codegen_expr(
             flattenable_instructions!(
                 codegen_global_str(&identifier, &lit),
                 codegen_load_global(generate_type_specifier!(u64), ret_val, &identifier),
-                //codegen_reference(ret_val, &identifier),
             )
         }
 
@@ -447,54 +496,73 @@ fn codegen_expr(
             })
         }
 
-        TypedExprNode::Equal(_, lhs, rhs) => {
-            codegen_compare_and_set(allocator, ret_val, ComparisonOperation::Equal, lhs, rhs)
+        TypedExprNode::Equal(ty, lhs, rhs) => {
+            codegen_compare_and_set(allocator, ret_val, ComparisonOperation::Equal, ty, lhs, rhs)
         }
-        TypedExprNode::NotEqual(_, lhs, rhs) => {
-            codegen_compare_and_set(allocator, ret_val, ComparisonOperation::NotEqual, lhs, rhs)
-        }
-        TypedExprNode::LessThan(_, lhs, rhs) => {
-            codegen_compare_and_set(allocator, ret_val, ComparisonOperation::LessThan, lhs, rhs)
-        }
-        TypedExprNode::GreaterThan(_, lhs, rhs) => codegen_compare_and_set(
+        TypedExprNode::NotEqual(ty, lhs, rhs) => codegen_compare_and_set(
             allocator,
             ret_val,
-            ComparisonOperation::GreaterThan,
+            ComparisonOperation::NotEqual,
+            ty,
             lhs,
             rhs,
         ),
-        TypedExprNode::LessEqual(_, lhs, rhs) => {
-            codegen_compare_and_set(allocator, ret_val, ComparisonOperation::LessEqual, lhs, rhs)
-        }
-        TypedExprNode::GreaterEqual(_, lhs, rhs) => codegen_compare_and_set(
+        TypedExprNode::LessThan(ty, lhs, rhs) => codegen_compare_and_set(
+            allocator,
+            ret_val,
+            ComparisonOperation::LessThan,
+            ty,
+            lhs,
+            rhs,
+        ),
+        TypedExprNode::GreaterThan(ty, lhs, rhs) => codegen_compare_and_set(
+            allocator,
+            ret_val,
+            ComparisonOperation::GreaterThan,
+            ty,
+            lhs,
+            rhs,
+        ),
+        TypedExprNode::LessEqual(ty, lhs, rhs) => codegen_compare_and_set(
+            allocator,
+            ret_val,
+            ComparisonOperation::LessEqual,
+            ty,
+            lhs,
+            rhs,
+        ),
+        TypedExprNode::GreaterEqual(ty, lhs, rhs) => codegen_compare_and_set(
             allocator,
             ret_val,
             ComparisonOperation::GreaterEqual,
+            ty,
             lhs,
             rhs,
         ),
 
-        TypedExprNode::Addition(Type::Pointer(_), lhs, rhs) => {
-            codegen_addition(allocator, ret_val, lhs, rhs)
+        TypedExprNode::Addition(Type::Pointer(ty), lhs, rhs) => {
+            codegen_addition(allocator, ret_val, *ty, lhs, rhs)
         }
-        TypedExprNode::Addition(_, lhs, rhs) => codegen_addition(allocator, ret_val, lhs, rhs),
-        TypedExprNode::Subtraction(_, lhs, rhs) => {
-            codegen_subtraction(allocator, ret_val, lhs, rhs)
+        TypedExprNode::Addition(ty, lhs, rhs) => codegen_addition(allocator, ret_val, ty, lhs, rhs),
+        TypedExprNode::Subtraction(ty, lhs, rhs) => {
+            codegen_subtraction(allocator, ret_val, ty, lhs, rhs)
         }
-        TypedExprNode::Multiplication(_, lhs, rhs) => {
-            codegen_multiplication(allocator, ret_val, lhs, rhs)
+        TypedExprNode::Multiplication(ty, lhs, rhs) => {
+            codegen_multiplication(allocator, ret_val, ty, lhs, rhs)
         }
-        TypedExprNode::Division(_, lhs, rhs) => codegen_division(
+        TypedExprNode::Division(ty, lhs, rhs) => codegen_division(
             allocator,
             ret_val,
+            ty,
             lhs,
             rhs,
             Signed::Unsigned,
             DivisionVariant::Division,
         ),
-        TypedExprNode::Modulo(_, lhs, rhs) => codegen_division(
+        TypedExprNode::Modulo(ty, lhs, rhs) => codegen_division(
             allocator,
             ret_val,
+            ty,
             lhs,
             rhs,
             Signed::Unsigned,
@@ -653,7 +721,13 @@ fn codegen_scaleby(
             },
         );
 
-        codegen_multiplication(allocator, ret_val, Box::new(scale_by_expr), expr)
+        codegen_multiplication(
+            allocator,
+            ret_val,
+            ast::Type::Integer(sign, ast::IntegerWidth::SixtyFour),
+            Box::new(scale_by_expr),
+            expr,
+        )
     } else {
         panic!("invalid scale_by types")
     }
@@ -662,10 +736,11 @@ fn codegen_scaleby(
 fn codegen_addition(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(lhs.r#type());
+    let width = operand_width_of_type(ty);
 
     allocator.allocate_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
@@ -690,10 +765,11 @@ fn codegen_addition(
 fn codegen_subtraction(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(lhs.r#type());
+    let width = operand_width_of_type(ty);
 
     allocator.allocate_then(|allocator, rhs_ret_val| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
@@ -715,10 +791,11 @@ fn codegen_subtraction(
 fn codegen_multiplication(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(lhs.r#type());
+    let width = operand_width_of_type(ty);
 
     allocator.allocate_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
@@ -746,6 +823,7 @@ enum DivisionVariant {
 fn codegen_division(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
     sign: crate::stage::ast::Signed,
@@ -753,7 +831,7 @@ fn codegen_division(
 ) -> Vec<String> {
     use crate::stage::ast::Signed;
 
-    let width = operand_width_of_type(lhs.r#type());
+    let width = operand_width_of_type(ty);
 
     allocator.allocate_then(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
@@ -844,10 +922,11 @@ fn codegen_compare_and_set(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut GeneralPurposeRegister,
     comparison_op: ComparisonOperation,
+    ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(lhs.r#type());
+    let width = operand_width_of_type(ty);
 
     allocator.allocate_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
@@ -888,19 +967,22 @@ fn codegen_compare_and_set(
     })
 }
 
-fn codegen_compare_and_jmp(
+fn codegen_compare_and_jmp<L>(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut GeneralPurposeRegister,
-    cond_true_id: BlockId,
-    cond_false_id: BlockId,
-) -> Vec<String> {
+    cond_true_id: L,
+    cond_false_id: L,
+) -> Vec<String>
+where
+    L: LabelFormattable,
+{
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
     let operand_suffix = operator_suffix(WIDTH);
     allocator.allocate_then(|_, zero_val| {
         vec![
             format!("\tandq\t$0, %{}\n", zero_val.fmt_with_operand_width(WIDTH)),
             format!(
-                "\tcmp{}\t{}, {}\n",
+                "\tcmp{}\t%{}, %{}\n",
                 operand_suffix,
                 ret_val.fmt_with_operand_width(WIDTH),
                 zero_val.fmt_with_operand_width(WIDTH)
@@ -914,7 +996,7 @@ fn codegen_compare_and_jmp(
                 "\tandq\t$255, %{}\n",
                 ret_val.fmt_with_operand_width(OperandWidth::QuadWord)
             ),
-            format!("\t{}\tL{}\n", "je", cond_true_id),
+            format!("\t{}\t{}\n", "je", cond_true_id),
         ]
         .into_iter()
         .chain(codegen_jump(cond_false_id).into_iter())
