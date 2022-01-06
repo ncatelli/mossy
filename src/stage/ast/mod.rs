@@ -29,6 +29,27 @@ macro_rules! generate_type_specifier {
             $crate::stage::ast::IntegerWidth::Sixteen
         )
     };
+    (i32) => {
+        generate_type_specifier!(
+            integer,
+            $crate::stage::ast::Signed::Signed,
+            $crate::stage::ast::IntegerWidth::ThirtyTwo
+        )
+    };
+    (u32) => {
+        generate_type_specifier!(
+            integer,
+            $crate::stage::ast::Signed::Unsigned,
+            $crate::stage::ast::IntegerWidth::ThirtyTwo
+        )
+    };
+    (i64) => {
+        generate_type_specifier!(
+            integer,
+            $crate::stage::ast::Signed::Signed,
+            $crate::stage::ast::IntegerWidth::SixtyFour
+        )
+    };
     (u64) => {
         generate_type_specifier!(
             integer,
@@ -149,6 +170,7 @@ pub enum TypedExprNode {
     // Unary
     LogicalNot(Type, Box<TypedExprNode>),
     Negate(Type, Box<TypedExprNode>),
+    Invert(Type, Box<TypedExprNode>),
 
     // Pointer Operations
     Ref(Type, String),
@@ -178,6 +200,7 @@ impl Typed for TypedExprNode {
             | TypedExprNode::Modulo(ty, _, _)
             | TypedExprNode::LogicalNot(ty, _)
             | TypedExprNode::Negate(ty, _)
+            | TypedExprNode::Invert(ty, _)
             | TypedExprNode::Ref(ty, _)
             | TypedExprNode::Deref(ty, _)
             | TypedExprNode::ScaleBy(ty, _)

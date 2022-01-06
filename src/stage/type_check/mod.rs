@@ -78,7 +78,7 @@ impl Ranking for Integer {
 }
 
 const fn is_even(n: usize) -> bool {
-    (!(n & 1)) == 0
+    n % 2 == 0
 }
 
 fn calculate_satisfying_integer_size_from_rank(lhs: usize, rhs: usize) -> usize {
@@ -86,7 +86,7 @@ fn calculate_satisfying_integer_size_from_rank(lhs: usize, rhs: usize) -> usize 
     let min = core::cmp::min(lhs, rhs);
 
     // promote to next largest signed integer
-    if !is_even(max) && (max - min) == 1 {
+    if !is_even(max) && is_even(min) {
         max + 1
     } else {
         max
@@ -542,7 +542,25 @@ impl TypeAnalysis {
             ExprNode::Negate(expr) => self
                 .analyze_expression(*expr)
                 .map(|expr| (expr.r#type(), expr))
+                .and_then(|(expr_type, expr)| {
+                    match expr_type.type_compatible(&generate_type_specifier!(i8), true) {
+                        CompatibilityResult::Equivalent => Some(expr_type),
+                        CompatibilityResult::WidenTo(ty) => Some(ty),
+                        CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
+                    }
+                    .ok_or_else(|| {
+                        format!(
+                            "negate operation expected iteger type: got {:?}",
+                            expr.r#type()
+                        )
+                    })
+                    .map(|ty| (ty, expr))
+                })
                 .map(|(expr_type, expr)| ast::TypedExprNode::Negate(expr_type, Box::new(expr))),
+            ExprNode::Invert(expr) => self
+                .analyze_expression(*expr)
+                .map(|expr| (expr.r#type(), expr))
+                .map(|(expr_type, expr)| ast::TypedExprNode::Invert(expr_type, Box::new(expr))),
 
             ExprNode::Ref(identifier) => self
                 .scopes
@@ -837,6 +855,47 @@ mod tests {
                 generate_type_specifier!(u8),
                 stage::ast::Primary::Integer {
                     sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: pad_to_le_64bit_array!(1u8),
+                },
+            )),
+        );
+
+        assert_eq!(Ok(expected), typed_ast);
+    }
+
+    #[test]
+    fn should_promote_a_larger_unsigned_int_to_signed_if_one_is_signed() {
+        let analyzer = super::TypeAnalysis::default();
+
+        let pre_typed_ast = ast::ExprNode::Addition(
+            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
+                sign: Signed::Unsigned,
+                width: IntegerWidth::ThirtyTwo,
+                value: pad_to_le_64bit_array!(1u32),
+            })),
+            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
+                sign: Signed::Signed,
+                width: IntegerWidth::Eight,
+                value: pad_to_le_64bit_array!(1u8),
+            })),
+        );
+
+        let typed_ast = analyzer.analyze_expression(pre_typed_ast);
+        let expected = TypedExprNode::Addition(
+            generate_type_specifier!(i64),
+            Box::new(TypedExprNode::Primary(
+                generate_type_specifier!(u32),
+                stage::ast::Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::ThirtyTwo,
+                    value: pad_to_le_64bit_array!(1u32),
+                },
+            )),
+            Box::new(TypedExprNode::Primary(
+                generate_type_specifier!(i8),
+                stage::ast::Primary::Integer {
+                    sign: Signed::Signed,
                     width: IntegerWidth::Eight,
                     value: pad_to_le_64bit_array!(1u8),
                 },
