@@ -360,6 +360,12 @@ fn codegen_global_str(identifier: &str, str_literal: &[u8]) -> Vec<String> {
     )
 }
 
+/// Defines marker traits for objects that can be used to generate labels.
+trait LabelFormattable: core::fmt::Display {}
+
+impl LabelFormattable for &str {}
+impl LabelFormattable for String {}
+
 trait PrefixedLabel {
     fn fmt_with_prefix(&self) -> String;
 }
@@ -384,16 +390,18 @@ where
     }
 }
 
-fn codegen_label<T>(block_id: T) -> Vec<String>
+impl<T: core::fmt::Display> LabelFormattable for LLabelPrefix<T> {}
+
+fn codegen_label<L>(block_id: L) -> Vec<String>
 where
-    T: core::fmt::Display,
+    L: LabelFormattable,
 {
     vec![format!("{}:\n", block_id)]
 }
 
-fn codegen_jump<T>(block_id: T) -> Vec<String>
+fn codegen_jump<L>(block_id: L) -> Vec<String>
 where
-    T: core::fmt::Display,
+    L: LabelFormattable,
 {
     vec![format!("\tjmp\t{}\n", block_id)]
 }
@@ -959,12 +967,15 @@ fn codegen_compare_and_set(
     })
 }
 
-fn codegen_compare_and_jmp<BID: core::fmt::Display>(
+fn codegen_compare_and_jmp<L>(
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut GeneralPurposeRegister,
-    cond_true_id: BID,
-    cond_false_id: BID,
-) -> Vec<String> {
+    cond_true_id: L,
+    cond_false_id: L,
+) -> Vec<String>
+where
+    L: LabelFormattable,
+{
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
     let operand_suffix = operator_suffix(WIDTH);
     allocator.allocate_then(|_, zero_val| {
