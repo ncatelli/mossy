@@ -71,12 +71,8 @@ relational: addition ( ( '<' | '<=' | '>' | '>=' ) addition )*
 addition: multiplication ( ( '-' | '+' ) multiplication )* 
         ;
 
-multiplication: unary ( ( '/' | '%' | '*' ) unary )* 
+multiplication: call ( ( '/' | '%' | '*' ) call )* 
         ;
-
-unary: '!' call 
-        | '-' call
-        | call
 
 call: identifier '(' expression? ')'
         | prefix_expression
@@ -84,6 +80,9 @@ call: identifier '(' expression? ')'
 
 prefix_expression: '*' prefix_expression
         | '&' identifier
+        | '!' prefix_expression
+        | '-' prefix_expression
+        | '~' prefix_expression
         | primary
         ;
 

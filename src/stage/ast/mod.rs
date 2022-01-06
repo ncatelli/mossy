@@ -149,6 +149,7 @@ pub enum TypedExprNode {
     // Unary
     LogicalNot(Type, Box<TypedExprNode>),
     Negate(Type, Box<TypedExprNode>),
+    Invert(Type, Box<TypedExprNode>),
 
     // Pointer Operations
     Ref(Type, String),
@@ -178,6 +179,7 @@ impl Typed for TypedExprNode {
             | TypedExprNode::Modulo(ty, _, _)
             | TypedExprNode::LogicalNot(ty, _)
             | TypedExprNode::Negate(ty, _)
+            | TypedExprNode::Invert(ty, _)
             | TypedExprNode::Ref(ty, _)
             | TypedExprNode::Deref(ty, _)
             | TypedExprNode::ScaleBy(ty, _)

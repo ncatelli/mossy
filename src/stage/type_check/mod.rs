@@ -543,6 +543,10 @@ impl TypeAnalysis {
                 .analyze_expression(*expr)
                 .map(|expr| (expr.r#type(), expr))
                 .map(|(expr_type, expr)| ast::TypedExprNode::Negate(expr_type, Box::new(expr))),
+            ExprNode::Invert(expr) => self
+                .analyze_expression(*expr)
+                .map(|expr| (expr.r#type(), expr))
+                .map(|(expr_type, expr)| ast::TypedExprNode::Invert(expr_type, Box::new(expr))),
 
             ExprNode::Ref(identifier) => self
                 .scopes

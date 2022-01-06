@@ -571,6 +571,7 @@ fn codegen_expr(
 
         TypedExprNode::LogicalNot(_, expr) => codegen_not(allocator, ret_val, *expr),
         TypedExprNode::Negate(_, expr) => codegen_negate(allocator, ret_val, *expr),
+        TypedExprNode::Invert(_, expr) => codegen_invert(allocator, ret_val, *expr),
 
         TypedExprNode::Ref(_, identifier) => codegen_reference(ret_val, &identifier),
         TypedExprNode::Deref(ty, expr) => {
