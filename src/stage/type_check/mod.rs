@@ -78,18 +78,20 @@ impl Ranking for Integer {
 }
 
 const fn is_even(n: usize) -> bool {
-    (!(n & 1)) == 0
+    n % 2 == 0
 }
 
 fn calculate_satisfying_integer_size_from_rank(lhs: usize, rhs: usize) -> usize {
     let max = core::cmp::max(lhs, rhs);
     let min = core::cmp::min(lhs, rhs);
 
+    println!("max:{}\nmin: {}", is_even(max), is_even(min));
+
     // promote to next largest signed integer
-    match (max, min) {
-        _ if !is_even(max) && (max - min) == 1 => max + 1,
-        _ if is_even(max) && min < max => max + 1,
-        _ => max,
+    if !is_even(max) && is_even(min) {
+        max + 1
+    } else {
+        max
     }
 }
 
@@ -841,6 +843,47 @@ mod tests {
                 generate_type_specifier!(u8),
                 stage::ast::Primary::Integer {
                     sign: Signed::Unsigned,
+                    width: IntegerWidth::Eight,
+                    value: pad_to_le_64bit_array!(1u8),
+                },
+            )),
+        );
+
+        assert_eq!(Ok(expected), typed_ast);
+    }
+
+    #[test]
+    fn should_promote_a_larger_unsigned_int_to_signed_if_one_is_signed() {
+        let analyzer = super::TypeAnalysis::default();
+
+        let pre_typed_ast = ast::ExprNode::Addition(
+            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
+                sign: Signed::Unsigned,
+                width: IntegerWidth::ThirtyTwo,
+                value: pad_to_le_64bit_array!(1u32),
+            })),
+            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
+                sign: Signed::Signed,
+                width: IntegerWidth::Eight,
+                value: pad_to_le_64bit_array!(1u8),
+            })),
+        );
+
+        let typed_ast = analyzer.analyze_expression(pre_typed_ast);
+        let expected = TypedExprNode::Addition(
+            generate_type_specifier!(i64),
+            Box::new(TypedExprNode::Primary(
+                generate_type_specifier!(u32),
+                stage::ast::Primary::Integer {
+                    sign: Signed::Unsigned,
+                    width: IntegerWidth::ThirtyTwo,
+                    value: pad_to_le_64bit_array!(1u32),
+                },
+            )),
+            Box::new(TypedExprNode::Primary(
+                generate_type_specifier!(i8),
+                stage::ast::Primary::Integer {
+                    sign: Signed::Signed,
                     width: IntegerWidth::Eight,
                     value: pad_to_le_64bit_array!(1u8),
                 },

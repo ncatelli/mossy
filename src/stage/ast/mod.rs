@@ -29,6 +29,27 @@ macro_rules! generate_type_specifier {
             $crate::stage::ast::IntegerWidth::Sixteen
         )
     };
+    (i32) => {
+        generate_type_specifier!(
+            integer,
+            $crate::stage::ast::Signed::Signed,
+            $crate::stage::ast::IntegerWidth::ThirtyTwo
+        )
+    };
+    (u32) => {
+        generate_type_specifier!(
+            integer,
+            $crate::stage::ast::Signed::Unsigned,
+            $crate::stage::ast::IntegerWidth::ThirtyTwo
+        )
+    };
+    (i64) => {
+        generate_type_specifier!(
+            integer,
+            $crate::stage::ast::Signed::Signed,
+            $crate::stage::ast::IntegerWidth::SixtyFour
+        )
+    };
     (u64) => {
         generate_type_specifier!(
             integer,
