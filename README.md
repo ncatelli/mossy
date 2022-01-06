@@ -83,11 +83,11 @@ prefix_expression: '*' prefix_expression
         | '!' prefix_expression
         | '-' prefix_expression
         | '~' prefix_expression
-        | primary
+        | postfix_expression
         ;
 
-postfix_expression: primary
-        | postfix_expression '[' expression ']'
+postfix_expression: postfix_expression '[' expression ']'
+        |
         ;
 
 primary: identifier
