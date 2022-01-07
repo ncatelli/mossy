@@ -479,12 +479,10 @@ fn codegen_expr(
         }
 
         ast::TypedExprNode::IdentifierAssignment(ty, identifier, expr) => {
-            allocator.allocate_then(|allocator, ret_val| {
-                flattenable_instructions!(
-                    codegen_expr(allocator, ret_val, *expr),
-                    codegen_store_global(ty, ret_val, &identifier),
-                )
-            })
+            flattenable_instructions!(
+                codegen_expr(allocator, ret_val, *expr),
+                codegen_store_global(ty, ret_val, &identifier),
+            )
         }
         TypedExprNode::DerefAssignment(_, lhs, rhs) => {
             allocator.allocate_then(|allocator, rhs_ret_val| {
