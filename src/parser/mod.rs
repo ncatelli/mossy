@@ -355,6 +355,18 @@ fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprN
                 .and_then(|_| identifier())
                 .map(ExprNode::Ref)
         })
+        .or(|| {
+            whitespace_wrapped(expect_str("++"))
+                .and_then(|_| prefix_expression())
+                .map(Box::new)
+                .map(ExprNode::PreIncrement)
+        })
+        .or(|| {
+            whitespace_wrapped(expect_str("--"))
+                .and_then(|_| prefix_expression())
+                .map(Box::new)
+                .map(ExprNode::PreDecrement)
+        })
         // unary logical not
         .or(|| {
             whitespace_wrapped(expect_character('!'))

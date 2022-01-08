@@ -571,6 +571,39 @@ fn codegen_expr(
         TypedExprNode::Negate(_, expr) => codegen_negate(allocator, ret_val, *expr),
         TypedExprNode::Invert(_, expr) => codegen_invert(allocator, ret_val, *expr),
 
+        TypedExprNode::PreIncrement(_, expr) => match *expr {
+            TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
+                let width = operand_width_of_type(ty.clone());
+
+                flattenable_instructions!(
+                    vec![format!(
+                        "\tinc{}\t{}(%{})\n",
+                        operator_suffix(width),
+                        identifier,
+                        PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+                    )],
+                    codegen_load_global(ty, ret_val, &identifier),
+                )
+            }
+            _ => unreachable!(),
+        },
+        TypedExprNode::PreDecrement(_, expr) => match *expr {
+            TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
+                let width = operand_width_of_type(ty.clone());
+
+                flattenable_instructions!(
+                    vec![format!(
+                        "\tdec{}\t{}(%{})\n",
+                        operator_suffix(width),
+                        identifier,
+                        PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+                    )],
+                    codegen_load_global(ty, ret_val, &identifier),
+                )
+            }
+            _ => unreachable!(),
+        },
+
         TypedExprNode::Ref(_, identifier) => codegen_reference(ret_val, &identifier),
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(

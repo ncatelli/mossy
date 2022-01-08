@@ -172,6 +172,9 @@ pub enum TypedExprNode {
     Negate(Type, Box<TypedExprNode>),
     Invert(Type, Box<TypedExprNode>),
 
+    PreIncrement(Type, Box<TypedExprNode>),
+    PreDecrement(Type, Box<TypedExprNode>),
+
     // Pointer Operations
     Ref(Type, String),
     Deref(Type, Box<TypedExprNode>),
@@ -201,6 +204,8 @@ impl Typed for TypedExprNode {
             | TypedExprNode::LogicalNot(ty, _)
             | TypedExprNode::Negate(ty, _)
             | TypedExprNode::Invert(ty, _)
+            | TypedExprNode::PreDecrement(ty, _)
+            | TypedExprNode::PreIncrement(ty, _)
             | TypedExprNode::Ref(ty, _)
             | TypedExprNode::Deref(ty, _)
             | TypedExprNode::ScaleBy(ty, _)
