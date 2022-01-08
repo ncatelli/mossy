@@ -332,6 +332,47 @@ fn codegen_store_global(
     )]
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IncDecExpression {
+    PreIncrement,
+    PreDecrement,
+    PostIncrement,
+    PostDecrement,
+}
+
+fn codegen_inc_or_dec_expression_from_identifier(
+    ty: Type,
+    ret_val: &mut GeneralPurposeRegister,
+    identifier: &str,
+    expr_op: IncDecExpression,
+) -> Vec<String> {
+    let width = operand_width_of_type(ty.clone());
+
+    let op = match expr_op {
+        IncDecExpression::PreIncrement | IncDecExpression::PostIncrement => format!(
+            "\tinc{}\t{}(%{})\n",
+            operator_suffix(width),
+            identifier,
+            PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+        ),
+        IncDecExpression::PreDecrement | IncDecExpression::PostDecrement => format!(
+            "\tdec{}\t{}(%{})\n",
+            operator_suffix(width),
+            identifier,
+            PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+        ),
+    };
+
+    match expr_op {
+        IncDecExpression::PreIncrement | IncDecExpression::PreDecrement => {
+            flattenable_instructions!(vec![op], codegen_load_global(ty, ret_val, identifier),)
+        }
+        IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => {
+            flattenable_instructions!(codegen_load_global(ty, ret_val, identifier), vec![op],)
+        }
+    }
+}
+
 fn codegen_load_global(
     ty: Type,
     ret: &mut GeneralPurposeRegister,
@@ -573,64 +614,48 @@ fn codegen_expr(
 
         TypedExprNode::PreIncrement(_, expr) => match *expr {
             TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
-                let width = operand_width_of_type(ty.clone());
-
-                flattenable_instructions!(
-                    vec![format!(
-                        "\tinc{}\t{}(%{})\n",
-                        operator_suffix(width),
-                        identifier,
-                        PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
-                    )],
-                    codegen_load_global(ty, ret_val, &identifier),
+                codegen_inc_or_dec_expression_from_identifier(
+                    ty,
+                    ret_val,
+                    &identifier,
+                    IncDecExpression::PreIncrement,
                 )
             }
             _ => unreachable!(),
         },
         TypedExprNode::PreDecrement(_, expr) => match *expr {
             TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
-                let width = operand_width_of_type(ty.clone());
-
-                flattenable_instructions!(
-                    vec![format!(
-                        "\tdec{}\t{}(%{})\n",
-                        operator_suffix(width),
-                        identifier,
-                        PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
-                    )],
-                    codegen_load_global(ty, ret_val, &identifier),
+                codegen_inc_or_dec_expression_from_identifier(
+                    ty,
+                    ret_val,
+                    &identifier,
+                    IncDecExpression::PreDecrement,
                 )
             }
             _ => unreachable!(),
         },
         TypedExprNode::PostIncrement(_, expr) => match *expr {
             TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
-                let width = operand_width_of_type(ty.clone());
-                flattenable_instructions!(
-                    codegen_load_global(ty, ret_val, &identifier),
-                    vec![format!(
-                        "\tinc{}\t{}(%{})\n",
-                        operator_suffix(width),
-                        identifier,
-                        PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
-                    )],
+                codegen_inc_or_dec_expression_from_identifier(
+                    ty,
+                    ret_val,
+                    &identifier,
+                    IncDecExpression::PostIncrement,
                 )
             }
+
             _ => unreachable!(),
         },
         TypedExprNode::PostDecrement(_, expr) => match *expr {
             TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
-                let width = operand_width_of_type(ty.clone());
-                flattenable_instructions!(
-                    codegen_load_global(ty, ret_val, &identifier),
-                    vec![format!(
-                        "\tdec{}\t{}(%{})\n",
-                        operator_suffix(width),
-                        identifier,
-                        PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
-                    )],
+                codegen_inc_or_dec_expression_from_identifier(
+                    ty,
+                    ret_val,
+                    &identifier,
+                    IncDecExpression::PostDecrement,
                 )
             }
+
             _ => unreachable!(),
         },
 
