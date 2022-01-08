@@ -603,6 +603,36 @@ fn codegen_expr(
             }
             _ => unreachable!(),
         },
+        TypedExprNode::PostIncrement(_, expr) => match *expr {
+            TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
+                let width = operand_width_of_type(ty.clone());
+                flattenable_instructions!(
+                    codegen_load_global(ty, ret_val, &identifier),
+                    vec![format!(
+                        "\tinc{}\t{}(%{})\n",
+                        operator_suffix(width),
+                        identifier,
+                        PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+                    )],
+                )
+            }
+            _ => unreachable!(),
+        },
+        TypedExprNode::PostDecrement(_, expr) => match *expr {
+            TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
+                let width = operand_width_of_type(ty.clone());
+                flattenable_instructions!(
+                    codegen_load_global(ty, ret_val, &identifier),
+                    vec![format!(
+                        "\tdec{}\t{}(%{})\n",
+                        operator_suffix(width),
+                        identifier,
+                        PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+                    )],
+                )
+            }
+            _ => unreachable!(),
+        },
 
         TypedExprNode::Ref(_, identifier) => codegen_reference(ret_val, &identifier),
         TypedExprNode::Deref(ty, expr) => {

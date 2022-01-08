@@ -563,19 +563,27 @@ impl TypeAnalysis {
                 .map(|(expr_type, expr)| ast::TypedExprNode::Invert(expr_type, Box::new(expr))),
 
             ExprNode::PreIncrement(expr) => match *expr {
-                lvalue_expr @ ExprNode::Primary(Primary::Identifier(_)) => {
-                    self.analyze_expression(lvalue_expr).map(|ident_expr| {
-                        ast::TypedExprNode::PreIncrement(ident_expr.r#type(), Box::new(ident_expr))
-                    })
-                }
+                lvalue_expr @ ExprNode::Primary(Primary::Identifier(_)) => self
+                    .analyze_expression(lvalue_expr)
+                    .map(|expr| ast::TypedExprNode::PreIncrement(expr.r#type(), Box::new(expr))),
                 rvalue_expr => Err(format!("type {:?} is not an lvalue", rvalue_expr)),
             },
             ExprNode::PreDecrement(expr) => match *expr {
-                lvalue_expr @ ExprNode::Primary(Primary::Identifier(_)) => {
-                    self.analyze_expression(lvalue_expr).map(|ident_expr| {
-                        ast::TypedExprNode::PreDecrement(ident_expr.r#type(), Box::new(ident_expr))
-                    })
-                }
+                lvalue_expr @ ExprNode::Primary(Primary::Identifier(_)) => self
+                    .analyze_expression(lvalue_expr)
+                    .map(|expr| ast::TypedExprNode::PreDecrement(expr.r#type(), Box::new(expr))),
+                rvalue_expr => Err(format!("type {:?} is not an lvalue", rvalue_expr)),
+            },
+            ExprNode::PostIncrement(expr) => match *expr {
+                lvalue_expr @ ExprNode::Primary(Primary::Identifier(_)) => self
+                    .analyze_expression(lvalue_expr)
+                    .map(|expr| ast::TypedExprNode::PostIncrement(expr.r#type(), Box::new(expr))),
+                rvalue_expr => Err(format!("type {:?} is not an lvalue", rvalue_expr)),
+            },
+            ExprNode::PostDecrement(expr) => match *expr {
+                lvalue_expr @ ExprNode::Primary(Primary::Identifier(_)) => self
+                    .analyze_expression(lvalue_expr)
+                    .map(|expr| ast::TypedExprNode::PostDecrement(expr.r#type(), Box::new(expr))),
                 rvalue_expr => Err(format!("type {:?} is not an lvalue", rvalue_expr)),
             },
 

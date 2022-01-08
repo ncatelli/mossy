@@ -85,11 +85,16 @@ prefix_expression: '*' prefix_expression
         | '!' prefix_expression
         | '-' prefix_expression
         | '~' prefix_expression
+        | post_increment_decrement_expression 
+        ;
+
+post_increment_decrement_expression: postfix_expression '++'
+        | postfix_expression '--'
         | postfix_expression
         ;
 
-postfix_expression: postfix_expression '[' expression ']'
-        |
+postfix_expression: identifier '[' expression ']'
+        | primary
         ;
 
 primary: identifier
