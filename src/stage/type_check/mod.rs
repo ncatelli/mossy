@@ -562,31 +562,18 @@ impl TypeAnalysis {
                 .map(|expr| (expr.r#type(), expr))
                 .map(|(expr_type, expr)| ast::TypedExprNode::Invert(expr_type, Box::new(expr))),
 
-            ExprNode::PreIncrement(expr) => match *expr {
-                lvalue_expr @ ExprNode::Primary(Primary::Identifier(_)) => self
-                    .analyze_expression(lvalue_expr)
-                    .map(|expr| ast::TypedExprNode::PreIncrement(expr.r#type(), Box::new(expr))),
-                rvalue_expr => Err(format!("type {:?} is not an lvalue", rvalue_expr)),
-            },
-            ExprNode::PreDecrement(expr) => match *expr {
-                lvalue_expr @ ExprNode::Primary(Primary::Identifier(_)) => self
-                    .analyze_expression(lvalue_expr)
-                    .map(|expr| ast::TypedExprNode::PreDecrement(expr.r#type(), Box::new(expr))),
-                rvalue_expr => Err(format!("type {:?} is not an lvalue", rvalue_expr)),
-            },
-            ExprNode::PostIncrement(expr) => match *expr {
-                lvalue_expr @ ExprNode::Primary(Primary::Identifier(_)) => self
-                    .analyze_expression(lvalue_expr)
-                    .map(|expr| ast::TypedExprNode::PostIncrement(expr.r#type(), Box::new(expr))),
-                rvalue_expr => Err(format!("type {:?} is not an lvalue", rvalue_expr)),
-            },
-            ExprNode::PostDecrement(expr) => match *expr {
-                lvalue_expr @ ExprNode::Primary(Primary::Identifier(_)) => self
-                    .analyze_expression(lvalue_expr)
-                    .map(|expr| ast::TypedExprNode::PostDecrement(expr.r#type(), Box::new(expr))),
-                rvalue_expr => Err(format!("type {:?} is not an lvalue", rvalue_expr)),
-            },
-
+            ExprNode::PreIncrement(expr) => {
+                self.analyze_inc_dec_expr(IncDecExpr::PreIncrement, *expr)
+            }
+            ExprNode::PreDecrement(expr) => {
+                self.analyze_inc_dec_expr(IncDecExpr::PreDecrement, *expr)
+            }
+            ExprNode::PostIncrement(expr) => {
+                self.analyze_inc_dec_expr(IncDecExpr::PostIncrement, *expr)
+            }
+            ExprNode::PostDecrement(expr) => {
+                self.analyze_inc_dec_expr(IncDecExpr::PostDecrement, *expr)
+            }
             ExprNode::Ref(identifier) => self
                 .scopes
                 .lookup(&identifier)
@@ -679,6 +666,43 @@ impl TypeAnalysis {
             )),
         }
     }
+
+    fn analyze_inc_dec_expr(
+        &self,
+        variant: IncDecExpr,
+        expr: crate::parser::ast::ExprNode,
+    ) -> Result<ast::TypedExprNode, String> {
+        use ast::TypedExprNode;
+        self.analyze_expression(expr)
+            .and_then(|ty_expr| match ty_expr {
+                lvalue_expr @ TypedExprNode::Primary(_, ast::Primary::Identifier(_, _)) => {
+                    Ok(lvalue_expr)
+                }
+                rvalue_expr => Err(format!("type {:?} is not an lvalue", rvalue_expr)),
+            })
+            .map(|expr| match variant {
+                IncDecExpr::PreIncrement => {
+                    TypedExprNode::PreIncrement(expr.r#type(), Box::new(expr))
+                }
+                IncDecExpr::PreDecrement => {
+                    TypedExprNode::PreDecrement(expr.r#type(), Box::new(expr))
+                }
+                IncDecExpr::PostIncrement => {
+                    TypedExprNode::PostIncrement(expr.r#type(), Box::new(expr))
+                }
+                IncDecExpr::PostDecrement => {
+                    TypedExprNode::PostDecrement(expr.r#type(), Box::new(expr))
+                }
+            })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IncDecExpr {
+    PreIncrement,
+    PreDecrement,
+    PostIncrement,
+    PostDecrement,
 }
 
 #[cfg(test)]
