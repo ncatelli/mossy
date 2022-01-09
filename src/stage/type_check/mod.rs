@@ -660,7 +660,7 @@ impl TypeAnalysis {
             CompatibilityResult::WidenTo(ty) => Some((ty, lhs, rhs)),
             CompatibilityResult::Incompatible => None,
             CompatibilityResult::Scale(ty) => Some((
-                ty.clone(),
+                ty.pointer_to(),
                 lhs,
                 ast::TypedExprNode::ScaleBy(ty, Box::new(rhs)),
             )),
