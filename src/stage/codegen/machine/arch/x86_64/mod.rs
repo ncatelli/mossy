@@ -580,7 +580,7 @@ fn codegen_expr(
         ),
 
         TypedExprNode::Addition(Type::Pointer(ty), lhs, rhs) => {
-            codegen_addition(allocator, ret_val, *ty, lhs, rhs)
+            codegen_addition(allocator, ret_val, ty.pointer_to(), lhs, rhs)
         }
         TypedExprNode::Addition(ty, lhs, rhs) => codegen_addition(allocator, ret_val, ty, lhs, rhs),
         TypedExprNode::Subtraction(ty, lhs, rhs) => {
@@ -1346,7 +1346,7 @@ mod tests {
 \tmovq\t$1, %r13
 \tmovq\t$1, %r15
 \timulq\t%r13, %r15
-\taddb\t%r14b, %r15b
+\taddq\t%r14, %r15
 \tmovb\t(%r15), %r15b
 "
             .to_string()]),
