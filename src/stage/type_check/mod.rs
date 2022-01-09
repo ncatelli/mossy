@@ -678,6 +678,10 @@ impl TypeAnalysis {
                 lvalue_expr @ TypedExprNode::Primary(_, ast::Primary::Identifier(_, _)) => {
                     Ok(lvalue_expr)
                 }
+
+                lvalue_expr if matches!(ty_expr.r#type(), ast::Type::Pointer(_)) => Ok(lvalue_expr),
+
+                // r-value expressions are not valid for ++/-- operators
                 rvalue_expr => Err(format!("type {:?} is not an lvalue", rvalue_expr)),
             })
             .map(|expr| match variant {

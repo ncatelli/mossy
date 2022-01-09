@@ -511,7 +511,7 @@ fn codegen_expr(
 
             flattenable_instructions!(
                 codegen_global_str(&identifier, &lit),
-                codegen_load_global(generate_type_specifier!(u64), ret_val, &identifier),
+                codegen_reference(ret_val, &identifier),
             )
         }
 
