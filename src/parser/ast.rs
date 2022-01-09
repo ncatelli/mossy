@@ -101,6 +101,11 @@ pub enum ExprNode {
     Negate(Box<ExprNode>),
     Invert(Box<ExprNode>),
 
+    PreIncrement(Box<ExprNode>),
+    PreDecrement(Box<ExprNode>),
+    PostIncrement(Box<ExprNode>),
+    PostDecrement(Box<ExprNode>),
+
     // Pointer Operations
     Ref(String),
     Deref(Box<ExprNode>),

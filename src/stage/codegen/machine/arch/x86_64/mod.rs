@@ -332,6 +332,47 @@ fn codegen_store_global(
     )]
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum IncDecExpression {
+    PreIncrement,
+    PreDecrement,
+    PostIncrement,
+    PostDecrement,
+}
+
+fn codegen_inc_or_dec_expression_from_identifier(
+    ty: Type,
+    ret_val: &mut GeneralPurposeRegister,
+    identifier: &str,
+    expr_op: IncDecExpression,
+) -> Vec<String> {
+    let width = operand_width_of_type(ty.clone());
+
+    let op = match expr_op {
+        IncDecExpression::PreIncrement | IncDecExpression::PostIncrement => format!(
+            "\tinc{}\t{}(%{})\n",
+            operator_suffix(width),
+            identifier,
+            PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+        ),
+        IncDecExpression::PreDecrement | IncDecExpression::PostDecrement => format!(
+            "\tdec{}\t{}(%{})\n",
+            operator_suffix(width),
+            identifier,
+            PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+        ),
+    };
+
+    match expr_op {
+        IncDecExpression::PreIncrement | IncDecExpression::PreDecrement => {
+            flattenable_instructions!(vec![op], codegen_load_global(ty, ret_val, identifier),)
+        }
+        IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => {
+            flattenable_instructions!(codegen_load_global(ty, ret_val, identifier), vec![op],)
+        }
+    }
+}
+
 fn codegen_load_global(
     ty: Type,
     ret: &mut GeneralPurposeRegister,
@@ -470,7 +511,7 @@ fn codegen_expr(
 
             flattenable_instructions!(
                 codegen_global_str(&identifier, &lit),
-                codegen_load_global(generate_type_specifier!(u64), ret_val, &identifier),
+                codegen_reference(ret_val, &identifier),
             )
         }
 
@@ -539,7 +580,7 @@ fn codegen_expr(
         ),
 
         TypedExprNode::Addition(Type::Pointer(ty), lhs, rhs) => {
-            codegen_addition(allocator, ret_val, *ty, lhs, rhs)
+            codegen_addition(allocator, ret_val, ty.pointer_to(), lhs, rhs)
         }
         TypedExprNode::Addition(ty, lhs, rhs) => codegen_addition(allocator, ret_val, ty, lhs, rhs),
         TypedExprNode::Subtraction(ty, lhs, rhs) => {
@@ -570,6 +611,53 @@ fn codegen_expr(
         TypedExprNode::LogicalNot(_, expr) => codegen_not(allocator, ret_val, *expr),
         TypedExprNode::Negate(_, expr) => codegen_negate(allocator, ret_val, *expr),
         TypedExprNode::Invert(_, expr) => codegen_invert(allocator, ret_val, *expr),
+
+        TypedExprNode::PreIncrement(_, expr) => match *expr {
+            TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
+                codegen_inc_or_dec_expression_from_identifier(
+                    ty,
+                    ret_val,
+                    &identifier,
+                    IncDecExpression::PreIncrement,
+                )
+            }
+            _ => unreachable!(),
+        },
+        TypedExprNode::PreDecrement(_, expr) => match *expr {
+            TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
+                codegen_inc_or_dec_expression_from_identifier(
+                    ty,
+                    ret_val,
+                    &identifier,
+                    IncDecExpression::PreDecrement,
+                )
+            }
+            _ => unreachable!(),
+        },
+        TypedExprNode::PostIncrement(_, expr) => match *expr {
+            TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
+                codegen_inc_or_dec_expression_from_identifier(
+                    ty,
+                    ret_val,
+                    &identifier,
+                    IncDecExpression::PostIncrement,
+                )
+            }
+
+            _ => unreachable!(),
+        },
+        TypedExprNode::PostDecrement(_, expr) => match *expr {
+            TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
+                codegen_inc_or_dec_expression_from_identifier(
+                    ty,
+                    ret_val,
+                    &identifier,
+                    IncDecExpression::PostDecrement,
+                )
+            }
+
+            _ => unreachable!(),
+        },
 
         TypedExprNode::Ref(_, identifier) => codegen_reference(ret_val, &identifier),
         TypedExprNode::Deref(ty, expr) => {
@@ -1258,7 +1346,7 @@ mod tests {
 \tmovq\t$1, %r13
 \tmovq\t$1, %r15
 \timulq\t%r13, %r15
-\taddb\t%r14b, %r15b
+\taddq\t%r14, %r15
 \tmovb\t(%r15), %r15b
 "
             .to_string()]),

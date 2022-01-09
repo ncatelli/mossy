@@ -355,6 +355,18 @@ fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprN
                 .and_then(|_| identifier())
                 .map(ExprNode::Ref)
         })
+        .or(|| {
+            whitespace_wrapped(expect_str("++"))
+                .and_then(|_| prefix_expression())
+                .map(Box::new)
+                .map(ExprNode::PreIncrement)
+        })
+        .or(|| {
+            whitespace_wrapped(expect_str("--"))
+                .and_then(|_| prefix_expression())
+                .map(Box::new)
+                .map(ExprNode::PreDecrement)
+        })
         // unary logical not
         .or(|| {
             whitespace_wrapped(expect_character('!'))
@@ -378,7 +390,26 @@ fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprN
                 .map(Box::new)
                 .map(ExprNode::Invert)
         })
-        .or(postfix_expression)
+        .or(post_increment_decrement_expression)
+}
+
+fn post_increment_decrement_expression<'a>(
+) -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+    parcel::left(parcel::join(
+        whitespace_wrapped(postfix_expression()),
+        expect_str("++"),
+    ))
+    .map(Box::new)
+    .map(ExprNode::PostIncrement)
+    .or(|| {
+        parcel::left(parcel::join(
+            whitespace_wrapped(postfix_expression()),
+            whitespace_wrapped(expect_str("--")),
+        ))
+        .map(Box::new)
+        .map(ExprNode::PostDecrement)
+    })
+    .or(postfix_expression)
 }
 
 fn postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
