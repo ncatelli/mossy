@@ -1,5 +1,7 @@
 use crate::stage::ast::Type;
 
+/// DeclarationMetadata contains information about a given declared variable.
+/// This information currenntly includes defined size and type.
 #[derive(Debug, Clone)]
 pub struct DeclarationMetadata {
     pub r#type: Type,
