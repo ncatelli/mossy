@@ -14,8 +14,16 @@ impl DeclarationMetadata {
         Self { r#type: ty, size }
     }
 
+    /// Returns a boolean signifying a type is a fixed size array.
     pub fn is_array(&self) -> bool {
-        self.size.is_some()
+        (matches!(self.r#type, Type::Pointer(_)) && self.size.is_some())
+    }
+
+    /// Returns a boolean signifying a type is a direct refence type.
+    /// i.e. not a pointer.
+    #[allow(unused)]
+    pub fn is_direct_reference(&self) -> bool {
+        self.is_array() || !matches!(self.r#type, Type::Pointer(_))
     }
 }
 
