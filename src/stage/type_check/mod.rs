@@ -618,24 +618,12 @@ impl TypeAnalysis {
                     .lookup(&identifier)
                     // validate that the reference is a pointer type
                     .and_then(|reference| {
-                        if reference.r#type.value_at().is_some() {
-                            Some(reference)
-                        } else {
-                            None
-                        }
-                    })
-                    .map(|dm| {
-                        let scale_by_ty = dm.r#type.value_at().unwrap();
-                        /*if dm.is_array() {
-                            // safe to unwrap due to above assertion.
-                            dm.r#type.value_at().unwrap()
-                        } else {
-                            dm.r#type.clone()
-                        };*/
-                        (
-                            dm,
-                            ast::TypedExprNode::ScaleBy(scale_by_ty, Box::new(index_expr)),
-                        )
+                        reference.r#type.value_at().map(|value_of_ref| {
+                            (
+                                reference,
+                                ast::TypedExprNode::ScaleBy(value_of_ref, Box::new(index_expr)),
+                            )
+                        })
                     })
                     .map(|(dm, scale)| {
                         let ref_ty = dm.r#type.clone();
