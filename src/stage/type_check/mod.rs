@@ -194,7 +194,7 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                 )))
             }
             crate::parser::ast::GlobalDecls::Var(Declaration::Array { ty, id, size }) => {
-                self.scopes.define_mut(&id, ty.pointer_to());
+                self.scopes.define_with_size_mut(&id, ty.pointer_to(), size);
 
                 Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Array {
                     ty,
@@ -293,7 +293,7 @@ impl TypeAnalysis {
                 )))
             }
             crate::parser::ast::StmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
-                self.scopes.define_mut(&id, ty.clone());
+                self.scopes.define_with_size_mut(&id, ty.clone(), size);
 
                 Ok(ast::TypedStmtNode::Declaration(ast::Declaration::Array {
                     ty,
@@ -394,10 +394,14 @@ impl TypeAnalysis {
                 .lookup(&identifier)
                 .ok_or_else(|| format!("identifier ({}) undefined", &identifier))
                 .map(|dm| {
-                    ast::TypedExprNode::Primary(
-                        dm.r#type.clone(),
-                        ast::Primary::Identifier(dm.r#type, identifier),
-                    )
+                    if dm.is_array() {
+                        ast::TypedExprNode::Ref(dm.r#type, identifier)
+                    } else {
+                        ast::TypedExprNode::Primary(
+                            dm.r#type.clone(),
+                            ast::Primary::Identifier(dm.r#type, identifier),
+                        )
+                    }
                 }),
             ExprNode::Primary(Primary::Str(elems)) => Ok(ast::TypedExprNode::Primary(
                 generate_type_specifier!(ptr => generate_type_specifier!(char)),
@@ -614,24 +618,38 @@ impl TypeAnalysis {
                     .lookup(&identifier)
                     // validate that the reference is a pointer type
                     .and_then(|reference| {
-                        reference
-                            .r#type
-                            .value_at()
-                            .map(|ptr_to_ty| (reference.r#type.clone(), ptr_to_ty))
+                        if reference.r#type.value_at().is_some() {
+                            Some(reference)
+                        } else {
+                            None
+                        }
                     })
-                    .map(|(ref_ty, scale_by_ty)| {
+                    .map(|dm| {
+                        let scale_by_ty = dm.r#type.value_at().unwrap();
+                        /*if dm.is_array() {
+                            // safe to unwrap due to above assertion.
+                            dm.r#type.value_at().unwrap()
+                        } else {
+                            dm.r#type.clone()
+                        };*/
                         (
-                            ref_ty,
+                            dm,
                             ast::TypedExprNode::ScaleBy(scale_by_ty, Box::new(index_expr)),
                         )
                     })
-                    .map(|(ref_ty, scale)| {
+                    .map(|(dm, scale)| {
+                        let ref_ty = dm.r#type.clone();
+                        let l_value_access = if dm.is_array() {
+                            Box::new(ast::TypedExprNode::Ref(ref_ty.clone(), identifier.clone()))
+                        } else {
+                            Box::new(ast::TypedExprNode::Primary(
+                                ref_ty.clone(),
+                                ast::Primary::Identifier(ref_ty.clone(), identifier.clone()),
+                            ))
+                        };
+
                         // recast to a pointer as pulled from the above reference
-                        ast::TypedExprNode::Addition(
-                            ref_ty.clone(),
-                            Box::new(ast::TypedExprNode::Ref(ref_ty, identifier.clone())),
-                            Box::new(scale),
-                        )
+                        ast::TypedExprNode::Addition(ref_ty, l_value_access, Box::new(scale))
                     })
                     .and_then(|reference| {
                         reference
