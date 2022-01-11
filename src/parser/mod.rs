@@ -151,11 +151,14 @@ fn for_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode>
                     '(',
                     ')',
                     parcel::join(
-                        preop_statement(),
+                        parcel::left(parcel::join(
+                            preop_statement(),
+                            whitespace_wrapped(expect_character(';')),
+                        )),
                         parcel::join(
                             parcel::left(parcel::join(
                                 expression(),
-                                whitespace_wrapped(expect_str(";")),
+                                whitespace_wrapped(expect_character(';')),
                             )),
                             postop_statement(),
                         ),
@@ -170,11 +173,11 @@ fn for_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode>
 }
 
 fn preop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    statement()
+    assignment().map(StmtNode::Expression)
 }
 
 fn postop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    statement()
+    expression().map(StmtNode::Expression)
 }
 
 fn return_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
@@ -911,6 +914,42 @@ mod tests {
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
             ExprNode::Index("x".to_string(), Box::new(primary_expr!(i8 1))),
+        )]));
+
+        assert_eq!(&expected_result, &res);
+    }
+
+    #[test]
+    fn should_parse_for_statement() {
+        use parcel::Parser;
+
+        let input: Vec<(usize, char)> = "{
+    for (i=0; i<5; i++) {
+        i;
+    }
+}"
+        .chars()
+        .enumerate()
+        .collect();
+        let res = crate::parser::compound_statements()
+            .parse(&input)
+            .map(|ms| ms.unwrap());
+
+        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::For(
+            Box::new(StmtNode::Expression(assignment_expr!(
+                ExprNode::Primary(Primary::Identifier("i".to_string())),
+                primary_expr!(i8 0)
+            ))),
+            ExprNode::LessThan(
+                Box::new(ExprNode::Primary(Primary::Identifier("i".to_string()))),
+                Box::new(primary_expr!(i8 5)),
+            ),
+            Box::new(StmtNode::Expression(ExprNode::PostIncrement(Box::new(
+                ExprNode::Primary(Primary::Identifier("i".to_string())),
+            )))),
+            CompoundStmts::new(vec![StmtNode::Expression(ExprNode::Primary(
+                Primary::Identifier("i".to_string()),
+            ))]),
         )]));
 
         assert_eq!(&expected_result, &res);

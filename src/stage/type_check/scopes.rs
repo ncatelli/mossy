@@ -1,13 +1,31 @@
 use crate::stage::ast::Type;
 
+/// DeclarationMetadata contains information about a given declared variable.
+/// This information currenntly includes defined size and type.
 #[derive(Debug, Clone)]
 pub struct DeclarationMetadata {
     pub r#type: Type,
+    // if Some, implies that this is a fixed size array of a known size.
+    // Otherwise it is a singular type be it a known value or pointer to a
+    // value.
+    pub size: Option<usize>,
 }
 
 impl DeclarationMetadata {
-    pub fn new(ty: Type) -> Self {
-        Self { r#type: ty }
+    pub fn new(ty: Type, size: Option<usize>) -> Self {
+        Self { r#type: ty, size }
+    }
+
+    /// Returns a boolean signifying a type is a fixed size array.
+    pub fn is_array(&self) -> bool {
+        (matches!(self.r#type, Type::Pointer(_)) && self.size.is_some())
+    }
+
+    /// Returns a boolean signifying a type is a direct refence type.
+    /// i.e. not a pointer.
+    #[allow(unused)]
+    pub fn is_direct_reference(&self) -> bool {
+        self.is_array() || !matches!(self.r#type, Type::Pointer(_))
     }
 }
 
@@ -40,7 +58,14 @@ impl ScopeStack {
     pub fn define_mut(&mut self, id: &str, ty: Type) {
         self.scopes
             .last_mut()
-            .map(|scope| scope.insert(id.to_string(), DeclarationMetadata::new(ty)));
+            .map(|scope| scope.insert(id.to_string(), DeclarationMetadata::new(ty, None)));
+    }
+
+    /// Defines a new variable in place.
+    pub fn define_with_size_mut(&mut self, id: &str, ty: Type, size: usize) {
+        self.scopes
+            .last_mut()
+            .map(|scope| scope.insert(id.to_string(), DeclarationMetadata::new(ty, Some(size))));
     }
 
     /// looks up variable in place.

@@ -365,10 +365,10 @@ fn codegen_inc_or_dec_expression_from_identifier(
 
     match expr_op {
         IncDecExpression::PreIncrement | IncDecExpression::PreDecrement => {
-            flattenable_instructions!(vec![op], codegen_load_global(ty, ret_val, identifier),)
+            flattenable_instructions!(vec![op], codegen_load_global(ty, ret_val, identifier, 0),)
         }
         IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => {
-            flattenable_instructions!(codegen_load_global(ty, ret_val, identifier), vec![op],)
+            flattenable_instructions!(codegen_load_global(ty, ret_val, identifier, 0), vec![op],)
         }
     }
 }
@@ -377,16 +377,29 @@ fn codegen_load_global(
     ty: Type,
     ret: &mut GeneralPurposeRegister,
     identifier: &str,
+    scale: usize,
 ) -> Vec<String> {
+    let scale_by = ty.size() * scale;
     let width = operand_width_of_type(ty);
 
-    vec![format!(
-        "\tmov{}\t{}(%{}), %{}\n",
-        operator_suffix(width),
-        identifier,
-        PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
-        ret.fmt_with_operand_width(width)
-    )]
+    if scale == 0 {
+        vec![format!(
+            "\tmov{}\t{}(%{}), %{}\n",
+            operator_suffix(width),
+            identifier,
+            PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+            ret.fmt_with_operand_width(width)
+        )]
+    } else {
+        vec![format!(
+            "\tmov{}\t{}+{}(%{}), %{}\n",
+            operator_suffix(width),
+            identifier,
+            scale_by,
+            PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+            ret.fmt_with_operand_width(width)
+        )]
+    }
 }
 
 fn codegen_global_str(identifier: &str, str_literal: &[u8]) -> Vec<String> {
@@ -504,7 +517,7 @@ fn codegen_expr(
         },
 
         TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
-            codegen_load_global(ty, ret_val, &identifier)
+            codegen_load_global(ty, ret_val, &identifier, 0)
         }
         TypedExprNode::Primary(_, Primary::Str(lit)) => {
             let identifier = format!("V{}", BLOCK_ID.fetch_add(1, Ordering::SeqCst));
@@ -663,7 +676,7 @@ fn codegen_expr(
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(
                 codegen_expr(allocator, ret_val, *expr),
-                codegen_deref(ret_val, ty),
+                codegen_deref(ret_val, ty, 0),
             )
         }
         TypedExprNode::ScaleBy(ty, lhs) => {
@@ -782,14 +795,26 @@ fn codegen_store_deref(
     )]
 }
 
-fn codegen_deref(ret: &mut GeneralPurposeRegister, ty: ast::Type) -> Vec<String> {
+fn codegen_deref(ret: &mut GeneralPurposeRegister, ty: ast::Type, scale: usize) -> Vec<String> {
+    let scale_by = ty.size() * scale;
     let width = operand_width_of_type(ty);
-    vec![format!(
-        "\tmov{}\t(%{}), %{}\n",
-        operator_suffix(width),
-        ret.fmt_with_operand_width(OperandWidth::QuadWord),
-        ret.fmt_with_operand_width(width)
-    )]
+
+    if scale == 0 {
+        vec![format!(
+            "\tmov{}\t(%{}), %{}\n",
+            operator_suffix(width),
+            ret.fmt_with_operand_width(OperandWidth::QuadWord),
+            ret.fmt_with_operand_width(width)
+        )]
+    } else {
+        vec![format!(
+            "\tmov{}\t{}(%{}), %{}\n",
+            operator_suffix(width),
+            scale_by,
+            ret.fmt_with_operand_width(OperandWidth::QuadWord),
+            ret.fmt_with_operand_width(width)
+        )]
+    }
 }
 
 fn codegen_scaleby(
