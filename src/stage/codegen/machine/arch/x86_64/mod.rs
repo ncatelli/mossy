@@ -395,18 +395,34 @@ fn codegen_inc_or_dec_expression_from_pointer(
             ),
         };
 
-        flattenable_instructions!(
-            vec![
-                format!(
-                    "\tmov{}\t%{}, %{}\n",
-                    operator_suffix(OperandWidth::QuadWord),
-                    ret_val.fmt_with_operand_width(OperandWidth::QuadWord),
-                    ptr_reg.fmt_with_operand_width(OperandWidth::QuadWord)
-                ),
-                op,
-            ],
-            codegen_deref(ret_val, ty, 0),
-        )
+        match expr_op {
+            IncDecExpression::PreIncrement | IncDecExpression::PreDecrement => {
+                flattenable_instructions!(
+                    vec![
+                        format!(
+                            "\tmov{}\t%{}, %{}\n",
+                            operator_suffix(OperandWidth::QuadWord),
+                            ret_val.fmt_with_operand_width(OperandWidth::QuadWord),
+                            ptr_reg.fmt_with_operand_width(OperandWidth::QuadWord)
+                        ),
+                        op,
+                    ],
+                    codegen_deref(ret_val, ty, 0),
+                )
+            }
+            IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => {
+                flattenable_instructions!(
+                    vec![format!(
+                        "\tmov{}\t%{}, %{}\n",
+                        operator_suffix(OperandWidth::QuadWord),
+                        ret_val.fmt_with_operand_width(OperandWidth::QuadWord),
+                        ptr_reg.fmt_with_operand_width(OperandWidth::QuadWord)
+                    )],
+                    codegen_deref(ret_val, ty, 0),
+                    vec![op],
+                )
+            }
+        }
     })
 }
 
@@ -671,7 +687,6 @@ fn codegen_expr(
                     IncDecExpression::PreIncrement,
                 )
             }
-
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret_val, *expr),
@@ -694,6 +709,17 @@ fn codegen_expr(
                     IncDecExpression::PreDecrement,
                 )
             }
+            TypedExprNode::Deref(ty, expr) => {
+                flattenable_instructions!(
+                    codegen_expr(allocator, ret_val, *expr),
+                    codegen_inc_or_dec_expression_from_pointer(
+                        ty,
+                        allocator,
+                        ret_val,
+                        IncDecExpression::PreDecrement,
+                    ),
+                )
+            }
             _ => unreachable!(),
         },
         TypedExprNode::PostIncrement(_, expr) => match *expr {
@@ -705,7 +731,17 @@ fn codegen_expr(
                     IncDecExpression::PostIncrement,
                 )
             }
-
+            TypedExprNode::Deref(ty, expr) => {
+                flattenable_instructions!(
+                    codegen_expr(allocator, ret_val, *expr),
+                    codegen_inc_or_dec_expression_from_pointer(
+                        ty,
+                        allocator,
+                        ret_val,
+                        IncDecExpression::PostIncrement,
+                    ),
+                )
+            }
             _ => unreachable!(),
         },
         TypedExprNode::PostDecrement(_, expr) => match *expr {
@@ -717,7 +753,17 @@ fn codegen_expr(
                     IncDecExpression::PostDecrement,
                 )
             }
-
+            TypedExprNode::Deref(ty, expr) => {
+                flattenable_instructions!(
+                    codegen_expr(allocator, ret_val, *expr),
+                    codegen_inc_or_dec_expression_from_pointer(
+                        ty,
+                        allocator,
+                        ret_val,
+                        IncDecExpression::PostDecrement,
+                    ),
+                )
+            }
             _ => unreachable!(),
         },
 
