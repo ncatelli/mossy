@@ -81,6 +81,10 @@ pub enum ExprNode {
     /// to a given pre-declared assignment.
     Assignment(Box<ExprNode>, Box<ExprNode>),
 
+    // Binary Logical
+    LogAnd(Box<ExprNode>, Box<ExprNode>),
+    LogOr(Box<ExprNode>, Box<ExprNode>),
+
     // Comparative
     Equal(Box<ExprNode>, Box<ExprNode>),
     NotEqual(Box<ExprNode>, Box<ExprNode>),
@@ -132,6 +136,15 @@ pub enum Primary {
 macro_rules! assignment_expr {
     ($lhs:expr, '=', $rhs:expr) => {
         $crate::parser::ast::ExprNode::Assignment(Box::new($lhs), Box::new($rhs))
+    };
+}
+
+macro_rules! binary_logical_expr {
+    ($lhs:expr, "||", $rhs:expr) => {
+        $crate::parser::ast::ExprNode::LogOr(Box::new($lhs), Box::new($rhs))
+    };
+    ($lhs:expr, "&&", $rhs:expr) => {
+        $crate::parser::ast::ExprNode::LogAnd(Box::new($lhs), Box::new($rhs))
     };
 }
 

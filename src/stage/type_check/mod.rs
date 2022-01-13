@@ -25,14 +25,16 @@ impl std::convert::TryFrom<usize> for Integer {
     fn try_from(value: usize) -> Result<Self, Self::Error> {
         use ast::{IntegerWidth, Signed};
         match value {
-            0 => Ok(Integer::new(Signed::Signed, IntegerWidth::Eight)),
-            1 => Ok(Integer::new(Signed::Unsigned, IntegerWidth::Eight)),
-            2 => Ok(Integer::new(Signed::Signed, IntegerWidth::Sixteen)),
-            3 => Ok(Integer::new(Signed::Unsigned, IntegerWidth::Sixteen)),
-            4 => Ok(Integer::new(Signed::Signed, IntegerWidth::ThirtyTwo)),
-            5 => Ok(Integer::new(Signed::Unsigned, IntegerWidth::ThirtyTwo)),
-            6 => Ok(Integer::new(Signed::Signed, IntegerWidth::SixtyFour)),
-            7 => Ok(Integer::new(Signed::Unsigned, IntegerWidth::SixtyFour)),
+            0 => Ok(Integer::new(Signed::Signed, IntegerWidth::One)),
+            1 => Ok(Integer::new(Signed::Unsigned, IntegerWidth::One)),
+            2 => Ok(Integer::new(Signed::Signed, IntegerWidth::Eight)),
+            3 => Ok(Integer::new(Signed::Unsigned, IntegerWidth::Eight)),
+            4 => Ok(Integer::new(Signed::Signed, IntegerWidth::Sixteen)),
+            5 => Ok(Integer::new(Signed::Unsigned, IntegerWidth::Sixteen)),
+            6 => Ok(Integer::new(Signed::Signed, IntegerWidth::ThirtyTwo)),
+            7 => Ok(Integer::new(Signed::Unsigned, IntegerWidth::ThirtyTwo)),
+            8 => Ok(Integer::new(Signed::Signed, IntegerWidth::SixtyFour)),
+            9 => Ok(Integer::new(Signed::Unsigned, IntegerWidth::SixtyFour)),
             _ => Err(format!("rank {} outside of accepted range", value)),
         }
     }
@@ -60,10 +62,11 @@ impl Ranking for ast::IntegerWidth {
 
     fn rank(&self) -> Self::Output {
         match self {
-            ast::IntegerWidth::Eight => 0,
-            ast::IntegerWidth::Sixteen => 2,
-            ast::IntegerWidth::ThirtyTwo => 4,
-            ast::IntegerWidth::SixtyFour => 6,
+            ast::IntegerWidth::One => 0,
+            ast::IntegerWidth::Eight => 2,
+            ast::IntegerWidth::Sixteen => 4,
+            ast::IntegerWidth::ThirtyTwo => 6,
+            ast::IntegerWidth::SixtyFour => 8,
         }
     }
 }
@@ -469,9 +472,24 @@ impl TypeAnalysis {
                     }
                     .map(|ty| ast::TypedExprNode::DerefAssignment(ty, expr, Box::new(rhs))),
                     // Fail on any other type
-                    _ => Err(format!("invalid assignment type: ({:?})", lhs.r#type(),)),
+                    _ => Err(format!("invalid assignment type: ({:?})", lhs.r#type())),
                 }
             }
+
+            ExprNode::LogOr(lhs, rhs) => self
+                .analyze_binary_expr(*lhs, *rhs)
+                .map(|(_, lhs, rhs)| {
+                    let ty = ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::One);
+                    ast::TypedExprNode::LogOr(ty, Box::new(lhs), Box::new(rhs))
+                })
+                .ok_or_else(|| "incompatible types for logical or comparison".to_string()),
+            ExprNode::LogAnd(lhs, rhs) => self
+                .analyze_binary_expr(*lhs, *rhs)
+                .map(|(_, lhs, rhs)| {
+                    let ty = ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::One);
+                    ast::TypedExprNode::LogAnd(ty, Box::new(lhs), Box::new(rhs))
+                })
+                .ok_or_else(|| "incompatible types for logical and comparison".to_string()),
             ExprNode::Equal(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {

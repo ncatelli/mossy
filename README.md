@@ -59,7 +59,10 @@ expression: assignment
         ;
 
 assignment:   identifier '=' assignment
-        | equality
+        | binary_logical
+        ;
+
+binary_logical: equality ( ( '||' | '&&' ) equality )*
         ;
 
 equality: relational ( ( '==' | '!=' ) relational )*
