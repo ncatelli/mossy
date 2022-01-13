@@ -685,7 +685,18 @@ impl TypeAnalysis {
                     Ok(lvalue_expr)
                 }
 
-                lvalue_expr if matches!(ty_expr.r#type(), ast::Type::Pointer(_)) => Ok(lvalue_expr),
+                lvalue_expr @ TypedExprNode::Deref(_, _) => Ok(lvalue_expr),
+                TypedExprNode::Grouping(ty, inner_expr) => {
+                    let expr = *inner_expr;
+                    if let TypedExprNode::Deref(ty, expr) = expr {
+                        Ok(TypedExprNode::Deref(ty, expr))
+                    } else {
+                        Err(format!(
+                            "type {:?} is not an lvalue",
+                            TypedExprNode::Grouping(ty, Box::new(expr))
+                        ))
+                    }
+                }
 
                 // r-value expressions are not valid for ++/-- operators
                 rvalue_expr => Err(format!("type {:?} is not an lvalue", rvalue_expr)),

@@ -373,6 +373,59 @@ fn codegen_inc_or_dec_expression_from_identifier(
     }
 }
 
+fn codegen_inc_or_dec_expression_from_pointer(
+    ty: Type,
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut GeneralPurposeRegister,
+    expr_op: IncDecExpression,
+) -> Vec<String> {
+    let width = operand_width_of_type(ty.clone());
+
+    allocator.allocate_then(|_, ptr_reg| {
+        let op = match expr_op {
+            IncDecExpression::PreIncrement | IncDecExpression::PostIncrement => format!(
+                "\tinc{}\t(%{})\n",
+                operator_suffix(width),
+                ptr_reg.fmt_with_operand_width(OperandWidth::QuadWord),
+            ),
+            IncDecExpression::PreDecrement | IncDecExpression::PostDecrement => format!(
+                "\tdec{}\t(%{})\n",
+                operator_suffix(width),
+                ptr_reg.fmt_with_operand_width(OperandWidth::QuadWord),
+            ),
+        };
+
+        match expr_op {
+            IncDecExpression::PreIncrement | IncDecExpression::PreDecrement => {
+                flattenable_instructions!(
+                    vec![
+                        format!(
+                            "\tmov{}\t%{}, %{}\n",
+                            operator_suffix(OperandWidth::QuadWord),
+                            ret_val.fmt_with_operand_width(OperandWidth::QuadWord),
+                            ptr_reg.fmt_with_operand_width(OperandWidth::QuadWord)
+                        ),
+                        op,
+                    ],
+                    codegen_deref(ret_val, ty, 0),
+                )
+            }
+            IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => {
+                flattenable_instructions!(
+                    vec![format!(
+                        "\tmov{}\t%{}, %{}\n",
+                        operator_suffix(OperandWidth::QuadWord),
+                        ret_val.fmt_with_operand_width(OperandWidth::QuadWord),
+                        ptr_reg.fmt_with_operand_width(OperandWidth::QuadWord)
+                    )],
+                    codegen_deref(ret_val, ty, 0),
+                    vec![op],
+                )
+            }
+        }
+    })
+}
+
 fn codegen_load_global(
     ty: Type,
     ret: &mut GeneralPurposeRegister,
@@ -538,12 +591,12 @@ fn codegen_expr(
                 codegen_store_global(ty, ret_val, &identifier),
             )
         }
-        TypedExprNode::DerefAssignment(_, lhs, rhs) => {
+        TypedExprNode::DerefAssignment(ty, lhs, rhs) => {
             allocator.allocate_then(|allocator, rhs_ret_val| {
                 flattenable_instructions!(
                     codegen_expr(allocator, rhs_ret_val, *rhs),
                     codegen_expr(allocator, ret_val, *lhs),
-                    codegen_store_deref(ret_val, rhs_ret_val),
+                    codegen_store_deref(ty, ret_val, rhs_ret_val),
                 )
             })
         }
@@ -634,6 +687,17 @@ fn codegen_expr(
                     IncDecExpression::PreIncrement,
                 )
             }
+            TypedExprNode::Deref(ty, expr) => {
+                flattenable_instructions!(
+                    codegen_expr(allocator, ret_val, *expr),
+                    codegen_inc_or_dec_expression_from_pointer(
+                        ty,
+                        allocator,
+                        ret_val,
+                        IncDecExpression::PreIncrement,
+                    ),
+                )
+            }
             _ => unreachable!(),
         },
         TypedExprNode::PreDecrement(_, expr) => match *expr {
@@ -643,6 +707,17 @@ fn codegen_expr(
                     ret_val,
                     &identifier,
                     IncDecExpression::PreDecrement,
+                )
+            }
+            TypedExprNode::Deref(ty, expr) => {
+                flattenable_instructions!(
+                    codegen_expr(allocator, ret_val, *expr),
+                    codegen_inc_or_dec_expression_from_pointer(
+                        ty,
+                        allocator,
+                        ret_val,
+                        IncDecExpression::PreDecrement,
+                    ),
                 )
             }
             _ => unreachable!(),
@@ -656,7 +731,17 @@ fn codegen_expr(
                     IncDecExpression::PostIncrement,
                 )
             }
-
+            TypedExprNode::Deref(ty, expr) => {
+                flattenable_instructions!(
+                    codegen_expr(allocator, ret_val, *expr),
+                    codegen_inc_or_dec_expression_from_pointer(
+                        ty,
+                        allocator,
+                        ret_val,
+                        IncDecExpression::PostIncrement,
+                    ),
+                )
+            }
             _ => unreachable!(),
         },
         TypedExprNode::PostDecrement(_, expr) => match *expr {
@@ -668,7 +753,17 @@ fn codegen_expr(
                     IncDecExpression::PostDecrement,
                 )
             }
-
+            TypedExprNode::Deref(ty, expr) => {
+                flattenable_instructions!(
+                    codegen_expr(allocator, ret_val, *expr),
+                    codegen_inc_or_dec_expression_from_pointer(
+                        ty,
+                        allocator,
+                        ret_val,
+                        IncDecExpression::PostDecrement,
+                    ),
+                )
+            }
             _ => unreachable!(),
         },
 
@@ -783,14 +878,16 @@ fn codegen_reference(ret: &mut GeneralPurposeRegister, identifier: &str) -> Vec<
 }
 
 fn codegen_store_deref(
+    ty: Type,
     dest: &mut GeneralPurposeRegister,
     src: &mut GeneralPurposeRegister,
 ) -> Vec<String> {
-    const WIDTH: OperandWidth = OperandWidth::QuadWord;
+    let width = operand_width_of_type(ty);
+
     vec![format!(
         "\tmov{}\t%{}, (%{})\n",
-        operator_suffix(WIDTH),
-        src.fmt_with_operand_width(WIDTH),
+        operator_suffix(width),
+        src.fmt_with_operand_width(width),
         dest.fmt_with_operand_width(OperandWidth::QuadWord)
     )]
 }
