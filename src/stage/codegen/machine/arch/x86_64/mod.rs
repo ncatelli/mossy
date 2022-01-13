@@ -522,26 +522,32 @@ fn codegen_expr(
 
     match expr {
         TypedExprNode::Primary(_, Primary::Integer { sign, width, value }) => match (sign, width) {
+            (_, IntegerWidth::One) => {
+                let boolean_literal = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
+                    .expect("value exceeds unsigned 8-bit integer");
+                codegen_constant_u8(ret_val, boolean_literal)
+            }
+
             (Signed::Signed, IntegerWidth::Eight) => {
-                let signed_val = u64::from_le_bytes(value);
-                if signed_val.leading_zeros() >= 56 {
-                    codegen_constant_i8(ret_val, signed_val as i8)
+                let signed_literal = u64::from_le_bytes(value);
+                if signed_literal.leading_zeros() >= 56 {
+                    codegen_constant_i8(ret_val, signed_literal as i8)
                 } else {
                     panic!("value exceeds signed 8-bit integer")
                 }
             }
             (Signed::Signed, IntegerWidth::Sixteen) => {
-                let signed_val = u64::from_le_bytes(value);
-                if signed_val.leading_zeros() >= 48 {
-                    codegen_constant_i16(ret_val, signed_val as i16)
+                let signed_literal = u64::from_le_bytes(value);
+                if signed_literal.leading_zeros() >= 48 {
+                    codegen_constant_i16(ret_val, signed_literal as i16)
                 } else {
                     panic!("value exceeds signed 16-bit integer")
                 }
             }
             (Signed::Signed, IntegerWidth::ThirtyTwo) => {
-                let signed_val = u64::from_le_bytes(value);
-                if signed_val.leading_zeros() >= 32 {
-                    codegen_constant_i32(ret_val, signed_val as i32)
+                let signed_literal = u64::from_le_bytes(value);
+                if signed_literal.leading_zeros() >= 32 {
+                    codegen_constant_i32(ret_val, signed_literal as i32)
                 } else {
                     panic!("value exceeds signed 32-bit integer")
                 }
@@ -550,19 +556,19 @@ fn codegen_expr(
                 codegen_constant_i64(ret_val, i64::from_le_bytes(value))
             }
             (Signed::Unsigned, IntegerWidth::Eight) => {
-                let unsigned_constant = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
+                let unsigned_literal = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
                     .expect("value exceeds unsigned 8-bit integer");
-                codegen_constant_u8(ret_val, unsigned_constant)
+                codegen_constant_u8(ret_val, unsigned_literal)
             }
             (Signed::Unsigned, IntegerWidth::Sixteen) => {
-                let unsigned_constant = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
+                let unsigned_literal = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
                     .expect("value exceeds unsigned 32-bit integer");
-                codegen_constant_u16(ret_val, unsigned_constant)
+                codegen_constant_u16(ret_val, unsigned_literal)
             }
             (Signed::Unsigned, IntegerWidth::ThirtyTwo) => {
-                let unsigned_constant = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
+                let unsigned_literal = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
                     .expect("value exceeds unsigned 32-bit integer");
-                codegen_constant_u32(ret_val, unsigned_constant)
+                codegen_constant_u32(ret_val, unsigned_literal)
             }
             (Signed::Unsigned, IntegerWidth::SixtyFour) => {
                 codegen_constant_u64(ret_val, u64::from_le_bytes(value))
@@ -600,6 +606,9 @@ fn codegen_expr(
                 )
             })
         }
+
+        TypedExprNode::LogOr(_, lhs, rhs) => codegen_or(allocator, ret_val, *lhs, *rhs),
+        TypedExprNode::LogAnd(_, lhs, rhs) => codegen_and(allocator, ret_val, *lhs, *rhs),
 
         TypedExprNode::Equal(ty, lhs, rhs) => {
             codegen_compare_and_set(allocator, ret_val, ComparisonOperation::Equal, ty, lhs, rhs)
@@ -1096,6 +1105,61 @@ fn codegen_division(
 }
 
 // Binary
+// Binary Logical
+
+/// Generates a logical `||` or.
+#[allow(unused)]
+fn codegen_or(
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut GeneralPurposeRegister,
+    lhs: ast::TypedExprNode,
+    rhs: ast::TypedExprNode,
+) -> Vec<String> {
+    let width = OperandWidth::QuadWord;
+
+    allocator.allocate_then(|allocator, rhs_ret_val| {
+        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
+        let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
+
+        flattenable_instructions!(
+            rhs_ctx,
+            lhs_ctx,
+            vec![format!(
+                "\tor{}\t%{}, %{}\n",
+                operator_suffix(width),
+                rhs_ret_val.fmt_with_operand_width(width),
+                ret_val.fmt_with_operand_width(width)
+            )],
+        )
+    })
+}
+
+/// Generates a logical `&&` and.
+#[allow(unused)]
+fn codegen_and(
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut GeneralPurposeRegister,
+    lhs: ast::TypedExprNode,
+    rhs: ast::TypedExprNode,
+) -> Vec<String> {
+    let width = OperandWidth::QuadWord;
+
+    allocator.allocate_then(|allocator, rhs_ret_val| {
+        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
+        let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
+
+        flattenable_instructions!(
+            rhs_ctx,
+            lhs_ctx,
+            vec![format!(
+                "\tand{}\t%{}, %{}\n",
+                operator_suffix(width),
+                rhs_ret_val.fmt_with_operand_width(width),
+                ret_val.fmt_with_operand_width(width)
+            )],
+        )
+    })
+}
 
 /// Invert a register's value.
 #[allow(unused)]
@@ -1332,7 +1396,7 @@ const fn operator_suffix(width: OperandWidth) -> &'static str {
 fn operand_width_of_type(ty: Type) -> OperandWidth {
     match ty {
         Type::Integer(_, iw) => match iw {
-            ast::IntegerWidth::Eight => OperandWidth::Byte,
+            ast::IntegerWidth::One | ast::IntegerWidth::Eight => OperandWidth::Byte,
             ast::IntegerWidth::Sixteen => OperandWidth::Word,
             ast::IntegerWidth::ThirtyTwo => OperandWidth::DoubleWord,
             ast::IntegerWidth::SixtyFour => OperandWidth::QuadWord,

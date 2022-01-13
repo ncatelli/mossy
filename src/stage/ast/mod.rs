@@ -152,6 +152,10 @@ pub enum TypedExprNode {
     IdentifierAssignment(Type, String, Box<TypedExprNode>),
     DerefAssignment(Type, Box<TypedExprNode>, Box<TypedExprNode>),
 
+    // Binary Logical
+    LogAnd(Type, Box<TypedExprNode>, Box<TypedExprNode>),
+    LogOr(Type, Box<TypedExprNode>, Box<TypedExprNode>),
+
     // Comparative
     Equal(Type, Box<TypedExprNode>, Box<TypedExprNode>),
     NotEqual(Type, Box<TypedExprNode>, Box<TypedExprNode>),
@@ -214,6 +218,10 @@ impl Typed for TypedExprNode {
             | TypedExprNode::Deref(ty, _)
             | TypedExprNode::ScaleBy(ty, _)
             | TypedExprNode::Grouping(ty, _) => ty.clone(),
+            // Boolean types
+            TypedExprNode::LogOr(_, _, _) | TypedExprNode::LogAnd(_, _, _) => {
+                Type::Integer(Signed::Unsigned, IntegerWidth::One)
+            }
         }
     }
 }
@@ -264,6 +272,7 @@ pub enum Signed {
 /// Represents valid integer bit widths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub enum IntegerWidth {
+    One,
     Eight,
     Sixteen,
     ThirtyTwo,
@@ -273,7 +282,7 @@ pub enum IntegerWidth {
 impl ByteSized for IntegerWidth {
     fn size(&self) -> usize {
         match self {
-            Self::Eight => 1,
+            Self::One | Self::Eight => 1,
             Self::Sixteen => 2,
             Self::ThirtyTwo => 4,
             Self::SixtyFour => 8,
