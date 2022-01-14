@@ -153,8 +153,13 @@ pub enum TypedExprNode {
     DerefAssignment(Type, Box<TypedExprNode>, Box<TypedExprNode>),
 
     // Binary Logical
-    LogAnd(Type, Box<TypedExprNode>, Box<TypedExprNode>),
     LogOr(Type, Box<TypedExprNode>, Box<TypedExprNode>),
+    LogAnd(Type, Box<TypedExprNode>, Box<TypedExprNode>),
+
+    // Bitwise
+    BitOr(Type, Box<TypedExprNode>, Box<TypedExprNode>),
+    BitXor(Type, Box<TypedExprNode>, Box<TypedExprNode>),
+    BitAnd(Type, Box<TypedExprNode>, Box<TypedExprNode>),
 
     // Comparative
     Equal(Type, Box<TypedExprNode>, Box<TypedExprNode>),
@@ -163,6 +168,10 @@ pub enum TypedExprNode {
     GreaterThan(Type, Box<TypedExprNode>, Box<TypedExprNode>),
     LessEqual(Type, Box<TypedExprNode>, Box<TypedExprNode>),
     GreaterEqual(Type, Box<TypedExprNode>, Box<TypedExprNode>),
+
+    // Bitwise shift
+    BitShiftLeft(Type, Box<TypedExprNode>, Box<TypedExprNode>),
+    BitShiftRight(Type, Box<TypedExprNode>, Box<TypedExprNode>),
 
     // Arithmetic
     Addition(Type, Box<TypedExprNode>, Box<TypedExprNode>),
@@ -196,12 +205,17 @@ impl Typed for TypedExprNode {
             | TypedExprNode::FunctionCall(ty, _, _)
             | TypedExprNode::IdentifierAssignment(ty, _, _)
             | TypedExprNode::DerefAssignment(ty, _, _)
+            | TypedExprNode::BitOr(ty, _, _)
+            | TypedExprNode::BitXor(ty, _, _)
+            | TypedExprNode::BitAnd(ty, _, _)
             | TypedExprNode::Equal(ty, _, _)
             | TypedExprNode::NotEqual(ty, _, _)
             | TypedExprNode::LessThan(ty, _, _)
             | TypedExprNode::GreaterThan(ty, _, _)
             | TypedExprNode::LessEqual(ty, _, _)
             | TypedExprNode::GreaterEqual(ty, _, _)
+            | TypedExprNode::BitShiftLeft(ty, _, _)
+            | TypedExprNode::BitShiftRight(ty, _, _)
             | TypedExprNode::Addition(ty, _, _)
             | TypedExprNode::Subtraction(ty, _, _)
             | TypedExprNode::Division(ty, _, _)

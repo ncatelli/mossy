@@ -607,8 +607,18 @@ fn codegen_expr(
             })
         }
 
-        TypedExprNode::LogOr(_, lhs, rhs) => codegen_or(allocator, ret_val, *lhs, *rhs),
-        TypedExprNode::LogAnd(_, lhs, rhs) => codegen_and(allocator, ret_val, *lhs, *rhs),
+        TypedExprNode::LogOr(_, lhs, rhs) => {
+            let ty = generate_type_specifier!(u64);
+            codegen_or(ty, allocator, ret_val, *lhs, *rhs)
+        }
+        TypedExprNode::LogAnd(_, lhs, rhs) => {
+            let ty = generate_type_specifier!(u64);
+            codegen_and(ty, allocator, ret_val, *lhs, *rhs)
+        }
+
+        TypedExprNode::BitOr(ty, lhs, rhs) => codegen_or(ty, allocator, ret_val, *lhs, *rhs),
+        TypedExprNode::BitXor(ty, lhs, rhs) => codegen_xor(ty, allocator, ret_val, *lhs, *rhs),
+        TypedExprNode::BitAnd(ty, lhs, rhs) => codegen_and(ty, allocator, ret_val, *lhs, *rhs),
 
         TypedExprNode::Equal(ty, lhs, rhs) => {
             codegen_compare_and_set(allocator, ret_val, ComparisonOperation::Equal, ty, lhs, rhs)
@@ -653,6 +663,13 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
+
+        TypedExprNode::BitShiftLeft(ty, lhs, rhs) => {
+            codegen_shift_left(ty, allocator, ret_val, *lhs, *rhs)
+        }
+        TypedExprNode::BitShiftRight(ty, lhs, rhs) => {
+            codegen_shift_right(ty, allocator, ret_val, *lhs, *rhs)
+        }
 
         TypedExprNode::Addition(Type::Pointer(ty), lhs, rhs) => {
             codegen_addition(allocator, ret_val, ty.pointer_to(), lhs, rhs)
@@ -1105,17 +1122,16 @@ fn codegen_division(
 }
 
 // Binary
-// Binary Logical
 
-/// Generates a logical `||` or.
 #[allow(unused)]
 fn codegen_or(
+    ty: Type,
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut GeneralPurposeRegister,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
-    let width = OperandWidth::QuadWord;
+    let width = operand_width_of_type(ty);
 
     allocator.allocate_then(|allocator, rhs_ret_val| {
         let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
@@ -1134,15 +1150,41 @@ fn codegen_or(
     })
 }
 
-/// Generates a logical `&&` and.
-#[allow(unused)]
-fn codegen_and(
+fn codegen_xor(
+    ty: Type,
     allocator: &mut GPRegisterAllocator,
     ret_val: &mut GeneralPurposeRegister,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
-    let width = OperandWidth::QuadWord;
+    let width = operand_width_of_type(ty);
+
+    allocator.allocate_then(|allocator, rhs_ret_val| {
+        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
+        let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
+
+        flattenable_instructions!(
+            rhs_ctx,
+            lhs_ctx,
+            vec![format!(
+                "\txor{}\t%{}, %{}\n",
+                operator_suffix(width),
+                rhs_ret_val.fmt_with_operand_width(width),
+                ret_val.fmt_with_operand_width(width)
+            )],
+        )
+    })
+}
+
+#[allow(unused)]
+fn codegen_and(
+    ty: Type,
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut GeneralPurposeRegister,
+    lhs: ast::TypedExprNode,
+    rhs: ast::TypedExprNode,
+) -> Vec<String> {
+    let width = operand_width_of_type(ty);
 
     allocator.allocate_then(|allocator, rhs_ret_val| {
         let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
@@ -1157,6 +1199,70 @@ fn codegen_and(
                 rhs_ret_val.fmt_with_operand_width(width),
                 ret_val.fmt_with_operand_width(width)
             )],
+        )
+    })
+}
+
+fn codegen_shift_left(
+    ty: Type,
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut GeneralPurposeRegister,
+    lhs: ast::TypedExprNode,
+    rhs: ast::TypedExprNode,
+) -> Vec<String> {
+    let width = operand_width_of_type(ty);
+
+    allocator.allocate_then(|allocator, rhs_ret_val| {
+        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
+        let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
+
+        flattenable_instructions!(
+            rhs_ctx,
+            lhs_ctx,
+            vec![
+                format!(
+                    "\tmov{}\t%{}, %cl\n",
+                    operator_suffix(OperandWidth::Byte),
+                    rhs_ret_val.fmt_with_operand_width(OperandWidth::Byte),
+                ),
+                format!(
+                    "\tshl{}\t%cl, %{}\n",
+                    operator_suffix(width),
+                    ret_val.fmt_with_operand_width(width)
+                )
+            ],
+        )
+    })
+}
+
+fn codegen_shift_right(
+    ty: Type,
+    allocator: &mut GPRegisterAllocator,
+    ret_val: &mut GeneralPurposeRegister,
+    lhs: ast::TypedExprNode,
+    rhs: ast::TypedExprNode,
+) -> Vec<String> {
+    let width = operand_width_of_type(ty);
+
+    allocator.allocate_then(|allocator, rhs_ret_val| {
+        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
+        let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
+
+        flattenable_instructions!(
+            rhs_ctx,
+            lhs_ctx,
+            vec![
+                format!(
+                    "\tmov{}\t%{}, %cl\n",
+                    operator_suffix(OperandWidth::Byte),
+                    rhs_ret_val.fmt_with_operand_width(OperandWidth::Byte),
+                ),
+                format!(
+                    "\tshr{}\t%cl, %{}\n",
+                    operator_suffix(width),
+                    ret_val.fmt_with_operand_width(width)
+                )
+            ],
         )
     })
 }

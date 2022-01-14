@@ -82,8 +82,13 @@ pub enum ExprNode {
     Assignment(Box<ExprNode>, Box<ExprNode>),
 
     // Binary Logical
-    LogAnd(Box<ExprNode>, Box<ExprNode>),
     LogOr(Box<ExprNode>, Box<ExprNode>),
+    LogAnd(Box<ExprNode>, Box<ExprNode>),
+
+    // Bitwise
+    BitOr(Box<ExprNode>, Box<ExprNode>),
+    BitXor(Box<ExprNode>, Box<ExprNode>),
+    BitAnd(Box<ExprNode>, Box<ExprNode>),
 
     // Comparative
     Equal(Box<ExprNode>, Box<ExprNode>),
@@ -92,6 +97,10 @@ pub enum ExprNode {
     GreaterThan(Box<ExprNode>, Box<ExprNode>),
     LessEqual(Box<ExprNode>, Box<ExprNode>),
     GreaterEqual(Box<ExprNode>, Box<ExprNode>),
+
+    // Bitwise shift
+    BitShiftLeft(Box<ExprNode>, Box<ExprNode>),
+    BitShiftRight(Box<ExprNode>, Box<ExprNode>),
 
     // Arithmetic
     Addition(Box<ExprNode>, Box<ExprNode>),
@@ -148,12 +157,33 @@ macro_rules! binary_logical_expr {
     };
 }
 
+macro_rules! bitwise_expr {
+    ($lhs:expr, "|", $rhs:expr) => {
+        $crate::parser::ast::ExprNode::BitOr(Box::new($lhs), Box::new($rhs))
+    };
+    ($lhs:expr, "^", $rhs:expr) => {
+        $crate::parser::ast::ExprNode::BitXor(Box::new($lhs), Box::new($rhs))
+    };
+    ($lhs:expr, "&", $rhs:expr) => {
+        $crate::parser::ast::ExprNode::BitAnd(Box::new($lhs), Box::new($rhs))
+    };
+}
+
 macro_rules! equality_expr {
     ($lhs:expr, "==", $rhs:expr) => {
         $crate::parser::ast::ExprNode::Equal(Box::new($lhs), Box::new($rhs))
     };
     ($lhs:expr, "!=", $rhs:expr) => {
         $crate::parser::ast::ExprNode::NotEqual(Box::new($lhs), Box::new($rhs))
+    };
+}
+
+macro_rules! bitwise_shift_expr {
+    ($lhs:expr, "<<", $rhs:expr) => {
+        $crate::parser::ast::ExprNode::BitShiftLeft(Box::new($lhs), Box::new($rhs))
+    };
+    ($lhs:expr, ">>", $rhs:expr) => {
+        $crate::parser::ast::ExprNode::BitShiftRight(Box::new($lhs), Box::new($rhs))
     };
 }
 

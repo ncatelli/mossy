@@ -59,16 +59,22 @@ expression: assignment
         ;
 
 assignment:   identifier '=' assignment
-        | binary_logical
+        | logical
         ;
 
-binary_logical: equality ( ( '||' | '&&' ) equality )*
+logical: bitwise ( ( '||' | '&&' ) bitwise )*
+        ;
+
+bitwise: equality ( ( '|' | '^' | '&' ) equality )*
         ;
 
 equality: relational ( ( '==' | '!=' ) relational )*
         ;
 
-relational: addition ( ( '<' | '<=' | '>' | '>=' ) addition )*
+relational: bitwise_shift ( ( '<' | '<=' | '>' | '>=' ) bitwise_shift )*
+        ;
+
+bitwise_shift: addition ( ( '<<' | '>>' ) addition )*
         ;
 
 addition: multiplication ( ( '-' | '+' ) multiplication )* 
