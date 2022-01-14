@@ -552,6 +552,14 @@ impl TypeAnalysis {
 
             ExprNode::BitShiftLeft(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
+                .and_then(|(expr_type, lhs, rhs)| {
+                    match generate_type_specifier!(u8).type_compatible(&rhs.r#type(), true) {
+                        CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
+                        CompatibilityResult::Equivalent | CompatibilityResult::WidenTo(_) => {
+                            Some((expr_type, lhs, rhs))
+                        }
+                    }
+                })
                 .map(|(expr_type, lhs, rhs)| {
                     ast::TypedExprNode::BitShiftLeft(expr_type, Box::new(lhs), Box::new(rhs))
                 })
@@ -559,6 +567,14 @@ impl TypeAnalysis {
 
             ExprNode::BitShiftRight(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
+                .and_then(|(expr_type, lhs, rhs)| {
+                    match generate_type_specifier!(u8).type_compatible(&rhs.r#type(), true) {
+                        CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
+                        CompatibilityResult::Equivalent | CompatibilityResult::WidenTo(_) => {
+                            Some((expr_type, lhs, rhs))
+                        }
+                    }
+                })
                 .map(|(expr_type, lhs, rhs)| {
                     ast::TypedExprNode::BitShiftRight(expr_type, Box::new(lhs), Box::new(rhs))
                 })
