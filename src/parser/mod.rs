@@ -194,27 +194,27 @@ fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
 
 fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
-        whitespace_wrapped(binary_logical()),
+        whitespace_wrapped(logical()),
         whitespace_wrapped(expect_character('=')).and_then(|_| whitespace_wrapped(assignment())),
     )
     .map(|(lhs, rhs)| assignment_expr!(lhs, '=', rhs))
-    .or(binary_logical)
+    .or(logical)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum BinaryLogicalExprOp {
+enum LogicalExprOp {
     LogAnd,
     LogOr,
 }
 
-fn binary_logical<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+fn logical<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         equality(),
         parcel::zero_or_more(parcel::join(
             whitespace_wrapped(
                 expect_str("||")
-                    .map(|_| BinaryLogicalExprOp::LogOr)
-                    .or(|| expect_str("&&").map(|_| BinaryLogicalExprOp::LogAnd)),
+                    .map(|_| LogicalExprOp::LogOr)
+                    .or(|| expect_str("&&").map(|_| LogicalExprOp::LogAnd)),
             ),
             whitespace_wrapped(equality()),
         ))
@@ -225,8 +225,8 @@ fn binary_logical<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
             .into_iter()
             .zip(operands.into_iter())
             .fold(first_expr, |lhs, (operator, rhs)| match operator {
-                BinaryLogicalExprOp::LogOr => binary_logical_expr!(lhs, "||", rhs),
-                BinaryLogicalExprOp::LogAnd => binary_logical_expr!(lhs, "&&", rhs),
+                LogicalExprOp::LogOr => binary_logical_expr!(lhs, "||", rhs),
+                LogicalExprOp::LogAnd => binary_logical_expr!(lhs, "&&", rhs),
             })
     })
 }
