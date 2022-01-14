@@ -490,6 +490,11 @@ impl TypeAnalysis {
                     ast::TypedExprNode::LogAnd(ty, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "incompatible types for logical and comparison".to_string()),
+
+            ExprNode::BitOr(_, _) => todo!(),
+            ExprNode::BitXor(_, _) => todo!(),
+            ExprNode::BitAnd(_, _) => todo!(),
+
             ExprNode::Equal(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
@@ -526,6 +531,10 @@ impl TypeAnalysis {
                     ast::TypedExprNode::GreaterThan(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
+
+            ExprNode::BitShiftLeft(_, _) => todo!(),
+            ExprNode::BitShiftRight(_, _) => todo!(),
+
             ExprNode::Addition(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {

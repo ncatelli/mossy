@@ -610,6 +610,10 @@ fn codegen_expr(
         TypedExprNode::LogOr(_, lhs, rhs) => codegen_or(allocator, ret_val, *lhs, *rhs),
         TypedExprNode::LogAnd(_, lhs, rhs) => codegen_and(allocator, ret_val, *lhs, *rhs),
 
+        TypedExprNode::BitOr(_, _, _) => todo!(),
+        TypedExprNode::BitXor(_, _, _) => todo!(),
+        TypedExprNode::BitAnd(_, _, _) => todo!(),
+
         TypedExprNode::Equal(ty, lhs, rhs) => {
             codegen_compare_and_set(allocator, ret_val, ComparisonOperation::Equal, ty, lhs, rhs)
         }
@@ -653,6 +657,9 @@ fn codegen_expr(
             lhs,
             rhs,
         ),
+
+        TypedExprNode::BitShiftLeft(_, _, _) => todo!(),
+        TypedExprNode::BitShiftRight(_, _, _) => todo!(),
 
         TypedExprNode::Addition(Type::Pointer(ty), lhs, rhs) => {
             codegen_addition(allocator, ret_val, ty.pointer_to(), lhs, rhs)
