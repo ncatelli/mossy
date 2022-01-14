@@ -491,9 +491,27 @@ impl TypeAnalysis {
                 })
                 .ok_or_else(|| "incompatible types for logical and comparison".to_string()),
 
-            ExprNode::BitOr(_, _) => todo!(),
-            ExprNode::BitXor(_, _) => todo!(),
-            ExprNode::BitAnd(_, _) => todo!(),
+            ExprNode::BitOr(lhs, rhs) => self
+                .analyze_binary_expr(*lhs, *rhs)
+                .map(|(_, lhs, rhs)| {
+                    let ty = ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::One);
+                    ast::TypedExprNode::BitOr(ty, Box::new(lhs), Box::new(rhs))
+                })
+                .ok_or_else(|| "incompatible types for bitwise or operation".to_string()),
+            ExprNode::BitXor(lhs, rhs) => self
+                .analyze_binary_expr(*lhs, *rhs)
+                .map(|(_, lhs, rhs)| {
+                    let ty = ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::One);
+                    ast::TypedExprNode::BitXor(ty, Box::new(lhs), Box::new(rhs))
+                })
+                .ok_or_else(|| "incompatible types for bitwise xor operation".to_string()),
+            ExprNode::BitAnd(lhs, rhs) => self
+                .analyze_binary_expr(*lhs, *rhs)
+                .map(|(_, lhs, rhs)| {
+                    let ty = ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::One);
+                    ast::TypedExprNode::BitAnd(ty, Box::new(lhs), Box::new(rhs))
+                })
+                .ok_or_else(|| "incompatible types for bitwise and operation".to_string()),
 
             ExprNode::Equal(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
@@ -532,8 +550,19 @@ impl TypeAnalysis {
                 })
                 .ok_or_else(|| "invalid type".to_string()),
 
-            ExprNode::BitShiftLeft(_, _) => todo!(),
-            ExprNode::BitShiftRight(_, _) => todo!(),
+            ExprNode::BitShiftLeft(lhs, rhs) => self
+                .analyze_binary_expr(*lhs, *rhs)
+                .map(|(expr_type, lhs, rhs)| {
+                    ast::TypedExprNode::BitShiftLeft(expr_type, Box::new(lhs), Box::new(rhs))
+                })
+                .ok_or_else(|| "incompatible operands to left shift operation".to_string()),
+
+            ExprNode::BitShiftRight(lhs, rhs) => self
+                .analyze_binary_expr(*lhs, *rhs)
+                .map(|(expr_type, lhs, rhs)| {
+                    ast::TypedExprNode::BitShiftRight(expr_type, Box::new(lhs), Box::new(rhs))
+                })
+                .ok_or_else(|| "incompatible operands to right shift operation".to_string()),
 
             ExprNode::Addition(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
