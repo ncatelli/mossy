@@ -203,18 +203,50 @@ fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum LogicalExprOp {
-    LogAnd,
-    LogOr,
+    Or,
+    And,
 }
 
 fn logical<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
-        equality(),
+        bitwise(),
         parcel::zero_or_more(parcel::join(
             whitespace_wrapped(
                 expect_str("||")
-                    .map(|_| LogicalExprOp::LogOr)
-                    .or(|| expect_str("&&").map(|_| LogicalExprOp::LogAnd)),
+                    .map(|_| LogicalExprOp::Or)
+                    .or(|| expect_str("&&").map(|_| LogicalExprOp::And)),
+            ),
+            whitespace_wrapped(bitwise()),
+        ))
+        .map(unzip),
+    )
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
+                LogicalExprOp::Or => binary_logical_expr!(lhs, "||", rhs),
+                LogicalExprOp::And => binary_logical_expr!(lhs, "&&", rhs),
+            })
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BitwiseExprOp {
+    Or,
+    Xor,
+    And,
+}
+
+fn bitwise<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+    parcel::join(
+        equality(),
+        parcel::zero_or_more(parcel::join(
+            whitespace_wrapped(
+                expect_str("|")
+                    .map(|_| BitwiseExprOp::Or)
+                    .or(|| expect_str("^").map(|_| BitwiseExprOp::Xor))
+                    .or(|| expect_str("&").map(|_| BitwiseExprOp::And)),
             ),
             whitespace_wrapped(equality()),
         ))
@@ -225,8 +257,9 @@ fn logical<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
             .into_iter()
             .zip(operands.into_iter())
             .fold(first_expr, |lhs, (operator, rhs)| match operator {
-                LogicalExprOp::LogOr => binary_logical_expr!(lhs, "||", rhs),
-                LogicalExprOp::LogAnd => binary_logical_expr!(lhs, "&&", rhs),
+                BitwiseExprOp::Or => bitwise_expr!(lhs, "|", rhs),
+                BitwiseExprOp::Xor => bitwise_expr!(lhs, "^", rhs),
+                BitwiseExprOp::And => bitwise_expr!(lhs, "&", rhs),
             })
     })
 }
@@ -271,7 +304,7 @@ enum RelationalExprOp {
 
 fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
-        addition(),
+        bitwise_shift(),
         parcel::zero_or_more(parcel::join(
             whitespace_wrapped(
                 expect_str("<=")
@@ -280,7 +313,7 @@ fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
                     .or(|| expect_str("<").map(|_| RelationalExprOp::LessThan))
                     .or(|| expect_str(">").map(|_| RelationalExprOp::GreaterThan)),
             ),
-            whitespace_wrapped(addition()),
+            whitespace_wrapped(bitwise_shift()),
         ))
         .map(unzip),
     )
@@ -297,6 +330,36 @@ fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
                 RelationalExprOp::GreaterEqual => {
                     ExprNode::GreaterEqual(Box::new(lhs), Box::new(rhs))
                 }
+            })
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum BitwiseShiftExprOp {
+    ShiftLeft,
+    ShiftRight,
+}
+
+fn bitwise_shift<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+    parcel::join(
+        addition(),
+        parcel::zero_or_more(parcel::join(
+            whitespace_wrapped(
+                expect_str("<<")
+                    .map(|_| BitwiseShiftExprOp::ShiftLeft)
+                    .or(|| expect_str(">>").map(|_| BitwiseShiftExprOp::ShiftRight)),
+            ),
+            whitespace_wrapped(addition()),
+        ))
+        .map(unzip),
+    )
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
+                BitwiseShiftExprOp::ShiftLeft => bitwise_shift_expr!(lhs, "<<", rhs),
+                BitwiseShiftExprOp::ShiftRight => bitwise_shift_expr!(lhs, ">>", rhs),
             })
     })
 }

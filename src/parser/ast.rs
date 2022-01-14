@@ -157,12 +157,33 @@ macro_rules! binary_logical_expr {
     };
 }
 
+macro_rules! bitwise_expr {
+    ($lhs:expr, "|", $rhs:expr) => {
+        $crate::parser::ast::ExprNode::BitOr(Box::new($lhs), Box::new($rhs))
+    };
+    ($lhs:expr, "^", $rhs:expr) => {
+        $crate::parser::ast::ExprNode::BitXor(Box::new($lhs), Box::new($rhs))
+    };
+    ($lhs:expr, "&", $rhs:expr) => {
+        $crate::parser::ast::ExprNode::BitAnd(Box::new($lhs), Box::new($rhs))
+    };
+}
+
 macro_rules! equality_expr {
     ($lhs:expr, "==", $rhs:expr) => {
         $crate::parser::ast::ExprNode::Equal(Box::new($lhs), Box::new($rhs))
     };
     ($lhs:expr, "!=", $rhs:expr) => {
         $crate::parser::ast::ExprNode::NotEqual(Box::new($lhs), Box::new($rhs))
+    };
+}
+
+macro_rules! bitwise_shift_expr {
+    ($lhs:expr, "<<", $rhs:expr) => {
+        $crate::parser::ast::ExprNode::BitShiftLeft(Box::new($lhs), Box::new($rhs))
+    };
+    ($lhs:expr, ">>", $rhs:expr) => {
+        $crate::parser::ast::ExprNode::BitShiftRight(Box::new($lhs), Box::new($rhs))
     };
 }
 
