@@ -1057,12 +1057,11 @@ mod tests {
         let input: Vec<(usize, char)> = "{ return auto; }".chars().enumerate().collect();
         let res = crate::parser::compound_statements()
             .parse(&input)
-            .map_err(|_| ())
+            .ok()
             .and_then(|ms| match ms {
-                parcel::MatchStatus::Match { .. } => Err(()),
-                parcel::MatchStatus::NoMatch(_) => Ok(()),
-            })
-            .ok();
+                parcel::MatchStatus::Match { .. } => None,
+                parcel::MatchStatus::NoMatch(_) => Some(()),
+            });
 
         assert!(res.is_some());
     }
