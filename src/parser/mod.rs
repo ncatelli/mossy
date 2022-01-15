@@ -627,7 +627,9 @@ fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary
 
 fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
     parcel::one_or_more(ascii_alphanumeric().or(|| expect_character('_')))
-        .map(|chars| chars.into_iter().collect())
+        .map(|chars| chars.into_iter().collect::<String>())
+        // guarantee the identifier is not a keyword.
+        .predicate(|str| !RESERVED_KEYWORDS.contains(&str.as_str()))
 }
 
 fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
@@ -1046,5 +1048,22 @@ mod tests {
         )]));
 
         assert_eq!(&expected_result, &res);
+    }
+
+    #[test]
+    fn should_fail_to_parse_keyword_as_identifier() {
+        use parcel::Parser;
+
+        let input: Vec<(usize, char)> = "{ return auto; }".chars().enumerate().collect();
+        let res = crate::parser::compound_statements()
+            .parse(&input)
+            .map_err(|_| ())
+            .and_then(|ms| match ms {
+                parcel::MatchStatus::Match { .. } => Err(()),
+                parcel::MatchStatus::NoMatch(_) => Ok(()),
+            })
+            .ok();
+
+        assert!(res.is_some());
     }
 }
