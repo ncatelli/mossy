@@ -1,11 +1,19 @@
 use crate::stage::ast::{self, Declaration, IntegerWidth, Signed};
 
+/// Represents a list of reserved keywords in C.
+pub(crate) const RESERVED_KEYWORDS: [&str; 32] = [
+    "auto", "void", "char", "short", "int", "long", "float", "double", "sizeof", "struct", "enum",
+    "union", "typedef", "register", "extern", "const", "unsigned", "static", "signed", "volatile",
+    "switch", "case", "default", "if", "else", "do", "while", "for", "continue", "break", "goto",
+    "return",
+];
+
 #[derive(Debug)]
-pub struct Program {
+pub struct CompilationUnit {
     pub defs: Vec<GlobalDecls>,
 }
 
-impl Program {
+impl CompilationUnit {
     pub fn new(defs: Vec<GlobalDecls>) -> Self {
         Self { defs }
     }

@@ -17,7 +17,7 @@ pub enum ParseErr {
 
 /// parse expects a character slice as input and attempts to parse a valid
 /// expression, returning a parse error if it is invalid.
-pub fn parse(input: &[(usize, char)]) -> Result<Program, ParseErr> {
+pub fn parse(input: &[(usize, char)]) -> Result<CompilationUnit, ParseErr> {
     parcel::one_or_more(function_declaration().map(ast::GlobalDecls::Func).or(|| {
         semicolon_terminated_statement(declaration()).map(|stmt| {
             // safe to unpack due to declaration guarantee.
@@ -38,7 +38,7 @@ pub fn parse(input: &[(usize, char)]) -> Result<Program, ParseErr> {
         } => Ok(inner),
         MatchStatus::NoMatch(_) => Err(ParseErr::Unspecified("not a valid expression".to_string())),
     })
-    .map(Program::new)
+    .map(CompilationUnit::new)
 }
 
 fn function_declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionDeclaration> {
@@ -627,7 +627,9 @@ fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary
 
 fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
     parcel::one_or_more(ascii_alphanumeric().or(|| expect_character('_')))
-        .map(|chars| chars.into_iter().collect())
+        .map(|chars| chars.into_iter().collect::<String>())
+        // guarantee the identifier is not a keyword.
+        .predicate(|str| !RESERVED_KEYWORDS.contains(&str.as_str()))
 }
 
 fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
@@ -1046,5 +1048,22 @@ mod tests {
         )]));
 
         assert_eq!(&expected_result, &res);
+    }
+
+    #[test]
+    fn should_fail_to_parse_keyword_as_identifier() {
+        use parcel::Parser;
+
+        let input: Vec<(usize, char)> = "{ return auto; }".chars().enumerate().collect();
+        let res = crate::parser::compound_statements()
+            .parse(&input)
+            .map_err(|_| ())
+            .and_then(|ms| match ms {
+                parcel::MatchStatus::Match { .. } => Err(()),
+                parcel::MatchStatus::NoMatch(_) => Ok(()),
+            })
+            .ok();
+
+        assert!(res.is_some());
     }
 }
