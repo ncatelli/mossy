@@ -164,8 +164,13 @@ impl TypeAnalysis {
     }
 }
 
-impl CompilationStage<crate::parser::ast::Program, ast::TypedProgram, String> for TypeAnalysis {
-    fn apply(&mut self, input: crate::parser::ast::Program) -> Result<ast::TypedProgram, String> {
+impl CompilationStage<crate::parser::ast::CompilationUnit, ast::TypedProgram, String>
+    for TypeAnalysis
+{
+    fn apply(
+        &mut self,
+        input: crate::parser::ast::CompilationUnit,
+    ) -> Result<ast::TypedProgram, String> {
         input
             .defs
             .into_iter()

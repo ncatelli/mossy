@@ -1,11 +1,11 @@
 use crate::stage::ast::{self, Declaration, IntegerWidth, Signed};
 
 #[derive(Debug)]
-pub struct Program {
+pub struct CompilationUnit {
     pub defs: Vec<GlobalDecls>,
 }
 
-impl Program {
+impl CompilationUnit {
     pub fn new(defs: Vec<GlobalDecls>) -> Self {
         Self { defs }
     }

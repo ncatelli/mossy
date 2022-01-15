@@ -17,7 +17,7 @@ pub enum ParseErr {
 
 /// parse expects a character slice as input and attempts to parse a valid
 /// expression, returning a parse error if it is invalid.
-pub fn parse(input: &[(usize, char)]) -> Result<Program, ParseErr> {
+pub fn parse(input: &[(usize, char)]) -> Result<CompilationUnit, ParseErr> {
     parcel::one_or_more(function_declaration().map(ast::GlobalDecls::Func).or(|| {
         semicolon_terminated_statement(declaration()).map(|stmt| {
             // safe to unpack due to declaration guarantee.
@@ -38,7 +38,7 @@ pub fn parse(input: &[(usize, char)]) -> Result<Program, ParseErr> {
         } => Ok(inner),
         MatchStatus::NoMatch(_) => Err(ParseErr::Unspecified("not a valid expression".to_string())),
     })
-    .map(Program::new)
+    .map(CompilationUnit::new)
 }
 
 fn function_declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionDeclaration> {
