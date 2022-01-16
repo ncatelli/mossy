@@ -108,9 +108,9 @@ enum CompatibilityResult {
 pub trait EvaluationFlow {}
 
 /// An expressions type must be compatible with the left hand side's type.
-struct FlowLeft;
+struct LeftFlowing;
 
-impl EvaluationFlow for FlowLeft {}
+impl EvaluationFlow for LeftFlowing {}
 
 /// An expressions type can be derived from the smallest type that encompasses
 /// all values of the sub-expressions' types.
@@ -157,7 +157,7 @@ impl TypeCompatibility for SmallestEncompassing {
     }
 }
 
-impl TypeCompatibility for FlowLeft {
+impl TypeCompatibility for LeftFlowing {
     type Output = CompatibilityResult;
     type Lhs = ast::Type;
     type Rhs = ast::Type;
@@ -355,7 +355,7 @@ impl TypeAnalysis {
                     let typed_expr = self.analyze_expression(rt_expr)?;
                     let expr_t = typed_expr.r#type();
                     let return_type_compatibility =
-                        FlowLeft.type_compatible(proto.return_type.as_ref(), &expr_t);
+                        LeftFlowing.type_compatible(proto.return_type.as_ref(), &expr_t);
 
                     let rt_type = match return_type_compatibility {
                         CompatibilityResult::Equivalent => Ok(proto.return_type.as_ref().clone()),
@@ -498,7 +498,7 @@ impl TypeAnalysis {
                     TypedExprNode::Primary(lhs_ty, Primary::Identifier(_, id)) => self
                         .scopes
                         .lookup(&id)
-                        .map(|dm| FlowLeft.type_compatible(&dm.r#type, &rhs.r#type()))
+                        .map(|dm| LeftFlowing.type_compatible(&dm.r#type, &rhs.r#type()))
                         .ok_or(format!("symbol {} undefined", &id))
                         .and_then(|type_compat| match type_compat {
                             CompatibilityResult::Equivalent => Ok(lhs_ty),
@@ -509,7 +509,7 @@ impl TypeAnalysis {
                             CompatibilityResult::Scale(t) => Ok(t),
                         })
                         .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, id, Box::new(rhs))),
-                    TypedExprNode::Deref(ty, expr) => match FlowLeft.type_compatible(&ty, &rhs.r#type())
+                    TypedExprNode::Deref(ty, expr) => match LeftFlowing.type_compatible(&ty, &rhs.r#type())
                     {
                         CompatibilityResult::Equivalent => Ok(ty),
                         CompatibilityResult::WidenTo(ty) => Ok(ty),
@@ -601,7 +601,8 @@ impl TypeAnalysis {
             ExprNode::BitShiftLeft(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .and_then(|(expr_type, lhs, rhs)| {
-                    match FlowLeft.type_compatible(&generate_type_specifier!(u8), &rhs.r#type()) {
+                    match LeftFlowing.type_compatible(&generate_type_specifier!(u8), &rhs.r#type())
+                    {
                         CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
                         CompatibilityResult::Equivalent | CompatibilityResult::WidenTo(_) => {
                             Some((expr_type, lhs, rhs))
@@ -616,7 +617,8 @@ impl TypeAnalysis {
             ExprNode::BitShiftRight(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .and_then(|(expr_type, lhs, rhs)| {
-                    match FlowLeft.type_compatible(&generate_type_specifier!(u8), &rhs.r#type()) {
+                    match LeftFlowing.type_compatible(&generate_type_specifier!(u8), &rhs.r#type())
+                    {
                         CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
                         CompatibilityResult::Equivalent | CompatibilityResult::WidenTo(_) => {
                             Some((expr_type, lhs, rhs))
@@ -667,7 +669,7 @@ impl TypeAnalysis {
                 .analyze_expression(*expr)
                 .map(|expr| (expr.r#type(), expr))
                 .and_then(|(expr_type, expr)| {
-                    match FlowLeft.type_compatible(&expr_type, &generate_type_specifier!(i8)) {
+                    match LeftFlowing.type_compatible(&expr_type, &generate_type_specifier!(i8)) {
                         CompatibilityResult::Equivalent => Some(expr_type),
                         CompatibilityResult::WidenTo(ty) => Some(ty),
                         CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
@@ -720,19 +722,20 @@ impl TypeAnalysis {
                 let index_expr = self.analyze_expression(*index)?;
                 let index_expr_ty = &index_expr.r#type();
 
-                let index_expr = match FlowLeft.type_compatible(&ptr_width, &index_expr.r#type()) {
-                    CompatibilityResult::Equivalent => Some(index_expr),
-                    CompatibilityResult::WidenTo(ty) => {
-                        Some(ast::TypedExprNode::Grouping(ty, Box::new(index_expr)))
+                let index_expr =
+                    match LeftFlowing.type_compatible(&ptr_width, &index_expr.r#type()) {
+                        CompatibilityResult::Equivalent => Some(index_expr),
+                        CompatibilityResult::WidenTo(ty) => {
+                            Some(ast::TypedExprNode::Grouping(ty, Box::new(index_expr)))
+                        }
+                        CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
                     }
-                    CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
-                }
-                .ok_or_else(|| {
-                    format!(
-                        "array index cannot be widened to pointer width: {:?}",
-                        &index_expr_ty
-                    )
-                })?;
+                    .ok_or_else(|| {
+                        format!(
+                            "array index cannot be widened to pointer width: {:?}",
+                            &index_expr_ty
+                        )
+                    })?;
 
                 self.scopes
                     .lookup(&identifier)
