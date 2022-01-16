@@ -110,7 +110,7 @@ pub trait EvaluationFlow {}
 /// An expressions type must be compatible with the left hand side's type.
 struct FlowLeft;
 
-impl EvaluationFlow for FlowLeft{}
+impl EvaluationFlow for FlowLeft {}
 
 /// An expressions type can be derived from the smallest type that encompasses
 /// all values of the sub-expressions' types.
@@ -498,8 +498,7 @@ impl TypeAnalysis {
                     TypedExprNode::Primary(lhs_ty, Primary::Identifier(_, id)) => self
                         .scopes
                         .lookup(&id)
-                        .map(|dm| 
-                           FlowLeft.type_compatible(&dm.r#type, &rhs.r#type()))
+                        .map(|dm| FlowLeft.type_compatible(&dm.r#type, &rhs.r#type()))
                         .ok_or(format!("symbol {} undefined", &id))
                         .and_then(|type_compat| match type_compat {
                             CompatibilityResult::Equivalent => Ok(lhs_ty),
@@ -602,9 +601,7 @@ impl TypeAnalysis {
             ExprNode::BitShiftLeft(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .and_then(|(expr_type, lhs, rhs)| {
-                    match 
-                        FlowLeft.type_compatible(&generate_type_specifier!(u8), &rhs.r#type())
-                    {
+                    match FlowLeft.type_compatible(&generate_type_specifier!(u8), &rhs.r#type()) {
                         CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
                         CompatibilityResult::Equivalent | CompatibilityResult::WidenTo(_) => {
                             Some((expr_type, lhs, rhs))
@@ -619,9 +616,7 @@ impl TypeAnalysis {
             ExprNode::BitShiftRight(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .and_then(|(expr_type, lhs, rhs)| {
-                    match 
-FlowLeft.type_compatible(&generate_type_specifier!(u8), &rhs.r#type())
-                    {
+                    match FlowLeft.type_compatible(&generate_type_specifier!(u8), &rhs.r#type()) {
                         CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
                         CompatibilityResult::Equivalent | CompatibilityResult::WidenTo(_) => {
                             Some((expr_type, lhs, rhs))
@@ -672,9 +667,7 @@ FlowLeft.type_compatible(&generate_type_specifier!(u8), &rhs.r#type())
                 .analyze_expression(*expr)
                 .map(|expr| (expr.r#type(), expr))
                 .and_then(|(expr_type, expr)| {
-                    match 
-FlowLeft.type_compatible(&expr_type, &generate_type_specifier!(i8))
-                    {
+                    match FlowLeft.type_compatible(&expr_type, &generate_type_specifier!(i8)) {
                         CompatibilityResult::Equivalent => Some(expr_type),
                         CompatibilityResult::WidenTo(ty) => Some(ty),
                         CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
@@ -727,9 +720,7 @@ FlowLeft.type_compatible(&expr_type, &generate_type_specifier!(i8))
                 let index_expr = self.analyze_expression(*index)?;
                 let index_expr_ty = &index_expr.r#type();
 
-                let index_expr = match FlowLeft 
-                    .type_compatible(&ptr_width, &index_expr.r#type())
-                {
+                let index_expr = match FlowLeft.type_compatible(&ptr_width, &index_expr.r#type()) {
                     CompatibilityResult::Equivalent => Some(index_expr),
                     CompatibilityResult::WidenTo(ty) => {
                         Some(ast::TypedExprNode::Grouping(ty, Box::new(index_expr)))
@@ -790,9 +781,7 @@ FlowLeft.type_compatible(&expr_type, &generate_type_specifier!(i8))
         let lhs = self.analyze_expression(lhs).unwrap();
         let rhs = self.analyze_expression(rhs).unwrap();
 
-        match SmallestEncompassing 
-            .type_compatible(&lhs.r#type(), &rhs.r#type())
-        {
+        match SmallestEncompassing.type_compatible(&lhs.r#type(), &rhs.r#type()) {
             CompatibilityResult::Equivalent => Some((lhs.r#type(), lhs, rhs)),
             CompatibilityResult::WidenTo(ty) => Some((ty, lhs, rhs)),
             CompatibilityResult::Incompatible => None,
