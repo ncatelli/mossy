@@ -235,7 +235,7 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
             }
             crate::parser::ast::GlobalDecls::Var(Declaration::Scalar(ty, ids)) => {
                 for id in ids.iter() {
-                    self.scopes.define_mut(id, ty.clone());
+                    self.scopes.define_global_mut(id, ty.clone());
                 }
 
                 Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Scalar(
@@ -243,7 +243,8 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                 )))
             }
             crate::parser::ast::GlobalDecls::Var(Declaration::Array { ty, id, size }) => {
-                self.scopes.define_with_size_mut(&id, ty.pointer_to(), size);
+                self.scopes
+                    .define_global_with_size_mut(&id, ty.pointer_to(), size);
 
                 Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Array {
                     ty,
@@ -266,7 +267,8 @@ impl
         let (id, block) = (input.id, input.block);
 
         let proto = FuncProto::new(Box::new(input.return_type), vec![]);
-        self.scopes.define_mut(&id, ast::Type::Func(proto.clone()));
+        self.scopes
+            .define_global_mut(&id, ast::Type::Func(proto.clone()));
 
         self.analyze_function_body(id.clone(), proto, block)
             .map(|typed_block| ast::TypedFunctionDeclaration::new(id.clone(), typed_block))
@@ -334,7 +336,7 @@ impl TypeAnalysis {
                 .map(ast::TypedStmtNode::Expression),
             crate::parser::ast::StmtNode::Declaration(ast::Declaration::Scalar(ty, ids)) => {
                 for id in ids.iter() {
-                    self.scopes.define_mut(id, ty.clone());
+                    self.scopes.define_local_mut(id, ty.clone());
                 }
 
                 Ok(ast::TypedStmtNode::Declaration(ast::Declaration::Scalar(
@@ -342,7 +344,8 @@ impl TypeAnalysis {
                 )))
             }
             crate::parser::ast::StmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
-                self.scopes.define_with_size_mut(&id, ty.clone(), size);
+                self.scopes
+                    .define_local_with_size_mut(&id, ty.clone(), size);
 
                 Ok(ast::TypedStmtNode::Declaration(ast::Declaration::Array {
                     ty,
@@ -961,7 +964,7 @@ mod tests {
         analyzer.scopes.push_new_scope_mut();
         analyzer
             .scopes
-            .define_mut("x", generate_type_specifier!(char).pointer_to());
+            .define_local_mut("x", generate_type_specifier!(char).pointer_to());
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
         let expected = TypedExprNode::IdentifierAssignment(

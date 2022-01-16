@@ -30,11 +30,11 @@ impl DeclarationMetadata {
 }
 
 // Alias for a hashmap of String/Type
-pub type Scope = std::collections::HashMap<String, DeclarationMetadata>;
+pub(crate) type Scope = std::collections::HashMap<String, DeclarationMetadata>;
 
 /// Provides a stack of hashmaps for tracking scopes
 #[derive(Default)]
-pub struct ScopeStack {
+pub(crate) struct ScopeStack {
     scopes: Vec<Scope>,
 }
 
@@ -54,15 +54,29 @@ impl ScopeStack {
         self.scopes.pop();
     }
 
-    /// Defines a new variable in place.
-    pub fn define_mut(&mut self, id: &str, ty: Type) {
+    /// Defines a new global variable in place.
+    pub fn define_global_mut(&mut self, id: &str, ty: Type) {
+        self.scopes
+            .first_mut()
+            .map(|scope| scope.insert(id.to_string(), DeclarationMetadata::new(ty, None)));
+    }
+
+    /// Defines a new global variable in place.
+    pub fn define_global_with_size_mut(&mut self, id: &str, ty: Type, size: usize) {
+        self.scopes
+            .first_mut()
+            .map(|scope| scope.insert(id.to_string(), DeclarationMetadata::new(ty, Some(size))));
+    }
+
+    /// Defines a new local variable in place.
+    pub fn define_local_mut(&mut self, id: &str, ty: Type) {
         self.scopes
             .last_mut()
             .map(|scope| scope.insert(id.to_string(), DeclarationMetadata::new(ty, None)));
     }
 
-    /// Defines a new variable in place.
-    pub fn define_with_size_mut(&mut self, id: &str, ty: Type, size: usize) {
+    /// Defines a new local variable in place.
+    pub fn define_local_with_size_mut(&mut self, id: &str, ty: Type, size: usize) {
         self.scopes
             .last_mut()
             .map(|scope| scope.insert(id.to_string(), DeclarationMetadata::new(ty, Some(size))));
