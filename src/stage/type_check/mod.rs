@@ -103,20 +103,40 @@ enum CompatibilityResult {
     Incompatible,
 }
 
+/// A marker trait for defining the manner in which type compatibility is
+/// asserted on an expression.
+pub trait EvaluationFlow {}
+
+/// An expressions type must be compatible with the left hand side's type.
+struct LeftFlowing;
+
+impl EvaluationFlow for LeftFlowing {}
+
+/// An expressions type can be derived from the smallest type that encompasses
+/// all values of the sub-expressions' types.
+struct SmallestEncompassing;
+
+impl EvaluationFlow for SmallestEncompassing {}
+
+/// Defines a method for assessing if two types are compatible, either
+/// explicitly or implicitly.
 trait TypeCompatibility {
     type Output;
+    type Lhs;
     type Rhs;
 
-    fn type_compatible(&self, right: &Self::Rhs, flow_left: bool) -> Self::Output;
+    fn type_compatible(&self, lhs: &Self::Lhs, rhs: &Self::Rhs) -> Self::Output;
 }
 
-impl TypeCompatibility for ast::Type {
+impl TypeCompatibility for SmallestEncompassing {
     type Output = CompatibilityResult;
+    type Lhs = ast::Type;
     type Rhs = ast::Type;
 
-    fn type_compatible(&self, right: &Self::Rhs, flow_left: bool) -> Self::Output {
+    fn type_compatible(&self, lhs: &Self::Lhs, rhs: &Self::Rhs) -> Self::Output {
         use ast::Type;
-        match (self, right) {
+
+        match (lhs, rhs) {
             (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,
             (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width)) => {
                 let (lhs_rank, rhs_rank) = (
@@ -124,18 +144,39 @@ impl TypeCompatibility for ast::Type {
                     Integer::new(*r_sign, *r_width).rank(),
                 );
 
-                if (lhs_rank < rhs_rank) && flow_left {
+                let adjusted_rank = calculate_satisfying_integer_size_from_rank(lhs_rank, rhs_rank);
+
+                core::convert::TryFrom::try_from(adjusted_rank)
+                    .map(|Integer { signed, width }| (signed, width))
+                    .map(|(sign, width)| CompatibilityResult::WidenTo(Type::Integer(sign, width)))
+                    .unwrap_or(CompatibilityResult::Incompatible)
+            }
+            (Type::Pointer(ty), Type::Integer(_, _)) => CompatibilityResult::Scale(*ty.clone()),
+            _ => CompatibilityResult::Incompatible,
+        }
+    }
+}
+
+impl TypeCompatibility for LeftFlowing {
+    type Output = CompatibilityResult;
+    type Lhs = ast::Type;
+    type Rhs = ast::Type;
+
+    fn type_compatible(&self, lhs: &Self::Lhs, rhs: &Self::Rhs) -> Self::Output {
+        use ast::Type;
+
+        match (lhs, rhs) {
+            (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,
+            (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width)) => {
+                let (lhs_rank, rhs_rank) = (
+                    Integer::new(*l_sign, *l_width).rank(),
+                    Integer::new(*r_sign, *r_width).rank(),
+                );
+
+                if lhs_rank < rhs_rank {
                     CompatibilityResult::Incompatible
                 } else {
-                    let adjusted_rank =
-                        calculate_satisfying_integer_size_from_rank(lhs_rank, rhs_rank);
-
-                    core::convert::TryFrom::try_from(adjusted_rank)
-                        .map(|Integer { signed, width }| (signed, width))
-                        .map(|(sign, width)| {
-                            CompatibilityResult::WidenTo(Type::Integer(sign, width))
-                        })
-                        .unwrap_or(CompatibilityResult::Incompatible)
+                    SmallestEncompassing.type_compatible(lhs, rhs)
                 }
             }
             (Type::Pointer(ty), Type::Integer(_, _)) => CompatibilityResult::Scale(*ty.clone()),
@@ -313,8 +354,10 @@ impl TypeAnalysis {
                 if let Some((id, proto)) = self.in_func.as_ref() {
                     let typed_expr = self.analyze_expression(rt_expr)?;
                     let expr_t = typed_expr.r#type();
+                    let return_type_compatibility =
+                        LeftFlowing.type_compatible(proto.return_type.as_ref(), &expr_t);
 
-                    let rt_type = match proto.return_type.as_ref().type_compatible(&expr_t, true) {
+                    let rt_type = match return_type_compatibility {
                         CompatibilityResult::Equivalent => Ok(proto.return_type.as_ref().clone()),
                         CompatibilityResult::WidenTo(new_type) => Ok(new_type),
                         CompatibilityResult::Incompatible => Err(format!(
@@ -455,7 +498,7 @@ impl TypeAnalysis {
                     TypedExprNode::Primary(lhs_ty, Primary::Identifier(_, id)) => self
                         .scopes
                         .lookup(&id)
-                        .map(|dm| dm.r#type.type_compatible(&rhs.r#type(), true))
+                        .map(|dm| LeftFlowing.type_compatible(&dm.r#type, &rhs.r#type()))
                         .ok_or(format!("symbol {} undefined", &id))
                         .and_then(|type_compat| match type_compat {
                             CompatibilityResult::Equivalent => Ok(lhs_ty),
@@ -466,7 +509,7 @@ impl TypeAnalysis {
                             CompatibilityResult::Scale(t) => Ok(t),
                         })
                         .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, id, Box::new(rhs))),
-                    TypedExprNode::Deref(ty, expr) => match ty.type_compatible(&rhs.r#type(), true)
+                    TypedExprNode::Deref(ty, expr) => match LeftFlowing.type_compatible(&ty, &rhs.r#type())
                     {
                         CompatibilityResult::Equivalent => Ok(ty),
                         CompatibilityResult::WidenTo(ty) => Ok(ty),
@@ -558,7 +601,8 @@ impl TypeAnalysis {
             ExprNode::BitShiftLeft(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .and_then(|(expr_type, lhs, rhs)| {
-                    match generate_type_specifier!(u8).type_compatible(&rhs.r#type(), true) {
+                    match LeftFlowing.type_compatible(&generate_type_specifier!(u8), &rhs.r#type())
+                    {
                         CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
                         CompatibilityResult::Equivalent | CompatibilityResult::WidenTo(_) => {
                             Some((expr_type, lhs, rhs))
@@ -573,7 +617,8 @@ impl TypeAnalysis {
             ExprNode::BitShiftRight(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .and_then(|(expr_type, lhs, rhs)| {
-                    match generate_type_specifier!(u8).type_compatible(&rhs.r#type(), true) {
+                    match LeftFlowing.type_compatible(&generate_type_specifier!(u8), &rhs.r#type())
+                    {
                         CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
                         CompatibilityResult::Equivalent | CompatibilityResult::WidenTo(_) => {
                             Some((expr_type, lhs, rhs))
@@ -624,7 +669,7 @@ impl TypeAnalysis {
                 .analyze_expression(*expr)
                 .map(|expr| (expr.r#type(), expr))
                 .and_then(|(expr_type, expr)| {
-                    match expr_type.type_compatible(&generate_type_specifier!(i8), true) {
+                    match LeftFlowing.type_compatible(&expr_type, &generate_type_specifier!(i8)) {
                         CompatibilityResult::Equivalent => Some(expr_type),
                         CompatibilityResult::WidenTo(ty) => Some(ty),
                         CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
@@ -677,19 +722,20 @@ impl TypeAnalysis {
                 let index_expr = self.analyze_expression(*index)?;
                 let index_expr_ty = &index_expr.r#type();
 
-                let index_expr = match ptr_width.type_compatible(&index_expr.r#type(), true) {
-                    CompatibilityResult::Equivalent => Some(index_expr),
-                    CompatibilityResult::WidenTo(ty) => {
-                        Some(ast::TypedExprNode::Grouping(ty, Box::new(index_expr)))
+                let index_expr =
+                    match LeftFlowing.type_compatible(&ptr_width, &index_expr.r#type()) {
+                        CompatibilityResult::Equivalent => Some(index_expr),
+                        CompatibilityResult::WidenTo(ty) => {
+                            Some(ast::TypedExprNode::Grouping(ty, Box::new(index_expr)))
+                        }
+                        CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
                     }
-                    CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
-                }
-                .ok_or_else(|| {
-                    format!(
-                        "array index cannot be widened to pointer width: {:?}",
-                        &index_expr_ty
-                    )
-                })?;
+                    .ok_or_else(|| {
+                        format!(
+                            "array index cannot be widened to pointer width: {:?}",
+                            &index_expr_ty
+                        )
+                    })?;
 
                 self.scopes
                     .lookup(&identifier)
@@ -738,7 +784,7 @@ impl TypeAnalysis {
         let lhs = self.analyze_expression(lhs).unwrap();
         let rhs = self.analyze_expression(rhs).unwrap();
 
-        match lhs.r#type().type_compatible(&rhs.r#type(), false) {
+        match SmallestEncompassing.type_compatible(&lhs.r#type(), &rhs.r#type()) {
             CompatibilityResult::Equivalent => Some((lhs.r#type(), lhs, rhs)),
             CompatibilityResult::WidenTo(ty) => Some((ty, lhs, rhs)),
             CompatibilityResult::Incompatible => None,
