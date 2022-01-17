@@ -484,8 +484,9 @@ impl TypeAnalysis {
                             ast::IdentifierLocality::Global(identifier),
                         ),
                     ),
-
-                    (true, Some(_)) => todo!(),
+                    (true, Some(offset)) => {
+                        ast::TypedExprNode::Ref(dm.r#type, ast::IdentifierLocality::Local(offset))
+                    }
                     (false, Some(offset)) => ast::TypedExprNode::Primary(
                         dm.r#type.clone(),
                         ast::Primary::Identifier(dm.r#type, ast::IdentifierLocality::Local(offset)),
@@ -821,8 +822,17 @@ impl TypeAnalysis {
                                     ast::IdentifierLocality::Global(identifier.clone()),
                                 ),
                             )),
-                            (true, Some(_)) => todo!(),
-                            (false, Some(_)) => todo!(),
+                            (true, Some(offset)) => Box::new(ast::TypedExprNode::Ref(
+                                ref_ty.clone(),
+                                ast::IdentifierLocality::Local(offset),
+                            )),
+                            (false, Some(offset)) => Box::new(ast::TypedExprNode::Primary(
+                                ref_ty.clone(),
+                                ast::Primary::Identifier(
+                                    ref_ty.clone(),
+                                    ast::IdentifierLocality::Local(offset),
+                                ),
+                            )),
                         };
 
                         // recast to a pointer as pulled from the above reference
@@ -1035,7 +1045,7 @@ mod tests {
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
         let expected = TypedExprNode::IdentifierAssignment(
             generate_type_specifier!(i8).pointer_to(),
-            IdentifierLocality::Global("x".to_string()),
+            IdentifierLocality::Local(-8),
             Box::new(TypedExprNode::Primary(
                 generate_type_specifier!(i8).pointer_to(),
                 stage::ast::Primary::Str("hello".chars().map(|c| c as u8).collect()),
