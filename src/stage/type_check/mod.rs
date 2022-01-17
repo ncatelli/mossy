@@ -371,7 +371,7 @@ impl TypeAnalysis {
             crate::parser::ast::StmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
                 let local_offset =
                     self.scopes
-                        .define_local_mut(&id, ty.clone(), scopes::Kind::Array(size));
+                        .define_local_mut(&id, ty.pointer_to(), scopes::Kind::Array(size));
 
                 Ok(ast::TypedStmtNode::LocalDeclaration(
                     ast::Declaration::Array { ty, id, size },
@@ -810,6 +810,7 @@ impl TypeAnalysis {
                     })
                     .map(|(dm, scale)| {
                         let ref_ty = dm.r#type.clone();
+
                         let l_value_access = match (dm.is_array(), dm.is_local) {
                             (true, None) => Box::new(ast::TypedExprNode::Ref(
                                 ref_ty.clone(),
@@ -836,7 +837,11 @@ impl TypeAnalysis {
                         };
 
                         // recast to a pointer as pulled from the above reference
-                        ast::TypedExprNode::Addition(ref_ty, l_value_access, Box::new(scale))
+                        if dm.is_local.is_none() {
+                            ast::TypedExprNode::Addition(ref_ty, l_value_access, Box::new(scale))
+                        } else {
+                            ast::TypedExprNode::Subtraction(ref_ty, l_value_access, Box::new(scale))
+                        }
                     })
                     .and_then(|reference| {
                         reference
@@ -847,7 +852,7 @@ impl TypeAnalysis {
                     .map(|(ref_points_to_ty, reference)| {
                         ast::TypedExprNode::Deref(ref_points_to_ty, Box::new(reference))
                     })
-                    .ok_or_else(|| "invalid type".to_string())
+                    .ok_or_else(|| format!("invalid type for identifier({}) in scale operation", &identifier))
             }
         }
     }
