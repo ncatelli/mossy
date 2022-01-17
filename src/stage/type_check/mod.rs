@@ -2,7 +2,7 @@
 //! additional type checking and enrichment.
 
 use super::CompilationStage;
-use crate::stage::ast::{self, FuncProto, Typed};
+use crate::stage::ast::{self, FuncProto, IdentifierLocality, Typed};
 
 mod scopes;
 use scopes::ScopeStack;
@@ -282,8 +282,11 @@ impl
         self.scopes
             .define_global_mut(&id, ast::Type::Func(proto.clone()), scopes::Kind::Basic);
 
-        self.analyze_function_body(id.clone(), proto, block)
-            .map(|typed_block| ast::TypedFunctionDeclaration::new(id.clone(), typed_block))
+        self.analyze_function_body(id.clone(), proto, block).map(
+            |(typed_block, local_variable_sized)| {
+                ast::TypedFunctionDeclaration::new(id.clone(), typed_block, local_variable_sized)
+            },
+        )
     }
 }
 
@@ -293,7 +296,7 @@ impl TypeAnalysis {
         id: String,
         func_proto: FuncProto,
         block: crate::parser::ast::CompoundStmts,
-    ) -> Result<ast::TypedCompoundStmts, String> {
+    ) -> Result<(ast::TypedCompoundStmts, isize), String> {
         let old_body = self.in_func.replace((id, func_proto.clone()));
         self.scopes.push_new_scope_mut();
 
@@ -314,11 +317,16 @@ impl TypeAnalysis {
             })
             .ok_or_else(|| "invalid return type".to_string())?;
 
+        let local_stack_offsets = self.scopes.local_offset();
+
         // reset scope
         self.scopes.pop_scope_mut();
         self.in_func = old_body;
 
-        Ok(ast::TypedCompoundStmts::new(typed_stmts))
+        Ok((
+            ast::TypedCompoundStmts::new(typed_stmts),
+            local_stack_offsets,
+        ))
     }
 
     fn analyze_block(
@@ -347,17 +355,17 @@ impl TypeAnalysis {
                 .analyze_expression(expr)
                 .map(ast::TypedStmtNode::Expression),
             crate::parser::ast::StmtNode::Declaration(ast::Declaration::Scalar(ty, ids)) => {
-                let local_offset = ids.iter().fold(0, |acc, id| {
-                    let var_offset =
+                let local_offsets = ids
+                    .iter()
+                    .map(|id| {
                         self.scopes
-                            .define_local_mut(id, ty.clone(), scopes::Kind::Basic);
-
-                    acc + var_offset
-                });
+                            .define_local_mut(id, ty.clone(), scopes::Kind::Basic)
+                    })
+                    .collect();
 
                 Ok(ast::TypedStmtNode::LocalDeclaration(
                     ast::Declaration::Scalar(ty, ids),
-                    local_offset,
+                    local_offsets,
                 ))
             }
             crate::parser::ast::StmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
@@ -367,7 +375,7 @@ impl TypeAnalysis {
 
                 Ok(ast::TypedStmtNode::LocalDeclaration(
                     ast::Declaration::Array { ty, id, size },
-                    local_offset,
+                    vec![local_offset],
                 ))
             }
             crate::parser::ast::StmtNode::Return(Some(rt_expr)) => {
@@ -464,15 +472,21 @@ impl TypeAnalysis {
                 .scopes
                 .lookup(&identifier)
                 .ok_or_else(|| format!("identifier ({}) undefined", &identifier))
-                .map(|dm| {
-                    if dm.is_array() {
-                        ast::TypedExprNode::Ref(dm.r#type, identifier)
-                    } else {
-                        ast::TypedExprNode::Primary(
-                            dm.r#type.clone(),
-                            ast::Primary::Identifier(dm.r#type, identifier),
-                        )
-                    }
+                .map(|dm| match (dm.is_array(), dm.is_local) {
+                    (true, None) => ast::TypedExprNode::Ref(
+                        dm.r#type,
+                        ast::IdentifierLocality::Global(identifier),
+                    ),
+                    (false, None) => ast::TypedExprNode::Primary(
+                        dm.r#type.clone(),
+                        ast::Primary::Identifier(
+                            dm.r#type,
+                            ast::IdentifierLocality::Global(identifier),
+                        ),
+                    ),
+
+                    (true, Some(_)) => todo!(),
+                    (false, Some(_)) => todo!(),
                 }),
             ExprNode::Primary(Primary::Str(elems)) => Ok(ast::TypedExprNode::Primary(
                 generate_type_specifier!(ptr => generate_type_specifier!(char)),
@@ -515,7 +529,7 @@ impl TypeAnalysis {
                 let lhs = self.analyze_expression(*lhs)?;
 
                 match lhs {
-                    TypedExprNode::Primary(lhs_ty, Primary::Identifier(_, id)) => self
+                    TypedExprNode::Primary(lhs_ty, Primary::Identifier(_, ast::IdentifierLocality::Global(id))) => self
                         .scopes
                         .lookup(&id)
                         .map(|dm| LeftFlowing.type_compatible(&dm.r#type, &rhs.r#type()))
@@ -528,7 +542,7 @@ impl TypeAnalysis {
                             }
                             CompatibilityResult::Scale(t) => Ok(t),
                         })
-                        .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, id, Box::new(rhs))),
+                        .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, ast::IdentifierLocality::Global(id), Box::new(rhs))),
                     TypedExprNode::Deref(ty, expr) => match LeftFlowing.type_compatible(&ty, &rhs.r#type())
                     {
                         CompatibilityResult::Equivalent => Ok(ty),
@@ -723,7 +737,16 @@ impl TypeAnalysis {
             ExprNode::Ref(identifier) => self
                 .scopes
                 .lookup(&identifier)
-                .map(|dm| ast::TypedExprNode::Ref(dm.r#type.pointer_to(), identifier))
+                .map(|dm| match dm.is_local {
+                    None => ast::TypedExprNode::Ref(
+                        dm.r#type.pointer_to(),
+                        ast::IdentifierLocality::Global(identifier),
+                    ),
+                    Some(offset) => ast::TypedExprNode::Ref(
+                        dm.r#type.pointer_to(),
+                        ast::IdentifierLocality::Local(offset),
+                    ),
+                })
                 .ok_or_else(|| "invalid type".to_string()),
             ExprNode::Deref(expr) => self
                 .analyze_expression(*expr)
@@ -770,13 +793,20 @@ impl TypeAnalysis {
                     })
                     .map(|(dm, scale)| {
                         let ref_ty = dm.r#type.clone();
-                        let l_value_access = if dm.is_array() {
-                            Box::new(ast::TypedExprNode::Ref(ref_ty.clone(), identifier.clone()))
-                        } else {
-                            Box::new(ast::TypedExprNode::Primary(
+                        let l_value_access = match (dm.is_array(), dm.is_local) {
+                            (true, None) => Box::new(ast::TypedExprNode::Ref(
                                 ref_ty.clone(),
-                                ast::Primary::Identifier(ref_ty.clone(), identifier.clone()),
-                            ))
+                                ast::IdentifierLocality::Global(identifier.clone()),
+                            )),
+                            (false, None) => Box::new(ast::TypedExprNode::Primary(
+                                ref_ty.clone(),
+                                ast::Primary::Identifier(
+                                    ref_ty.clone(),
+                                    ast::IdentifierLocality::Global(identifier.clone()),
+                                ),
+                            )),
+                            (true, Some(_)) => todo!(),
+                            (false, Some(_)) => todo!(),
                         };
 
                         // recast to a pointer as pulled from the above reference
@@ -874,7 +904,7 @@ mod tests {
     use crate::parser::ast;
     use crate::stage::{
         self,
-        ast::{IntegerWidth, Signed, Type, TypedExprNode},
+        ast::{IdentifierLocality, IntegerWidth, Signed, Type, TypedExprNode},
     };
 
     macro_rules! pad_to_le_64bit_array {
@@ -989,7 +1019,7 @@ mod tests {
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
         let expected = TypedExprNode::IdentifierAssignment(
             generate_type_specifier!(i8).pointer_to(),
-            "x".to_string(),
+            IdentifierLocality::Global("x".to_string()),
             Box::new(TypedExprNode::Primary(
                 generate_type_specifier!(i8).pointer_to(),
                 stage::ast::Primary::Str("hello".chars().map(|c| c as u8).collect()),

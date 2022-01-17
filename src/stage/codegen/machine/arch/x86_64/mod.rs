@@ -23,22 +23,8 @@ impl CompilationStage<ast::TypedProgram, Vec<String>, String> for X86_64 {
             .defs
             .into_iter()
             .map(|global_decl| {
-                let mut allocator = GPRegisterAllocator::default();
-
                 let res: Result<Vec<String>, CodeGenerationErr> = match global_decl {
-                    ast::TypedGlobalDecls::Func(func) => {
-                        let (id, block) = (func.id, func.block);
-
-                        codegen_statements(&mut allocator, block)
-                            .map(|block| {
-                                vec![
-                                    codegen_function_preamble(&id, 0),
-                                    block,
-                                    codegen_function_postamble(&id, 0),
-                                ]
-                            })
-                            .map(|output| output.into_iter().flatten().collect())
-                    }
+                    ast::TypedGlobalDecls::Func(func) => self.apply(func),
                     ast::TypedGlobalDecls::Var(ast::Declaration::Scalar(ty, identifiers)) => {
                         let globals = identifiers
                             .iter()
@@ -66,14 +52,15 @@ impl CompilationStage<ast::TypedFunctionDeclaration, Vec<String>, CodeGeneration
         input: ast::TypedFunctionDeclaration,
     ) -> Result<Vec<String>, CodeGenerationErr> {
         let mut allocator = GPRegisterAllocator::default();
+        let alignment = input.alignment();
         let (id, block) = (input.id, input.block);
 
         codegen_statements(&mut allocator, block)
             .map(|block| {
                 vec![
-                    codegen_function_preamble(&id, 0),
+                    codegen_function_preamble(&id, alignment),
                     block,
-                    codegen_function_postamble(&id, 0),
+                    codegen_function_postamble(&id, alignment),
                 ]
             })
             .map(|output| output.into_iter().flatten().collect())
@@ -106,15 +93,24 @@ fn codegen_statement(
     match input {
         ast::TypedStmtNode::Expression(expr) => allocator
             .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
-        ast::TypedStmtNode::LocalDeclaration(ast::Declaration::Scalar(ty, identifiers), offset) => {
+        ast::TypedStmtNode::LocalDeclaration(
+            ast::Declaration::Scalar(ty, identifiers),
+            offsets,
+        ) => {
             let var_decls = identifiers
                 .iter()
-                .map(|id| codegen_local_symbol(&ty, id, offset))
+                .zip(offsets.iter())
+                .map(|(_, &offset)| codegen_local_symbol(ty.clone(), -offset))
                 .collect();
             Ok(var_decls)
         }
-        ast::TypedStmtNode::LocalDeclaration(ast::Declaration::Array { ty, id, .. }, offset) => {
-            Ok(vec![codegen_local_symbol(&ty, &id, offset)])
+        ast::TypedStmtNode::LocalDeclaration(ast::Declaration::Array { ty, .. }, offset) => {
+            let array_offset = offset
+                .last()
+                .copied()
+                .expect("local array offset undefined");
+
+            Ok(vec![codegen_local_symbol(ty, -array_offset)])
         }
         ast::TypedStmtNode::Return(ty, id, arg) => allocator.allocate_then(|allocator, ret_val| {
             let res: Vec<String> = if let Some(expr) = arg {
@@ -284,11 +280,7 @@ fn codegen_for_statement(
     })
 }
 
-const fn align_stack_offset(offset: isize) -> isize {
-    (offset + 15) & !15
-}
-
-pub fn codegen_function_preamble(identifier: &str, offset: isize) -> Vec<String> {
+pub fn codegen_function_preamble(identifier: &str, alignment: isize) -> Vec<String> {
     vec![format!(
         "\t.text
     .globl  {name}
@@ -296,13 +288,13 @@ pub fn codegen_function_preamble(identifier: &str, offset: isize) -> Vec<String>
 {name}:
     pushq   %rbp
     movq	%rsp, %rbp
-    addq    ${offset}, %rsp\n",
+    subq    ${alignment}, %rsp\n",
         name = identifier,
-        offset = -offset
+        alignment = alignment
     )]
 }
 
-pub fn codegen_function_postamble(identifier: &str, offset: isize) -> Vec<String> {
+pub fn codegen_function_postamble(identifier: &str, alignment: isize) -> Vec<String> {
     codegen_label(format!("func_{}_ret", identifier))
         .into_iter()
         .chain(
@@ -310,7 +302,7 @@ pub fn codegen_function_postamble(identifier: &str, offset: isize) -> Vec<String
                 "\taddq\t${}, %rsp
     popq\t%rbp
     ret\n\n",
-                offset
+                alignment
             )]
             .into_iter(),
         )
@@ -353,8 +345,29 @@ fn codegen_global_str(identifier: &str, str_literal: &[u8]) -> Vec<String> {
     )
 }
 
-fn codegen_local_symbol(_ty: &Type, _identifier: &str, _offset: isize) -> Vec<String> {
-    todo!()
+fn codegen_local_symbol(ty: Type, offset: isize) -> Vec<String> {
+    let width = operand_width_of_type(ty);
+    vec![format!(
+        // zero the offset
+        "\tmov{}\t$0, {}(%rbp)\n",
+        operator_suffix(width),
+        offset,
+    )]
+}
+
+fn codegen_store_local(
+    ty: Type,
+    ret: &mut GeneralPurposeRegister,
+    identifier: &str,
+) -> Vec<String> {
+    let width = operand_width_of_type(ty);
+    vec![format!(
+        "\tmov{}\t%{}, {}(%{})\n",
+        operator_suffix(width),
+        ret.fmt_with_operand_width(width),
+        identifier,
+        PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord)
+    )]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -588,9 +601,13 @@ fn codegen_expr(
             }
         },
 
-        TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
-            codegen_load_global(ty, ret_val, &identifier, 0)
+        TypedExprNode::Primary(ty, Primary::Identifier(_, ast::IdentifierLocality::Global(id))) => {
+            codegen_load_global(ty, ret_val, &id, 0)
         }
+        TypedExprNode::Primary(
+            _ty,
+            Primary::Identifier(_, ast::IdentifierLocality::Local(_offset)),
+        ) => todo!(),
         TypedExprNode::Primary(_, Primary::Str(lit)) => {
             let identifier = format!("V{}", BLOCK_ID.fetch_add(1, Ordering::SeqCst));
 
@@ -604,11 +621,28 @@ fn codegen_expr(
             codegen_call(allocator, ty, ret_val, &func_name, optional_arg)
         }
 
-        ast::TypedExprNode::IdentifierAssignment(ty, identifier, expr) => {
+        ast::TypedExprNode::IdentifierAssignment(
+            ty,
+            ast::IdentifierLocality::Global(identifier),
+            expr,
+        ) => {
             flattenable_instructions!(
                 codegen_expr(allocator, ret_val, *expr),
                 codegen_store_global(ty, ret_val, &identifier),
             )
+        }
+        ast::TypedExprNode::IdentifierAssignment(
+            _ty,
+            ast::IdentifierLocality::Local(_offset),
+            _expr,
+        ) => {
+            /*
+            flattenable_instructions!(
+                codegen_expr(allocator, ret_val, *expr),
+                codegen_store_global(ty, ret_val, &identifier),
+            )
+            */
+            todo!()
         }
         TypedExprNode::DerefAssignment(ty, lhs, rhs) => {
             allocator.allocate_then(|allocator, rhs_ret_val| {
@@ -718,14 +752,15 @@ fn codegen_expr(
         TypedExprNode::Invert(_, expr) => codegen_invert(allocator, ret_val, *expr),
 
         TypedExprNode::PreIncrement(_, expr) => match *expr {
-            TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
-                codegen_inc_or_dec_expression_from_identifier(
-                    ty,
-                    ret_val,
-                    &identifier,
-                    IncDecExpression::PreIncrement,
-                )
-            }
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
+            ) => codegen_inc_or_dec_expression_from_identifier(
+                ty,
+                ret_val,
+                &identifier,
+                IncDecExpression::PreIncrement,
+            ),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret_val, *expr),
@@ -740,14 +775,15 @@ fn codegen_expr(
             _ => unreachable!(),
         },
         TypedExprNode::PreDecrement(_, expr) => match *expr {
-            TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
-                codegen_inc_or_dec_expression_from_identifier(
-                    ty,
-                    ret_val,
-                    &identifier,
-                    IncDecExpression::PreDecrement,
-                )
-            }
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
+            ) => codegen_inc_or_dec_expression_from_identifier(
+                ty,
+                ret_val,
+                &identifier,
+                IncDecExpression::PreDecrement,
+            ),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret_val, *expr),
@@ -762,14 +798,15 @@ fn codegen_expr(
             _ => unreachable!(),
         },
         TypedExprNode::PostIncrement(_, expr) => match *expr {
-            TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
-                codegen_inc_or_dec_expression_from_identifier(
-                    ty,
-                    ret_val,
-                    &identifier,
-                    IncDecExpression::PostIncrement,
-                )
-            }
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
+            ) => codegen_inc_or_dec_expression_from_identifier(
+                ty,
+                ret_val,
+                &identifier,
+                IncDecExpression::PostIncrement,
+            ),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret_val, *expr),
@@ -784,14 +821,15 @@ fn codegen_expr(
             _ => unreachable!(),
         },
         TypedExprNode::PostDecrement(_, expr) => match *expr {
-            TypedExprNode::Primary(ty, Primary::Identifier(_, identifier)) => {
-                codegen_inc_or_dec_expression_from_identifier(
-                    ty,
-                    ret_val,
-                    &identifier,
-                    IncDecExpression::PostDecrement,
-                )
-            }
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
+            ) => codegen_inc_or_dec_expression_from_identifier(
+                ty,
+                ret_val,
+                &identifier,
+                IncDecExpression::PostDecrement,
+            ),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret_val, *expr),
@@ -806,7 +844,12 @@ fn codegen_expr(
             _ => unreachable!(),
         },
 
-        TypedExprNode::Ref(_, identifier) => codegen_reference(ret_val, &identifier),
+        TypedExprNode::Ref(_, ast::IdentifierLocality::Global(identifier)) => {
+            codegen_reference(ret_val, &identifier)
+        }
+        TypedExprNode::Ref(_, ast::IdentifierLocality::Local(_offset)) => {
+            todo!()
+        }
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(
                 codegen_expr(allocator, ret_val, *expr),
@@ -1619,7 +1662,9 @@ mod tests {
     #[test]
     fn should_scale_on_array_deref() {
         use crate::stage::CompilationStage;
-        use ast::{IntegerWidth, Primary, Signed, TypedExprNode, TypedStmtNode};
+        use ast::{
+            IdentifierLocality, IntegerWidth, Primary, Signed, TypedExprNode, TypedStmtNode,
+        };
 
         let index_expression = TypedStmtNode::Expression(ast::TypedExprNode::Deref(
             generate_type_specifier!(u8),
@@ -1627,7 +1672,7 @@ mod tests {
                 generate_type_specifier!(u8).pointer_to(),
                 Box::new(ast::TypedExprNode::Ref(
                     generate_type_specifier!(u8),
-                    "x".to_string(),
+                    IdentifierLocality::Global("x".to_string()),
                 )),
                 Box::new(TypedExprNode::ScaleBy(
                     generate_type_specifier!(u8),

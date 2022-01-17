@@ -91,16 +91,29 @@ impl ScopeStack {
     }
 
     pub fn define_local_mut(&mut self, id: &str, ty: Type, kind: Kind) -> isize {
-        let offset = -(round_sized_type_for_local_offset(ty.size()) as isize);
-        self.scopes.last_mut().map(|scope| {
-            scope.local_offset += offset;
-            scope.symbols.insert(
-                id.to_string(),
-                DeclarationMetadata::new(ty, kind, Some(scope.local_offset)),
-            )
-        });
+        let offset = round_sized_type_for_local_offset(ty.size()) as isize;
+        self.scopes
+            .last_mut()
+            .map(|scope| {
+                scope.local_offset += offset;
+                // offset is a negative offset of stack.
+                let variable_offset = scope.local_offset;
 
-        offset
+                scope.symbols.insert(
+                    id.to_string(),
+                    DeclarationMetadata::new(ty, kind, Some(-variable_offset)),
+                );
+
+                variable_offset
+            })
+            .expect("attempted to allocate local variable on non-local scope")
+    }
+
+    pub fn local_offset(&self) -> isize {
+        self.scopes
+            .last()
+            .map(|scope| scope.local_offset)
+            .unwrap_or(0)
     }
 
     /// looks up variable in place.
