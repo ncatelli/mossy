@@ -186,7 +186,6 @@ impl TypeCompatibility for LeftFlowing {
 }
 
 /// TypeAnalysis stores a scope stack for maintaining local variables.
-#[derive(Default)]
 pub struct TypeAnalysis {
     in_func: Option<(String, ast::FuncProto)>,
     scopes: ScopeStack,
@@ -195,6 +194,18 @@ pub struct TypeAnalysis {
 impl TypeAnalysis {
     /// Initializes a new TypeAnalysis pass with a global scope.
     pub fn new() -> Self {
+        let mut scopes = ScopeStack::new();
+        scopes.push_new_scope_mut();
+
+        Self {
+            scopes,
+            in_func: None,
+        }
+    }
+}
+
+impl Default for TypeAnalysis {
+    fn default() -> Self {
         let mut scopes = ScopeStack::new();
         scopes.push_new_scope_mut();
 
@@ -235,7 +246,8 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
             }
             crate::parser::ast::GlobalDecls::Var(Declaration::Scalar(ty, ids)) => {
                 for id in ids.iter() {
-                    self.scopes.define_global_mut(id, ty.clone());
+                    self.scopes
+                        .define_global_mut(id, ty.clone(), scopes::Kind::Basic);
                 }
 
                 Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Scalar(
@@ -244,7 +256,7 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
             }
             crate::parser::ast::GlobalDecls::Var(Declaration::Array { ty, id, size }) => {
                 self.scopes
-                    .define_global_with_size_mut(&id, ty.pointer_to(), size);
+                    .define_global_mut(&id, ty.pointer_to(), scopes::Kind::Array(size));
 
                 Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Array {
                     ty,
@@ -268,7 +280,7 @@ impl
 
         let proto = FuncProto::new(Box::new(input.return_type), vec![]);
         self.scopes
-            .define_global_mut(&id, ast::Type::Func(proto.clone()));
+            .define_global_mut(&id, ast::Type::Func(proto.clone()), scopes::Kind::Basic);
 
         self.analyze_function_body(id.clone(), proto, block)
             .map(|typed_block| ast::TypedFunctionDeclaration::new(id.clone(), typed_block))
@@ -336,7 +348,8 @@ impl TypeAnalysis {
                 .map(ast::TypedStmtNode::Expression),
             crate::parser::ast::StmtNode::Declaration(ast::Declaration::Scalar(ty, ids)) => {
                 for id in ids.iter() {
-                    self.scopes.define_local_mut(id, ty.clone());
+                    self.scopes
+                        .define_local_mut(id, ty.clone(), scopes::Kind::Basic);
                 }
 
                 Ok(ast::TypedStmtNode::Declaration(ast::Declaration::Scalar(
@@ -345,7 +358,7 @@ impl TypeAnalysis {
             }
             crate::parser::ast::StmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
                 self.scopes
-                    .define_local_with_size_mut(&id, ty.clone(), size);
+                    .define_local_mut(&id, ty.clone(), scopes::Kind::Array(size));
 
                 Ok(ast::TypedStmtNode::Declaration(ast::Declaration::Array {
                     ty,
@@ -953,6 +966,7 @@ mod tests {
 
     #[test]
     fn test_string_assignment_correctly_assigns_pointer_ref() {
+        use crate::stage::type_check::scopes;
         let mut analyzer = super::TypeAnalysis::default();
         let pre_typed_ast = assignment_expr!(
             ast::ExprNode::Primary(ast::Primary::Identifier("x".to_string())),
@@ -962,9 +976,11 @@ mod tests {
 
         // allocate x with predefined type prior to analysis
         analyzer.scopes.push_new_scope_mut();
-        analyzer
-            .scopes
-            .define_local_mut("x", generate_type_specifier!(char).pointer_to());
+        analyzer.scopes.define_local_mut(
+            "x",
+            generate_type_specifier!(char).pointer_to(),
+            scopes::Kind::Basic,
+        );
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
         let expected = TypedExprNode::IdentifierAssignment(

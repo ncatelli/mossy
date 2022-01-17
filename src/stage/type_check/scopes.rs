@@ -1,4 +1,23 @@
-use crate::stage::ast::Type;
+use crate::stage::ast::{ByteSized, Type};
+
+#[derive(Debug, Clone, Copy)]
+pub enum Kind {
+    /// A single element of a type. (int, floating point, etc...)
+    Basic,
+    /// An array of n elements of a type (int[4], etc...)
+    Array(usize),
+}
+
+impl Kind {
+    /// If the kind is an array, return an option containing the number of
+    /// elements. Otherwise return None for scalars.
+    fn array_elems(&self) -> Option<usize> {
+        match self {
+            Kind::Basic => None,
+            Kind::Array(elems) => Some(*elems),
+        }
+    }
+}
 
 /// DeclarationMetadata contains information about a given declared variable.
 /// This information currenntly includes defined size and type.
@@ -8,17 +27,22 @@ pub struct DeclarationMetadata {
     // if Some, implies that this is a fixed size array of a known size.
     // Otherwise it is a singular type be it a known value or pointer to a
     // value.
-    pub size: Option<usize>,
+    pub elems: Option<usize>,
+    pub is_local: Option<isize>,
 }
 
 impl DeclarationMetadata {
-    pub fn new(ty: Type, size: Option<usize>) -> Self {
-        Self { r#type: ty, size }
+    fn new(ty: Type, kind: Kind, local_offset: Option<isize>) -> Self {
+        Self {
+            r#type: ty,
+            elems: kind.array_elems(),
+            is_local: local_offset,
+        }
     }
 
     /// Returns a boolean signifying a type is a fixed size array.
     pub fn is_array(&self) -> bool {
-        (matches!(self.r#type, Type::Pointer(_)) && self.size.is_some())
+        (matches!(self.r#type, Type::Pointer(_)) && self.elems.is_some())
     }
 
     /// Returns a boolean signifying a type is a direct refence type.
@@ -30,7 +54,11 @@ impl DeclarationMetadata {
 }
 
 // Alias for a hashmap of String/Type
-pub(crate) type Scope = std::collections::HashMap<String, DeclarationMetadata>;
+#[derive(Debug, Default)]
+pub(crate) struct Scope {
+    local_offset: isize,
+    symbols: std::collections::HashMap<String, DeclarationMetadata>,
+}
 
 /// Provides a stack of hashmaps for tracking scopes
 #[derive(Default)]
@@ -46,7 +74,7 @@ impl ScopeStack {
 
     /// Pushes a new scope to the end of the stack.
     pub fn push_new_scope_mut(&mut self) {
-        self.scopes.push(Scope::new());
+        self.scopes.push(Scope::default());
     }
 
     /// Pops a scope from the end of the stack.
@@ -54,32 +82,23 @@ impl ScopeStack {
         self.scopes.pop();
     }
 
-    /// Defines a new global variable in place.
-    pub fn define_global_mut(&mut self, id: &str, ty: Type) {
-        self.scopes
-            .first_mut()
-            .map(|scope| scope.insert(id.to_string(), DeclarationMetadata::new(ty, None)));
+    pub fn define_global_mut(&mut self, id: &str, ty: Type, kind: Kind) {
+        self.scopes.first_mut().map(|scope| {
+            scope
+                .symbols
+                .insert(id.to_string(), DeclarationMetadata::new(ty, kind, None))
+        });
     }
 
-    /// Defines a new global variable in place.
-    pub fn define_global_with_size_mut(&mut self, id: &str, ty: Type, size: usize) {
-        self.scopes
-            .first_mut()
-            .map(|scope| scope.insert(id.to_string(), DeclarationMetadata::new(ty, Some(size))));
-    }
-
-    /// Defines a new local variable in place.
-    pub fn define_local_mut(&mut self, id: &str, ty: Type) {
-        self.scopes
-            .last_mut()
-            .map(|scope| scope.insert(id.to_string(), DeclarationMetadata::new(ty, None)));
-    }
-
-    /// Defines a new local variable in place.
-    pub fn define_local_with_size_mut(&mut self, id: &str, ty: Type, size: usize) {
-        self.scopes
-            .last_mut()
-            .map(|scope| scope.insert(id.to_string(), DeclarationMetadata::new(ty, Some(size))));
+    pub fn define_local_mut(&mut self, id: &str, ty: Type, kind: Kind) {
+        let offset = round_sized_type_for_local_offset(ty.size());
+        self.scopes.last_mut().map(|scope| {
+            scope.local_offset += offset as isize;
+            scope.symbols.insert(
+                id.to_string(),
+                DeclarationMetadata::new(ty, kind, Some(scope.local_offset)),
+            )
+        });
     }
 
     /// looks up variable in place.
@@ -87,8 +106,15 @@ impl ScopeStack {
         self.scopes
             .iter()
             .rev()
-            .find(|scope| scope.get(id).is_some())
-            .and_then(|scope| scope.get(id))
+            .find(|scope| scope.symbols.get(id).is_some())
+            .and_then(|scope| scope.symbols.get(id))
             .cloned()
+    }
+}
+
+const fn round_sized_type_for_local_offset(size: usize) -> usize {
+    match size {
+        size if size > 4 => size,
+        _ => 4,
     }
 }
