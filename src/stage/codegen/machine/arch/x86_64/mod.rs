@@ -12,7 +12,8 @@ pub struct X86_64;
 
 mod register;
 use register::{
-    GPRegisterAllocator, GeneralPurposeRegister, OperandWidth, PointerRegister, ScalarRegister,
+    BasePointerRegister, GPRegisterAllocator, GeneralPurposeRegister, OperandWidth,
+    PointerRegister, ScalarRegister,
 };
 
 impl TargetArchitecture for X86_64 {}
@@ -93,25 +94,7 @@ fn codegen_statement(
     match input {
         ast::TypedStmtNode::Expression(expr) => allocator
             .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
-        ast::TypedStmtNode::LocalDeclaration(
-            ast::Declaration::Scalar(ty, identifiers),
-            offsets,
-        ) => {
-            let var_decls = identifiers
-                .iter()
-                .zip(offsets.iter())
-                .map(|(_, &offset)| codegen_local_symbol(ty.clone(), -offset))
-                .collect();
-            Ok(var_decls)
-        }
-        ast::TypedStmtNode::LocalDeclaration(ast::Declaration::Array { ty, .. }, offset) => {
-            let array_offset = offset
-                .last()
-                .copied()
-                .expect("local array offset undefined");
-
-            Ok(vec![codegen_local_symbol(ty, -array_offset)])
-        }
+        ast::TypedStmtNode::LocalDeclaration(_, _) => Ok(vec![]),
         ast::TypedStmtNode::Return(ty, id, arg) => allocator.allocate_then(|allocator, ret_val| {
             let res: Vec<String> = if let Some(expr) = arg {
                 codegen_expr(allocator, ret_val, expr)
@@ -345,29 +328,44 @@ fn codegen_global_str(identifier: &str, str_literal: &[u8]) -> Vec<String> {
     )
 }
 
-fn codegen_local_symbol(ty: Type, offset: isize) -> Vec<String> {
-    let width = operand_width_of_type(ty);
-    vec![format!(
-        // zero the offset
-        "\tmov{}\t$0, {}(%rbp)\n",
-        operator_suffix(width),
-        offset,
-    )]
-}
-
-fn codegen_store_local(
-    ty: Type,
-    ret: &mut GeneralPurposeRegister,
-    identifier: &str,
-) -> Vec<String> {
+fn codegen_store_local(ty: Type, ret: &mut GeneralPurposeRegister, offset: isize) -> Vec<String> {
     let width = operand_width_of_type(ty);
     vec![format!(
         "\tmov{}\t%{}, {}(%{})\n",
         operator_suffix(width),
         ret.fmt_with_operand_width(width),
-        identifier,
-        PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord)
+        offset,
+        BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
     )]
+}
+
+fn codegen_load_local(
+    ty: Type,
+    ret: &mut GeneralPurposeRegister,
+    offset: isize,
+    scale: usize,
+) -> Vec<String> {
+    let scale_by = ty.size() * scale;
+    let width = operand_width_of_type(ty);
+
+    if scale == 0 {
+        vec![format!(
+            "\tmov{}\t{}(%{}), %{}\n",
+            operator_suffix(width),
+            offset,
+            BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+            ret.fmt_with_operand_width(width)
+        )]
+    } else {
+        vec![format!(
+            "\tmov{}\t{}+{}(%{}), %{}\n",
+            operator_suffix(width),
+            offset,
+            scale_by,
+            BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+            ret.fmt_with_operand_width(width)
+        )]
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -605,15 +603,15 @@ fn codegen_expr(
             codegen_load_global(ty, ret_val, &id, 0)
         }
         TypedExprNode::Primary(
-            _ty,
-            Primary::Identifier(_, ast::IdentifierLocality::Local(_offset)),
-        ) => todo!(),
+            ty,
+            Primary::Identifier(_, ast::IdentifierLocality::Local(offset)),
+        ) => codegen_load_local(ty, ret_val, offset, 0),
         TypedExprNode::Primary(_, Primary::Str(lit)) => {
             let identifier = format!("V{}", BLOCK_ID.fetch_add(1, Ordering::SeqCst));
 
             flattenable_instructions!(
                 codegen_global_str(&identifier, &lit),
-                codegen_reference(ret_val, &identifier),
+                codegen_reference_from_identifier(ret_val, &identifier),
             )
         }
 
@@ -632,17 +630,14 @@ fn codegen_expr(
             )
         }
         ast::TypedExprNode::IdentifierAssignment(
-            _ty,
-            ast::IdentifierLocality::Local(_offset),
-            _expr,
+            ty,
+            ast::IdentifierLocality::Local(offset),
+            expr,
         ) => {
-            /*
             flattenable_instructions!(
                 codegen_expr(allocator, ret_val, *expr),
-                codegen_store_global(ty, ret_val, &identifier),
+                codegen_store_local(ty, ret_val, offset),
             )
-            */
-            todo!()
         }
         TypedExprNode::DerefAssignment(ty, lhs, rhs) => {
             allocator.allocate_then(|allocator, rhs_ret_val| {
@@ -845,10 +840,10 @@ fn codegen_expr(
         },
 
         TypedExprNode::Ref(_, ast::IdentifierLocality::Global(identifier)) => {
-            codegen_reference(ret_val, &identifier)
+            codegen_reference_from_identifier(ret_val, &identifier)
         }
-        TypedExprNode::Ref(_, ast::IdentifierLocality::Local(_offset)) => {
-            todo!()
+        TypedExprNode::Ref(_, ast::IdentifierLocality::Local(offset)) => {
+            codegen_reference_from_stack_offset(ret_val, offset)
         }
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(
@@ -950,11 +945,26 @@ fn codegen_constant_u64(ret_val: &mut GeneralPurposeRegister, constant: u64) -> 
     )]
 }
 
-fn codegen_reference(ret: &mut GeneralPurposeRegister, identifier: &str) -> Vec<String> {
+fn codegen_reference_from_identifier(
+    ret: &mut GeneralPurposeRegister,
+    identifier: &str,
+) -> Vec<String> {
     vec![format!(
         "\tleaq\t{}(%{}), %{}\n",
         identifier,
         PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+        ret.fmt_with_operand_width(OperandWidth::QuadWord)
+    )]
+}
+
+fn codegen_reference_from_stack_offset(
+    ret: &mut GeneralPurposeRegister,
+    offset: isize,
+) -> Vec<String> {
+    vec![format!(
+        "\tleaq\t{}(%{}), %{}\n",
+        offset,
+        BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
         ret.fmt_with_operand_width(OperandWidth::QuadWord)
     )]
 }

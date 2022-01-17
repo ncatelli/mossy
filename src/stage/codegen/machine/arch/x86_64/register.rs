@@ -27,6 +27,20 @@ impl WidthFormatted for PointerRegister {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BasePointerRegister;
+
+impl WidthFormatted for BasePointerRegister {
+    fn fmt_with_operand_width(&self, width: OperandWidth) -> &'static str {
+        match width {
+            OperandWidth::QuadWord => "rbp",
+            OperandWidth::DoubleWord => "ebp",
+            OperandWidth::Word => "bp",
+            OperandWidth::Byte => panic!("base pointer pointer cannot be byte formatted"),
+        }
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScalarRegister {

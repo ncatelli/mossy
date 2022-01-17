@@ -486,7 +486,10 @@ impl TypeAnalysis {
                     ),
 
                     (true, Some(_)) => todo!(),
-                    (false, Some(_)) => todo!(),
+                    (false, Some(offset)) => ast::TypedExprNode::Primary(
+                        dm.r#type.clone(),
+                        ast::Primary::Identifier(dm.r#type, ast::IdentifierLocality::Local(offset)),
+                    ),
                 }),
             ExprNode::Primary(Primary::Str(elems)) => Ok(ast::TypedExprNode::Primary(
                 generate_type_specifier!(ptr => generate_type_specifier!(char)),
@@ -543,7 +546,20 @@ impl TypeAnalysis {
                             CompatibilityResult::Scale(t) => Ok(t),
                         })
                         .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, ast::IdentifierLocality::Global(id), Box::new(rhs))),
+                    TypedExprNode::Primary(lhs_ty, Primary::Identifier(ty, ast::IdentifierLocality::Local(offset))) =>{ 
+                        let type_compat = LeftFlowing.type_compatible(&ty, &rhs.r#type());
+                         match type_compat {
+                            CompatibilityResult::Equivalent => Ok(lhs_ty),
+                            CompatibilityResult::WidenTo(ty) => Ok(ty),
+                            CompatibilityResult::Incompatible => {
+                                Err(format!("invalid type in identifier:\n\texpected: lhs({:?})\n\tgot: rhs({:?})", lhs_ty, &rhs.r#type()))
+                            }
+                            CompatibilityResult::Scale(t) => Ok(t),
+                        }
+                        .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, ast::IdentifierLocality::Local(offset), Box::new(rhs)))
+                    }
                     TypedExprNode::Deref(ty, expr) => match LeftFlowing.type_compatible(&ty, &rhs.r#type())
+                
                     {
                         CompatibilityResult::Equivalent => Ok(ty),
                         CompatibilityResult::WidenTo(ty) => Ok(ty),
