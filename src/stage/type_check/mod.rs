@@ -2,7 +2,7 @@
 //! additional type checking and enrichment.
 
 use super::CompilationStage;
-use crate::stage::ast::{self, FuncProto, IdentifierLocality, Typed};
+use crate::stage::ast::{self, FuncProto, Typed};
 
 mod scopes;
 use scopes::ScopeStack;
