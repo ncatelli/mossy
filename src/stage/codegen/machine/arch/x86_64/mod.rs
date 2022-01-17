@@ -32,9 +32,9 @@ impl CompilationStage<ast::TypedProgram, Vec<String>, String> for X86_64 {
                         codegen_statements(&mut allocator, block)
                             .map(|block| {
                                 vec![
-                                    codegen_function_preamble(&id),
+                                    codegen_function_preamble(&id, 0),
                                     block,
-                                    codegen_function_postamble(&id),
+                                    codegen_function_postamble(&id, 0),
                                 ]
                             })
                             .map(|output| output.into_iter().flatten().collect())
@@ -71,9 +71,9 @@ impl CompilationStage<ast::TypedFunctionDeclaration, Vec<String>, CodeGeneration
         codegen_statements(&mut allocator, block)
             .map(|block| {
                 vec![
-                    codegen_function_preamble(&id),
+                    codegen_function_preamble(&id, 0),
                     block,
-                    codegen_function_postamble(&id),
+                    codegen_function_postamble(&id, 0),
                 ]
             })
             .map(|output| output.into_iter().flatten().collect())
@@ -284,25 +284,34 @@ fn codegen_for_statement(
     })
 }
 
-pub fn codegen_function_preamble(identifier: &str) -> Vec<String> {
+const fn align_stack_offset(offset: isize) -> isize {
+    (offset + 15) & !15
+}
+
+pub fn codegen_function_preamble(identifier: &str, offset: isize) -> Vec<String> {
     vec![format!(
         "\t.text
     .globl  {name}
     .type   {name}, @function
 {name}:
     pushq   %rbp
-    movq	%rsp, %rbp\n",
-        name = identifier
+    movq	%rsp, %rbp
+    addq    ${offset}, %rsp\n",
+        name = identifier,
+        offset = -offset
     )]
 }
 
-pub fn codegen_function_postamble(identifier: &str) -> Vec<String> {
+pub fn codegen_function_postamble(identifier: &str, offset: isize) -> Vec<String> {
     codegen_label(format!("func_{}_ret", identifier))
         .into_iter()
         .chain(
-            vec!["\tpopq     %rbp
-    ret\n\n"
-                .to_string()]
+            vec![format!(
+                "\taddq\t${}, %rsp
+    popq\t%rbp
+    ret\n\n",
+                offset
+            )]
             .into_iter(),
         )
         .collect()
