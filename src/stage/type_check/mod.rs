@@ -347,24 +347,28 @@ impl TypeAnalysis {
                 .analyze_expression(expr)
                 .map(ast::TypedStmtNode::Expression),
             crate::parser::ast::StmtNode::Declaration(ast::Declaration::Scalar(ty, ids)) => {
-                for id in ids.iter() {
-                    self.scopes
-                        .define_local_mut(id, ty.clone(), scopes::Kind::Basic);
-                }
+                let local_offset = ids.iter().fold(0, |acc, id| {
+                    let var_offset =
+                        self.scopes
+                            .define_local_mut(id, ty.clone(), scopes::Kind::Basic);
 
-                Ok(ast::TypedStmtNode::Declaration(ast::Declaration::Scalar(
-                    ty, ids,
-                )))
+                    acc + var_offset
+                });
+
+                Ok(ast::TypedStmtNode::LocalDeclaration(
+                    ast::Declaration::Scalar(ty, ids),
+                    local_offset,
+                ))
             }
             crate::parser::ast::StmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
-                self.scopes
-                    .define_local_mut(&id, ty.clone(), scopes::Kind::Array(size));
+                let local_offset =
+                    self.scopes
+                        .define_local_mut(&id, ty.clone(), scopes::Kind::Array(size));
 
-                Ok(ast::TypedStmtNode::Declaration(ast::Declaration::Array {
-                    ty,
-                    id,
-                    size,
-                }))
+                Ok(ast::TypedStmtNode::LocalDeclaration(
+                    ast::Declaration::Array { ty, id, size },
+                    local_offset,
+                ))
             }
             crate::parser::ast::StmtNode::Return(Some(rt_expr)) => {
                 if let Some((id, proto)) = self.in_func.as_ref() {

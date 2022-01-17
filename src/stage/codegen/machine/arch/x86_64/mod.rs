@@ -106,15 +106,15 @@ fn codegen_statement(
     match input {
         ast::TypedStmtNode::Expression(expr) => allocator
             .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
-        ast::TypedStmtNode::Declaration(ast::Declaration::Scalar(ty, identifiers)) => {
+        ast::TypedStmtNode::LocalDeclaration(ast::Declaration::Scalar(ty, identifiers), offset) => {
             let var_decls = identifiers
                 .iter()
-                .map(|id| codegen_global_symbol(&ty, id, 1))
+                .map(|id| codegen_local_symbol(&ty, id, offset))
                 .collect();
             Ok(var_decls)
         }
-        ast::TypedStmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
-            Ok(vec![codegen_global_symbol(&ty, &id, size)])
+        ast::TypedStmtNode::LocalDeclaration(ast::Declaration::Array { ty, id, .. }, offset) => {
+            Ok(vec![codegen_local_symbol(&ty, &id, offset)])
         }
         ast::TypedStmtNode::Return(ty, id, arg) => allocator.allocate_then(|allocator, ret_val| {
             let res: Vec<String> = if let Some(expr) = arg {
@@ -332,6 +332,22 @@ fn codegen_store_global(
     )]
 }
 
+fn codegen_global_str(identifier: &str, str_literal: &[u8]) -> Vec<String> {
+    flattenable_instructions!(
+        vec!["\t.section .rodata\n".to_string()],
+        codegen_label(identifier),
+        str_literal
+            .iter()
+            .map(|c| format!("\t.byte\t{}\n", c))
+            .collect::<Vec<String>>(),
+        vec!["\t.byte\t0\n".to_string(), "\t.text\n".to_string()],
+    )
+}
+
+fn codegen_local_symbol(_ty: &Type, _identifier: &str, _offset: isize) -> Vec<String> {
+    todo!()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum IncDecExpression {
     PreIncrement,
@@ -453,18 +469,6 @@ fn codegen_load_global(
             ret.fmt_with_operand_width(width)
         )]
     }
-}
-
-fn codegen_global_str(identifier: &str, str_literal: &[u8]) -> Vec<String> {
-    flattenable_instructions!(
-        vec!["\t.section .rodata\n".to_string()],
-        codegen_label(identifier),
-        str_literal
-            .iter()
-            .map(|c| format!("\t.byte\t{}\n", c))
-            .collect::<Vec<String>>(),
-        vec!["\t.byte\t0\n".to_string(), "\t.text\n".to_string()],
-    )
 }
 
 /// Defines marker traits for objects that can be used to generate labels.

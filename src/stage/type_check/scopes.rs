@@ -90,15 +90,17 @@ impl ScopeStack {
         });
     }
 
-    pub fn define_local_mut(&mut self, id: &str, ty: Type, kind: Kind) {
-        let offset = round_sized_type_for_local_offset(ty.size());
+    pub fn define_local_mut(&mut self, id: &str, ty: Type, kind: Kind) -> isize {
+        let offset = -(round_sized_type_for_local_offset(ty.size()) as isize);
         self.scopes.last_mut().map(|scope| {
-            scope.local_offset += offset as isize;
+            scope.local_offset += offset;
             scope.symbols.insert(
                 id.to_string(),
                 DeclarationMetadata::new(ty, kind, Some(scope.local_offset)),
             )
         });
+
+        offset
     }
 
     /// looks up variable in place.

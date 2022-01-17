@@ -118,9 +118,10 @@ pub enum Declaration {
 /// AstNode representing any allowable statement in the ast.
 #[derive(PartialEq, Debug, Clone)]
 pub enum TypedStmtNode {
-    /// Declaration represents a global declaration statement with the
-    /// enclosed string representing the Id of the variable.
-    Declaration(Declaration),
+    /// Declaration represents a local declaration statement with the
+    /// enclosed string representing the Id of the variable and it's local
+    /// stack offset.
+    LocalDeclaration(Declaration, isize),
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.
     /// A block return statement.
