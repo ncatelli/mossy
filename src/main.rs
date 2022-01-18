@@ -59,7 +59,7 @@ fn compile(source: &str) -> RuntimeResult<String> {
 
     parser::parse(&input)
         .map(|program| {
-            type_check::TypeAnalysis::new()
+            type_check::TypeAnalysis::default()
                 .and_then(|| x86_64::X86_64)
                 .apply(program)
         })

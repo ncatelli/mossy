@@ -75,11 +75,20 @@ impl TypedProgram {
 pub struct TypedFunctionDeclaration {
     pub id: String,
     pub block: TypedCompoundStmts,
+    local_variable_size: isize,
 }
 
 impl TypedFunctionDeclaration {
-    pub fn new(id: String, block: TypedCompoundStmts) -> Self {
-        Self { id, block }
+    pub fn new(id: String, block: TypedCompoundStmts, local_variable_size: isize) -> Self {
+        Self {
+            id,
+            block,
+            local_variable_size,
+        }
+    }
+
+    pub fn alignment(&self) -> isize {
+        (self.local_variable_size + 15) & !15
     }
 }
 
@@ -118,9 +127,10 @@ pub enum Declaration {
 /// AstNode representing any allowable statement in the ast.
 #[derive(PartialEq, Debug, Clone)]
 pub enum TypedStmtNode {
-    /// Declaration represents a global declaration statement with the
-    /// enclosed string representing the Id of the variable.
-    Declaration(Declaration),
+    /// Declaration represents a local declaration statement with the
+    /// enclosed string representing the Id of the variable and it's local
+    /// stack offset.
+    LocalDeclaration(Declaration, Vec<isize>),
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.
     /// A block return statement.
@@ -143,13 +153,21 @@ pub enum TypedStmtNode {
     ),
 }
 
+/// Represents whether an identifier is locally stored on the stack or
+/// globally behind a label.
+#[derive(PartialEq, Debug, Clone)]
+pub enum IdentifierLocality {
+    Global(String),
+    Local(isize),
+}
+
 /// Represents a single expression in the ast.
 #[derive(PartialEq, Debug, Clone)]
 pub enum TypedExprNode {
     Primary(Type, Primary),
     FunctionCall(Type, String, Option<Box<TypedExprNode>>),
 
-    IdentifierAssignment(Type, String, Box<TypedExprNode>),
+    IdentifierAssignment(Type, IdentifierLocality, Box<TypedExprNode>),
     DerefAssignment(Type, Box<TypedExprNode>, Box<TypedExprNode>),
 
     // Binary Logical
@@ -191,7 +209,7 @@ pub enum TypedExprNode {
     PostDecrement(Type, Box<TypedExprNode>),
 
     // Pointer Operations
-    Ref(Type, String),
+    Ref(Type, IdentifierLocality),
     Deref(Type, Box<TypedExprNode>),
     ScaleBy(Type, Box<TypedExprNode>),
 
@@ -248,7 +266,7 @@ pub enum Primary {
         width: IntegerWidth,
         value: [u8; 8],
     },
-    Identifier(Type, String),
+    Identifier(Type, IdentifierLocality),
     Str(Vec<u8>),
 }
 
