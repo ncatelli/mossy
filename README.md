@@ -142,7 +142,7 @@ type_specifier: 'char'
         | 'void'
         ;
 
-string_literal: '"' ( ascii_alphanumeric | ' ' | ascii_whitespace | ascii_control | '\"')* '"'
+string_literal: '"' ( ascii_alphanumeric | ' ' | ascii_whitespace | ascii_control | '\"' )* '"'
 
 digit:  [0-9]*;
 
