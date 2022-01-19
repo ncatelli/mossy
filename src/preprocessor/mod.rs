@@ -113,3 +113,33 @@ fn block_comment<'a>() -> impl Parser<'a, &'a [(usize, SpanEnumaratedChar)], ()>
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn should_parse_inline_comments_from_arbitrary_source() {
+        let input: Vec<(usize, char)> = "{ 5; // test\n}".chars().enumerate().collect();
+
+        let res = super::pre_process(&input).map(|post_process_chars| {
+            post_process_chars
+                .into_iter()
+                .map(|positional_char| positional_char.1)
+                .collect::<String>()
+        });
+
+        assert_eq!(Ok("{ 5; }".to_string()), res);
+    }
+
+    #[test]
+    fn should_parse_block_comments_from_arbitrary_source() {
+        let input: Vec<(usize, char)> = "{ /* test */ 5; }".chars().enumerate().collect();
+        let res = super::pre_process(&input).map(|post_process_chars| {
+            post_process_chars
+                .into_iter()
+                .map(|positional_char| positional_char.1)
+                .collect::<String>()
+        });
+
+        assert_eq!(Ok("{  5; }".to_string()), res);
+    }
+}
