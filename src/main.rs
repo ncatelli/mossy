@@ -52,12 +52,15 @@ fn write_dest_file(filename: &str, data: &[u8]) -> RuntimeResult<()> {
 
 fn compile(source: &str) -> RuntimeResult<String> {
     use mossy::parser;
+    use mossy::preprocessor;
     use mossy::stage::codegen::machine::arch::x86_64;
     use mossy::stage::{type_check, CompilationStage};
 
     let input: Vec<(usize, char)> = source.chars().enumerate().collect();
+    let pre_processed_input = preprocessor::pre_process(&input)
+        .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?;
 
-    parser::parse(&input)
+    parser::parse(&pre_processed_input)
         .map(|program| {
             type_check::TypeAnalysis::default()
                 .and_then(|| x86_64::X86_64)
