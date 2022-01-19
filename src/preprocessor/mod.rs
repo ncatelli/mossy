@@ -10,11 +10,9 @@ pub fn pre_process(input: &[SpanEnumaratedChar]) -> Result<Vec<SpanEnumaratedCha
         input.iter().copied().enumerate().collect();
 
     let pre_processed_input = parcel::one_or_more(
-        expect_str("//")
-            .and_then(|_| parcel::zero_or_more(any_character().predicate(|&c| c.1 != '\n')))
-            // eat the remain char
-            .and_then(|_| expect_character('\n'))
+        inline_comment()
             .map(|_| None)
+            .or(|| block_comment().map(|_| None))
             .or(|| any_character().map(Some)),
     )
     .parse(&enumerated_chars[..])
@@ -81,4 +79,37 @@ fn any_character<'a>() -> impl Parser<'a, &'a [(usize, SpanEnumaratedChar)], Spa
         }),
         _ => Ok(MatchStatus::NoMatch(input)),
     }
+}
+
+fn inline_comment<'a>() -> impl Parser<'a, &'a [(usize, SpanEnumaratedChar)], ()> {
+    expect_str("//")
+        .and_then(|_| parcel::zero_or_more(any_character().predicate(|&c| c.1 != '\n')))
+        // eat the remain char
+        .and_then(|_| expect_character('\n'))
+        .map(|_| ())
+}
+
+fn block_comment<'a>() -> impl Parser<'a, &'a [(usize, SpanEnumaratedChar)], ()> {
+    expect_str("/*").and_then(|_| {
+        move |input: &'a [(usize, SpanEnumaratedChar)]| {
+            let preparse_input = input;
+            let start_span_pos = preparse_input.first().map(|elem| elem.0).unwrap_or(0);
+            let mut start_offset = 0;
+
+            while let Some([first, second]) = input.get(start_offset..start_offset + 2) {
+                if [(first.1).1, (second.1).1] == ['*', '/'] {
+                    let offset_from_start = second.0 - start_span_pos;
+
+                    return Ok(MatchStatus::Match {
+                        span: start_span_pos..second.0 + 1,
+                        remainder: &input[offset_from_start + 1..],
+                        inner: (),
+                    });
+                } else {
+                    start_offset += 1
+                }
+            }
+            Ok(MatchStatus::NoMatch(preparse_input))
+        }
+    })
 }
