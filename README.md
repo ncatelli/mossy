@@ -1,7 +1,25 @@
 # mossy
 An (irresponsibly) experimental C compiler for the first-principles of computing project.
 
-## Grammar
+## Pre-Processor
+The pre-processor provides for text replacement prior to parsing any context sensitive grammar.
+
+### Grammar
+```
+comments: (inline_comment
+        | block_comment
+        | character)*
+        ;
+
+block_comment: '/*' character* '*/'
+        ;
+
+inline_comment: '//' character* '\n'
+        ;
+```
+
+## Parser
+### Grammar
 Grammar is heavily referenced from [WMU cs4850 course grammar](https://cs.wmich.edu/%7Egupta/teaching/cs4850/sumII06/The%20syntax%20of%20C%20in%20Backus-Naur%20form.htm)
 
 ```
@@ -142,7 +160,7 @@ type_specifier: 'char'
         | 'void'
         ;
 
-string_literal: '"' ( ascii_alphanumeric | ' ' | ascii_whitespace | ascii_control | '\"')* '"'
+string_literal: '"' ( ascii_alphanumeric | ' ' | ascii_whitespace | ascii_control | '\"' )* '"'
 
 digit:  [0-9]*;
 
