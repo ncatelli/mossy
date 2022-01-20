@@ -9,22 +9,18 @@ pub fn pre_process(input: &[SpanEnumaratedChar]) -> Result<Vec<SpanEnumaratedCha
     let enumerated_chars: Vec<(usize, SpanEnumaratedChar)> =
         input.iter().copied().enumerate().collect();
 
-    let pre_processed_input = parcel::one_or_more(
-        inline_comment()
-            .map(|_| None)
-            .or(|| block_comment().map(|_| None))
-            .or(|| any_character().map(Some)),
-    )
-    .parse(&enumerated_chars[..])
-    .and_then(|ms| match ms {
-        MatchStatus::Match {
-            span: _,
-            remainder: _,
-            inner,
-        } => Ok(inner),
-        MatchStatus::NoMatch(_) => Err("Unknown preprocessor error".to_string()),
-    })
-    .map(|post_process_chars| post_process_chars.into_iter().flatten().collect());
+    let pre_processed_input =
+        parcel::one_or_more(inline_comment().or(block_comment).or(any_character))
+            .parse(&enumerated_chars[..])
+            .and_then(|ms| match ms {
+                MatchStatus::Match {
+                    span: _,
+                    remainder: _,
+                    inner,
+                } => Ok(inner),
+                MatchStatus::NoMatch(_) => Err("Unknown preprocessor error".to_string()),
+            })
+            .map(|post_process_chars| post_process_chars.into_iter().collect());
 
     pre_processed_input
 }
@@ -81,15 +77,16 @@ fn any_character<'a>() -> impl Parser<'a, &'a [(usize, SpanEnumaratedChar)], Spa
     }
 }
 
-fn inline_comment<'a>() -> impl Parser<'a, &'a [(usize, SpanEnumaratedChar)], ()> {
+fn inline_comment<'a>() -> impl Parser<'a, &'a [(usize, SpanEnumaratedChar)], SpanEnumaratedChar> {
     expect_str("//")
         .and_then(|_| parcel::zero_or_more(any_character().predicate(|&c| c.1 != '\n')))
         // eat the remain char
         .and_then(|_| expect_character('\n'))
-        .map(|_| ())
+        // replace the last character with a single space per spec.
+        .map(|(pos, _)| (pos, ' '))
 }
 
-fn block_comment<'a>() -> impl Parser<'a, &'a [(usize, SpanEnumaratedChar)], ()> {
+fn block_comment<'a>() -> impl Parser<'a, &'a [(usize, SpanEnumaratedChar)], SpanEnumaratedChar> {
     expect_str("/*").and_then(|_| {
         move |input: &'a [(usize, SpanEnumaratedChar)]| {
             let preparse_input = input;
@@ -103,7 +100,7 @@ fn block_comment<'a>() -> impl Parser<'a, &'a [(usize, SpanEnumaratedChar)], ()>
                     return Ok(MatchStatus::Match {
                         span: start_span_pos..second.0 + 1,
                         remainder: &input[offset_from_start + 1..],
-                        inner: (),
+                        inner: (offset_from_start, ' '),
                     });
                 } else {
                     start_offset += 1
@@ -127,7 +124,7 @@ mod tests {
                 .collect::<String>()
         });
 
-        assert_eq!(Ok("{ 5; }".to_string()), res);
+        assert_eq!(Ok("{ 5;  }".to_string()), res);
     }
 
     #[test]
@@ -140,6 +137,6 @@ mod tests {
                 .collect::<String>()
         });
 
-        assert_eq!(Ok("{  5; }".to_string()), res);
+        assert_eq!(Ok("{   5; }".to_string()), res);
     }
 }
