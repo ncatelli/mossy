@@ -226,12 +226,6 @@ impl Typed for TypedExprNode {
             | TypedExprNode::BitOr(ty, _, _)
             | TypedExprNode::BitXor(ty, _, _)
             | TypedExprNode::BitAnd(ty, _, _)
-            | TypedExprNode::Equal(ty, _, _)
-            | TypedExprNode::NotEqual(ty, _, _)
-            | TypedExprNode::LessThan(ty, _, _)
-            | TypedExprNode::GreaterThan(ty, _, _)
-            | TypedExprNode::LessEqual(ty, _, _)
-            | TypedExprNode::GreaterEqual(ty, _, _)
             | TypedExprNode::BitShiftLeft(ty, _, _)
             | TypedExprNode::BitShiftRight(ty, _, _)
             | TypedExprNode::Addition(ty, _, _)
@@ -251,7 +245,14 @@ impl Typed for TypedExprNode {
             | TypedExprNode::ScaleBy(ty, _)
             | TypedExprNode::Grouping(ty, _) => ty.clone(),
             // Boolean types
-            TypedExprNode::LogOr(_, _, _) | TypedExprNode::LogAnd(_, _, _) => {
+            TypedExprNode::LogOr(_, _, _)
+            | TypedExprNode::LogAnd(_, _, _)
+            | TypedExprNode::Equal(_, _, _)
+            | TypedExprNode::NotEqual(_, _, _)
+            | TypedExprNode::LessThan(_, _, _)
+            | TypedExprNode::GreaterThan(_, _, _)
+            | TypedExprNode::LessEqual(_, _, _)
+            | TypedExprNode::GreaterEqual(_, _, _) => {
                 Type::Integer(Signed::Unsigned, IntegerWidth::One)
             }
         }
