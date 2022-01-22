@@ -27,6 +27,7 @@ impl SysVAllocator {
     }
 }
 
+#[allow(dead_code)]
 const fn round_sized_type_for_local_offset(size: usize) -> usize {
     match size {
         size if size > 4 => size,

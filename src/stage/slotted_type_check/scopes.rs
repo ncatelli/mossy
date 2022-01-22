@@ -71,7 +71,6 @@ impl DeclarationMetadata {
 // Alias for a hashmap of String/Type
 #[derive(Debug, Default)]
 pub(crate) struct Scope {
-    local_offset: isize,
     local_slots: Vec<String>,
     symbols: std::collections::HashMap<String, DeclarationMetadata>,
 }
