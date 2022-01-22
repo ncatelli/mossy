@@ -1,10 +1,10 @@
 pub mod register;
 
-pub(crate) struct Allocator {
+pub(crate) struct SysVAllocator {
     pub(crate) general_purpose_reg_allocator: register::GPRegisterAllocator,
 }
 
-impl Allocator {
+impl SysVAllocator {
     pub fn new(general_purpose_reg_allocator: register::GPRegisterAllocator) -> Self {
         Self {
             general_purpose_reg_allocator,
@@ -12,7 +12,7 @@ impl Allocator {
     }
 }
 
-impl Allocator {
+impl SysVAllocator {
     pub fn allocate_gp_register_then<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce(&mut Self, &register::GeneralPurposeRegister) -> R,

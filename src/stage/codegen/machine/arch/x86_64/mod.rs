@@ -15,7 +15,7 @@ use allocator::{
         BasePointerRegister, GPRegisterAllocator, GeneralPurposeRegister, OperandWidth,
         PointerRegister, ScalarRegister, WidthFormatted,
     },
-    Allocator,
+    SysVAllocator,
 };
 
 impl TargetArchitecture for X86_64 {}
@@ -54,7 +54,7 @@ impl CompilationStage<ast::TypedFunctionDeclaration, Vec<String>, CodeGeneration
         &mut self,
         input: ast::TypedFunctionDeclaration,
     ) -> Result<Vec<String>, CodeGenerationErr> {
-        let mut allocator = Allocator::new(GPRegisterAllocator::default());
+        let mut allocator = SysVAllocator::new(GPRegisterAllocator::default());
         let alignment = input.alignment();
         let (id, block) = (input.id, input.block);
 
@@ -73,13 +73,13 @@ impl CompilationStage<ast::TypedFunctionDeclaration, Vec<String>, CodeGeneration
 // used for testing.
 impl CompilationStage<ast::TypedCompoundStmts, Vec<String>, CodeGenerationErr> for X86_64 {
     fn apply(&mut self, input: ast::TypedCompoundStmts) -> Result<Vec<String>, CodeGenerationErr> {
-        let mut allocator = Allocator::new(GPRegisterAllocator::default());
+        let mut allocator = SysVAllocator::new(GPRegisterAllocator::default());
         codegen_statements(&mut allocator, input)
     }
 }
 
 fn codegen_statements(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     input: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, CodeGenerationErr> {
     let stmts = Vec::<ast::TypedStmtNode>::from(input);
@@ -91,7 +91,7 @@ fn codegen_statements(
 }
 
 fn codegen_statement(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     input: ast::TypedStmtNode,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     match input {
@@ -150,7 +150,7 @@ macro_rules! flattenable_instructions {
 }
 
 fn codegen_if_statement_with_else(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     cond: ast::TypedExprNode,
     true_case: ast::TypedCompoundStmts,
     false_case: ast::TypedCompoundStmts,
@@ -182,7 +182,7 @@ fn codegen_if_statement_with_else(
 }
 
 fn codegen_if_statement_without_else(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     cond: ast::TypedExprNode,
     true_case: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
@@ -208,7 +208,7 @@ fn codegen_if_statement_without_else(
 }
 
 fn codegen_while_statement(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     cond: ast::TypedExprNode,
     block: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
@@ -237,7 +237,7 @@ fn codegen_while_statement(
 }
 
 fn codegen_for_statement(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     preop: ast::TypedStmtNode,
     cond: ast::TypedExprNode,
     postop: ast::TypedStmtNode,
@@ -415,7 +415,7 @@ fn codegen_inc_or_dec_expression_from_identifier(
 
 fn codegen_inc_or_dec_expression_from_pointer(
     ty: Type,
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     expr_op: IncDecExpression,
 ) -> Vec<String> {
@@ -542,7 +542,7 @@ where
 }
 
 fn codegen_expr(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     expr: ast::TypedExprNode,
 ) -> Vec<String> {
@@ -1008,7 +1008,7 @@ fn codegen_deref(ret: &GeneralPurposeRegister, ty: ast::Type, scale: usize) -> V
 }
 
 fn codegen_scaleby(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     size_of: usize,
     expr: Box<ast::TypedExprNode>,
@@ -1036,7 +1036,7 @@ fn codegen_scaleby(
 }
 
 fn codegen_addition(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
@@ -1065,7 +1065,7 @@ fn codegen_addition(
 }
 
 fn codegen_subtraction(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
@@ -1091,7 +1091,7 @@ fn codegen_subtraction(
 }
 
 fn codegen_multiplication(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
@@ -1123,7 +1123,7 @@ enum DivisionVariant {
 }
 
 fn codegen_division(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
@@ -1193,7 +1193,7 @@ fn codegen_division(
 #[allow(unused)]
 fn codegen_or(
     ty: Type,
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
@@ -1219,7 +1219,7 @@ fn codegen_or(
 
 fn codegen_xor(
     ty: Type,
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
@@ -1246,7 +1246,7 @@ fn codegen_xor(
 #[allow(unused)]
 fn codegen_and(
     ty: Type,
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
@@ -1272,7 +1272,7 @@ fn codegen_and(
 
 fn codegen_shift_left(
     ty: Type,
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
@@ -1304,7 +1304,7 @@ fn codegen_shift_left(
 
 fn codegen_shift_right(
     ty: Type,
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
@@ -1337,7 +1337,7 @@ fn codegen_shift_right(
 /// Invert a register's value.
 #[allow(unused)]
 fn codegen_invert(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     expr: ast::TypedExprNode,
 ) -> Vec<String> {
@@ -1365,7 +1365,7 @@ enum ComparisonOperation {
 }
 
 fn codegen_compare_and_set(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     comparison_op: ComparisonOperation,
     ty: ast::Type,
@@ -1414,7 +1414,7 @@ fn codegen_compare_and_set(
 }
 
 fn codegen_compare_and_jmp<L>(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     cond_true_id: L,
     cond_false_id: L,
@@ -1455,7 +1455,7 @@ where
 /// Negate a register's value.
 #[allow(unused)]
 fn codegen_negate(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     expr: ast::TypedExprNode,
 ) -> Vec<String> {
@@ -1474,7 +1474,7 @@ fn codegen_negate(
 
 /// Logically negate a register's value.
 fn codegen_not(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ret_val: &GeneralPurposeRegister,
     expr: ast::TypedExprNode,
 ) -> Vec<String> {
@@ -1499,7 +1499,7 @@ fn codegen_not(
 }
 
 fn codegen_call(
-    allocator: &mut Allocator,
+    allocator: &mut SysVAllocator,
     ty: Type,
     ret_val: &GeneralPurposeRegister,
     func_name: &str,
