@@ -74,7 +74,7 @@ impl SysVAllocator {
         }
         .unwrap_or(0);
 
-        let slot_start_offset = -(slot_end_offset + (rounded_size as isize));
+        let slot_start_offset = slot_end_offset - (rounded_size as isize);
 
         Some(slot_start_offset..slot_end_offset)
     }
