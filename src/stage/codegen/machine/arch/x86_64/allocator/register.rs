@@ -163,7 +163,7 @@ impl WidthFormatted for GeneralPurposeRegister {
 }
 
 #[derive(Debug)]
-struct RegisterAllocationGuard {
+pub(crate) struct RegisterAllocationGuard {
     free_channel: std::sync::mpsc::Sender<GeneralPurposeRegister>,
     reg: GeneralPurposeRegister,
 }
@@ -176,13 +176,8 @@ impl RegisterAllocationGuard {
         Self { free_channel, reg }
     }
 
-    #[allow(dead_code)]
-    fn borrow_inner(&self) -> &GeneralPurposeRegister {
+    pub(crate) fn borrow_inner(&self) -> &GeneralPurposeRegister {
         &self.reg
-    }
-
-    fn borrow_inner_mut(&mut self) -> &mut GeneralPurposeRegister {
-        &mut self.reg
     }
 }
 
@@ -215,23 +210,10 @@ impl GPRegisterAllocator {
         }
     }
 
-    fn allocate(&mut self) -> Option<RegisterAllocationGuard> {
+    pub(crate) fn allocate(&mut self) -> Option<RegisterAllocationGuard> {
         let reg = self.available.try_recv().ok()?;
 
         Some(RegisterAllocationGuard::new(self.freed.clone(), reg))
-    }
-
-    /// Allocates a register for the duration of the life of closure.
-    pub fn allocate_then<F, R>(&mut self, f: F) -> R
-    where
-        F: FnOnce(&mut Self, &mut GeneralPurposeRegister) -> R,
-    {
-        self.allocate()
-            .map(|mut guard| {
-                let ret_val = f(self, guard.borrow_inner_mut());
-                ret_val
-            })
-            .expect("unable to allocate register")
     }
 }
 
@@ -252,22 +234,7 @@ impl Default for GPRegisterAllocator {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::stage::codegen::machine::arch::x86_64;
-
-    #[test]
-    fn should_allocate_a_register_from_an_unutilized_pool() {
-        assert_eq!(
-            ["r14", "r15"],
-            x86_64::GPRegisterAllocator::default().allocate_then(|allocator, reg| {
-                [
-                    allocator
-                        .allocate_then(|_, reg| reg.fmt_with_operand_width(OperandWidth::QuadWord)),
-                    reg.fmt_with_operand_width(OperandWidth::QuadWord),
-                ]
-            })
-        )
-    }
 
     #[test]
     fn should_free_allocations_on_scope_exit() {
