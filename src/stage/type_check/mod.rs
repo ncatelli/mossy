@@ -2,19 +2,21 @@
 //! additional type checking and enrichment.
 
 use super::CompilationStage;
-use crate::stage::ast::{self, FuncProto, Typed};
+use crate::stage::ast::{ FuncProto, Typed};
+
+mod ast;
 
 mod scopes;
 use scopes::ScopeStack;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct Integer {
-    signed: ast::Signed,
-    width: ast::IntegerWidth,
+    signed: crate::stage::ast::Signed,
+    width: crate::stage::ast::IntegerWidth,
 }
 
 impl Integer {
-    fn new(signed: ast::Signed, width: ast::IntegerWidth) -> Self {
+    fn new(signed: crate::stage::ast::Signed, width: crate::stage::ast::IntegerWidth) -> Self {
         Self { signed, width }
     }
 }
@@ -23,7 +25,7 @@ impl std::convert::TryFrom<usize> for Integer {
     type Error = String;
 
     fn try_from(value: usize) -> Result<Self, Self::Error> {
-        use ast::{IntegerWidth, Signed};
+        use crate::stage::ast::{IntegerWidth, Signed};
         match value {
             0 => Ok(Integer::new(Signed::Signed, IntegerWidth::One)),
             1 => Ok(Integer::new(Signed::Unsigned, IntegerWidth::One)),
@@ -46,27 +48,27 @@ trait Ranking {
     fn rank(&self) -> Self::Output;
 }
 
-impl Ranking for ast::Signed {
+impl Ranking for crate::stage::ast::Signed {
     type Output = usize;
 
     fn rank(&self) -> Self::Output {
         match self {
-            ast::Signed::Signed => 0,
-            ast::Signed::Unsigned => 1,
+            crate::stage::ast::Signed::Signed => 0,
+            crate::stage::ast::Signed::Unsigned => 1,
         }
     }
 }
 
-impl Ranking for ast::IntegerWidth {
+impl Ranking for crate::stage::ast::IntegerWidth {
     type Output = usize;
 
     fn rank(&self) -> Self::Output {
         match self {
-            ast::IntegerWidth::One => 0,
-            ast::IntegerWidth::Eight => 2,
-            ast::IntegerWidth::Sixteen => 4,
-            ast::IntegerWidth::ThirtyTwo => 6,
-            ast::IntegerWidth::SixtyFour => 8,
+            crate::stage::ast::IntegerWidth::One => 0,
+            crate::stage::ast::IntegerWidth::Eight => 2,
+            crate::stage::ast::IntegerWidth::Sixteen => 4,
+            crate::stage::ast::IntegerWidth::ThirtyTwo => 6,
+            crate::stage::ast::IntegerWidth::SixtyFour => 8,
         }
     }
 }
@@ -98,8 +100,8 @@ fn calculate_satisfying_integer_size_from_rank(lhs: usize, rhs: usize) -> usize 
 
 enum CompatibilityResult {
     Equivalent,
-    WidenTo(ast::Type),
-    Scale(ast::Type),
+    WidenTo(crate::stage::ast::Type),
+    Scale(crate::stage::ast::Type),
     Incompatible,
 }
 
@@ -130,11 +132,11 @@ trait TypeCompatibility {
 
 impl TypeCompatibility for SmallestEncompassing {
     type Output = CompatibilityResult;
-    type Lhs = ast::Type;
-    type Rhs = ast::Type;
+    type Lhs = crate::stage::ast::Type;
+    type Rhs = crate::stage::ast::Type;
 
     fn type_compatible(&self, lhs: &Self::Lhs, rhs: &Self::Rhs) -> Self::Output {
-        use ast::Type;
+        use crate::stage::ast::Type;
 
         match (lhs, rhs) {
             (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,
@@ -159,11 +161,11 @@ impl TypeCompatibility for SmallestEncompassing {
 
 impl TypeCompatibility for LeftFlowing {
     type Output = CompatibilityResult;
-    type Lhs = ast::Type;
-    type Rhs = ast::Type;
+    type Lhs = crate::stage::ast::Type;
+    type Rhs = crate::stage::ast::Type;
 
     fn type_compatible(&self, lhs: &Self::Lhs, rhs: &Self::Rhs) -> Self::Output {
-        use ast::Type;
+        use crate::stage::ast::Type;
 
         match (lhs, rhs) {
             (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,
@@ -187,7 +189,7 @@ impl TypeCompatibility for LeftFlowing {
 
 /// TypeAnalysis stores a scope stack for maintaining local variables.
 pub struct TypeAnalysis {
-    in_func: Option<(String, ast::FuncProto)>,
+    in_func: Option<(String, crate::stage::ast::FuncProto)>,
     scopes: ScopeStack,
 }
 
@@ -216,33 +218,33 @@ impl Default for TypeAnalysis {
     }
 }
 
-impl CompilationStage<crate::parser::ast::CompilationUnit, ast::TypedProgram, String>
+impl CompilationStage<crate::parser::ast::CompilationUnit, crate::stage::ast::TypedProgram, String>
     for TypeAnalysis
 {
     fn apply(
         &mut self,
         input: crate::parser::ast::CompilationUnit,
-    ) -> Result<ast::TypedProgram, String> {
+    ) -> Result<crate::stage::ast::TypedProgram, String> {
         input
             .defs
             .into_iter()
             .map(|ast_node| self.apply(ast_node))
-            .collect::<Result<Vec<ast::TypedGlobalDecls>, String>>()
-            .map(ast::TypedProgram::new)
+            .collect::<Result<Vec<crate::stage::ast::TypedGlobalDecls>, String>>()
+            .map(crate::stage::ast::TypedProgram::new)
     }
 }
 
-impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, String>
+impl CompilationStage<crate::parser::ast::GlobalDecls, crate::stage::ast::TypedGlobalDecls, String>
     for TypeAnalysis
 {
     fn apply(
         &mut self,
         input: crate::parser::ast::GlobalDecls,
-    ) -> Result<ast::TypedGlobalDecls, String> {
-        use ast::Declaration;
+    ) -> Result<crate::stage::ast::TypedGlobalDecls, String> {
+        use crate::stage::ast::Declaration;
         match input {
             crate::parser::ast::GlobalDecls::Func(fd) => {
-                self.apply(fd).map(ast::TypedGlobalDecls::Func)
+                self.apply(fd).map(crate::stage::ast::TypedGlobalDecls::Func)
             }
             crate::parser::ast::GlobalDecls::Var(Declaration::Scalar(ty, ids)) => {
                 for id in ids.iter() {
@@ -250,7 +252,7 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                         .define_global_mut(id, ty.clone(), scopes::Kind::Basic);
                 }
 
-                Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Scalar(
+                Ok(crate::stage::ast::TypedGlobalDecls::Var(crate::stage::ast::Declaration::Scalar(
                     ty, ids,
                 )))
             }
@@ -258,7 +260,7 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                 self.scopes
                     .define_global_mut(&id, ty.pointer_to(), scopes::Kind::Array(size));
 
-                Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Array {
+                Ok(crate::stage::ast::TypedGlobalDecls::Var(crate::stage::ast::Declaration::Array {
                     ty,
                     id,
                     size,
@@ -269,22 +271,22 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
 }
 
 impl
-    CompilationStage<crate::parser::ast::FunctionDeclaration, ast::TypedFunctionDeclaration, String>
+    CompilationStage<crate::parser::ast::FunctionDeclaration, crate::stage::ast::TypedFunctionDeclaration, String>
     for TypeAnalysis
 {
     fn apply(
         &mut self,
         input: crate::parser::ast::FunctionDeclaration,
-    ) -> Result<ast::TypedFunctionDeclaration, String> {
+    ) -> Result<crate::stage::ast::TypedFunctionDeclaration, String> {
         let (id, block) = (input.id, input.block);
 
         let proto = FuncProto::new(Box::new(input.return_type), vec![]);
         self.scopes
-            .define_global_mut(&id, ast::Type::Func(proto.clone()), scopes::Kind::Basic);
+            .define_global_mut(&id, crate::stage::ast::Type::Func(proto.clone()), scopes::Kind::Basic);
 
         self.analyze_function_body(id.clone(), proto, block).map(
             |(typed_block, local_variable_sized)| {
-                ast::TypedFunctionDeclaration::new(id.clone(), typed_block, local_variable_sized)
+                crate::stage::ast::TypedFunctionDeclaration::new(id.clone(), typed_block, local_variable_sized)
             },
         )
     }
@@ -296,7 +298,7 @@ impl TypeAnalysis {
         id: String,
         func_proto: FuncProto,
         block: crate::parser::ast::CompoundStmts,
-    ) -> Result<(ast::TypedCompoundStmts, isize), String> {
+    ) -> Result<(crate::stage::ast::TypedCompoundStmts, isize), String> {
         let old_body = self.in_func.replace((id, func_proto.clone()));
         self.scopes.push_new_scope_mut();
 
@@ -312,7 +314,7 @@ impl TypeAnalysis {
         typed_stmts
             .last()
             .and_then(|last_stmt| match last_stmt {
-                ast::TypedStmtNode::Return(rt, _, _) if expected_ret_type == rt => Some(rt),
+                crate::stage::ast::TypedStmtNode::Return(rt, _, _) if expected_ret_type == rt => Some(rt),
                 _ => None,
             })
             .ok_or_else(|| "invalid return type".to_string())?;
@@ -324,7 +326,7 @@ impl TypeAnalysis {
         self.in_func = old_body;
 
         Ok((
-            ast::TypedCompoundStmts::new(typed_stmts),
+            crate::stage::ast::TypedCompoundStmts::new(typed_stmts),
             local_stack_offsets,
         ))
     }
@@ -332,7 +334,7 @@ impl TypeAnalysis {
     fn analyze_block(
         &mut self,
         block: crate::parser::ast::CompoundStmts,
-    ) -> Result<ast::TypedCompoundStmts, String> {
+    ) -> Result<crate::stage::ast::TypedCompoundStmts, String> {
         self.scopes.push_new_scope_mut();
         let stmts = Vec::from(block);
         let mut typed_stmts = vec![];
@@ -343,18 +345,18 @@ impl TypeAnalysis {
         }
 
         self.scopes.pop_scope_mut();
-        Ok(ast::TypedCompoundStmts::new(typed_stmts))
+        Ok(crate::stage::ast::TypedCompoundStmts::new(typed_stmts))
     }
 
     fn analyze_statement(
         &mut self,
         input: crate::parser::ast::StmtNode,
-    ) -> Result<ast::TypedStmtNode, String> {
+    ) -> Result<crate::stage::ast::TypedStmtNode, String> {
         match input {
             crate::parser::ast::StmtNode::Expression(expr) => self
                 .analyze_expression(expr)
-                .map(ast::TypedStmtNode::Expression),
-            crate::parser::ast::StmtNode::Declaration(ast::Declaration::Scalar(ty, ids)) => {
+                .map(crate::stage::ast::TypedStmtNode::Expression),
+            crate::parser::ast::StmtNode::Declaration(crate::stage::ast::Declaration::Scalar(ty, ids)) => {
                 let local_offsets = ids
                     .iter()
                     .map(|id| {
@@ -363,18 +365,18 @@ impl TypeAnalysis {
                     })
                     .collect();
 
-                Ok(ast::TypedStmtNode::LocalDeclaration(
-                    ast::Declaration::Scalar(ty, ids),
+                Ok(crate::stage::ast::TypedStmtNode::LocalDeclaration(
+                    crate::stage::ast::Declaration::Scalar(ty, ids),
                     local_offsets,
                 ))
             }
-            crate::parser::ast::StmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
+            crate::parser::ast::StmtNode::Declaration(crate::stage::ast::Declaration::Array { ty, id, size }) => {
                 let local_offset =
                     self.scopes
                         .define_local_mut(&id, ty.pointer_to(), scopes::Kind::Array(size));
 
-                Ok(ast::TypedStmtNode::LocalDeclaration(
-                    ast::Declaration::Array { ty, id, size },
+                Ok(crate::stage::ast::TypedStmtNode::LocalDeclaration(
+                    crate::stage::ast::Declaration::Array { ty, id, size },
                     vec![local_offset],
                 ))
             }
@@ -395,7 +397,7 @@ impl TypeAnalysis {
                         CompatibilityResult::Scale(_) => todo!(),
                     }?;
 
-                    Ok(ast::TypedStmtNode::Return(
+                    Ok(crate::stage::ast::TypedStmtNode::Return(
                         rt_type,
                         id.to_owned(),
                         Some(typed_expr),
@@ -406,8 +408,8 @@ impl TypeAnalysis {
             }
             crate::parser::ast::StmtNode::Return(None) => {
                 if let Some((id, _)) = self.in_func.as_ref() {
-                    Ok(ast::TypedStmtNode::Return(
-                        ast::Type::Void,
+                    Ok(crate::stage::ast::TypedStmtNode::Return(
+                        crate::stage::ast::Type::Void,
                         id.to_owned(),
                         None,
                     ))
@@ -426,7 +428,7 @@ impl TypeAnalysis {
                     None
                 };
 
-                Ok(ast::TypedStmtNode::If(
+                Ok(crate::stage::ast::TypedStmtNode::If(
                     typed_cond,
                     typed_t_case,
                     typed_f_case,
@@ -436,7 +438,7 @@ impl TypeAnalysis {
                 let typed_cond = self.analyze_expression(cond)?;
                 let typed_block = self.analyze_block(block)?;
 
-                Ok(ast::TypedStmtNode::While(typed_cond, typed_block))
+                Ok(crate::stage::ast::TypedStmtNode::While(typed_cond, typed_block))
             }
             crate::parser::ast::StmtNode::For(preop, cond, postop, block) => {
                 let typed_cond = self.analyze_expression(cond)?;
@@ -444,7 +446,7 @@ impl TypeAnalysis {
                 let typed_postop = self.analyze_statement(*postop)?;
                 let typed_block = self.analyze_block(block)?;
 
-                Ok(ast::TypedStmtNode::For(
+                Ok(crate::stage::ast::TypedStmtNode::For(
                     Box::new(typed_preop),
                     typed_cond,
                     Box::new(typed_postop),
@@ -457,15 +459,15 @@ impl TypeAnalysis {
     fn analyze_expression(
         &self,
         expr: crate::parser::ast::ExprNode,
-    ) -> Result<ast::TypedExprNode, String> {
+    ) -> Result<crate::stage::ast::TypedExprNode, String> {
         use crate::parser::ast::ExprNode;
         use crate::parser::ast::Primary;
 
         match expr {
             ExprNode::Primary(Primary::Integer { sign, width, value }) => {
-                Ok(ast::TypedExprNode::Primary(
-                    ast::Type::Integer(sign, width),
-                    ast::Primary::Integer { sign, width, value },
+                Ok(crate::stage::ast::TypedExprNode::Primary(
+                    crate::stage::ast::Type::Integer(sign, width),
+                    crate::stage::ast::Primary::Integer { sign, width, value },
                 ))
             }
             ExprNode::Primary(Primary::Identifier(identifier)) => self
@@ -473,34 +475,34 @@ impl TypeAnalysis {
                 .lookup(&identifier)
                 .ok_or_else(|| format!("identifier ({}) undefined", &identifier))
                 .map(|dm| match (dm.is_array(), dm.is_local) {
-                    (true, None) => ast::TypedExprNode::Ref(
+                    (true, None) => crate::stage::ast::TypedExprNode::Ref(
                         dm.r#type,
-                        ast::IdentifierLocality::Global(identifier),
+                        crate::stage::ast::IdentifierLocality::Global(identifier),
                     ),
-                    (false, None) => ast::TypedExprNode::Primary(
+                    (false, None) => crate::stage::ast::TypedExprNode::Primary(
                         dm.r#type.clone(),
-                        ast::Primary::Identifier(
+                        crate::stage::ast::Primary::Identifier(
                             dm.r#type,
-                            ast::IdentifierLocality::Global(identifier),
+                            crate::stage::ast::IdentifierLocality::Global(identifier),
                         ),
                     ),
                     (true, Some(offset)) => {
-                        ast::TypedExprNode::Ref(dm.r#type, ast::IdentifierLocality::Local(offset))
+                        crate::stage::ast::TypedExprNode::Ref(dm.r#type, crate::stage::ast::IdentifierLocality::Local(offset))
                     }
-                    (false, Some(offset)) => ast::TypedExprNode::Primary(
+                    (false, Some(offset)) => crate::stage::ast::TypedExprNode::Primary(
                         dm.r#type.clone(),
-                        ast::Primary::Identifier(dm.r#type, ast::IdentifierLocality::Local(offset)),
+                        crate::stage::ast::Primary::Identifier(dm.r#type, crate::stage::ast::IdentifierLocality::Local(offset)),
                     ),
                 }),
-            ExprNode::Primary(Primary::Str(elems)) => Ok(ast::TypedExprNode::Primary(
+            ExprNode::Primary(Primary::Str(elems)) => Ok(crate::stage::ast::TypedExprNode::Primary(
                 generate_type_specifier!(ptr => generate_type_specifier!(char)),
-                ast::Primary::Str(elems),
+                crate::stage::ast::Primary::Str(elems),
             )),
 
             ExprNode::Grouping(expr) => self
                 .analyze_expression(*expr)
                 .map(|ty_expr| (ty_expr.r#type(), ty_expr))
-                .map(|(ty, expr)| ast::TypedExprNode::Grouping(ty, Box::new(expr))),
+                .map(|(ty, expr)| crate::stage::ast::TypedExprNode::Grouping(ty, Box::new(expr))),
 
             ExprNode::FunctionCall(identifier, args) => {
                 let args = args.map(|arg| self.analyze_expression(*arg).unwrap());
@@ -509,11 +511,11 @@ impl TypeAnalysis {
                     .lookup(&identifier)
                     .ok_or_else(|| format!("undefined_function: {}", &identifier))
                     .and_then(|dm| match dm.r#type {
-                        ast::Type::Func(FuncProto {
+                        crate::stage::ast::Type::Func(FuncProto {
                             return_type,
                             args: func_args,
                         }) if args.is_none() && func_args.is_empty() => {
-                            Ok(ast::TypedExprNode::FunctionCall(
+                            Ok(crate::stage::ast::TypedExprNode::FunctionCall(
                                 *return_type,
                                 identifier,
                                 args.map(Box::new),
@@ -527,13 +529,13 @@ impl TypeAnalysis {
             }
 
             ExprNode::Assignment(lhs, rhs) => {
-                use ast::{Primary, TypedExprNode};
+                use crate::stage::ast::{Primary, TypedExprNode};
 
                 let rhs = self.analyze_expression(*rhs)?;
                 let lhs = self.analyze_expression(*lhs)?;
 
                 match lhs {
-                    TypedExprNode::Primary(lhs_ty, Primary::Identifier(_, ast::IdentifierLocality::Global(id))) => self
+                    TypedExprNode::Primary(lhs_ty, Primary::Identifier(_, crate::stage::ast::IdentifierLocality::Global(id))) => self
                         .scopes
                         .lookup(&id)
                         .map(|dm| LeftFlowing.type_compatible(&dm.r#type, &rhs.r#type()))
@@ -546,8 +548,8 @@ impl TypeAnalysis {
                             }
                             CompatibilityResult::Scale(t) => Ok(t),
                         })
-                        .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, ast::IdentifierLocality::Global(id), Box::new(rhs))),
-                    TypedExprNode::Primary(lhs_ty, Primary::Identifier(ty, ast::IdentifierLocality::Local(offset))) =>{ 
+                        .map(|ty| crate::stage::ast::TypedExprNode::IdentifierAssignment(ty, crate::stage::ast::IdentifierLocality::Global(id), Box::new(rhs))),
+                    TypedExprNode::Primary(lhs_ty, Primary::Identifier(ty, crate::stage::ast::IdentifierLocality::Local(offset))) =>{ 
                         let type_compat = LeftFlowing.type_compatible(&ty, &rhs.r#type());
                          match type_compat {
                             CompatibilityResult::Equivalent => Ok(lhs_ty),
@@ -557,7 +559,7 @@ impl TypeAnalysis {
                             }
                             CompatibilityResult::Scale(t) => Ok(t),
                         }
-                        .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, ast::IdentifierLocality::Local(offset), Box::new(rhs)))
+                        .map(|ty| crate::stage::ast::TypedExprNode::IdentifierAssignment(ty, crate::stage::ast::IdentifierLocality::Local(offset), Box::new(rhs)))
                     }
                     TypedExprNode::Deref(ty, expr) => match LeftFlowing.type_compatible(&ty, &rhs.r#type())
                 
@@ -569,7 +571,7 @@ impl TypeAnalysis {
                         }
                         CompatibilityResult::Scale(t) => Ok(t),
                     }
-                    .map(|ty| ast::TypedExprNode::DerefAssignment(ty, expr, Box::new(rhs))),
+                    .map(|ty| crate::stage::ast::TypedExprNode::DerefAssignment(ty, expr, Box::new(rhs))),
                     // Fail on any other type
                     _ => Err(format!("invalid assignment type: ({:?})", lhs.r#type())),
                 }
@@ -578,74 +580,74 @@ impl TypeAnalysis {
             ExprNode::LogOr(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(_, lhs, rhs)| {
-                    let ty = ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::One);
-                    ast::TypedExprNode::LogOr(ty, Box::new(lhs), Box::new(rhs))
+                    let ty = crate::stage::ast::Type::Integer(crate::stage::ast::Signed::Unsigned, crate::stage::ast::IntegerWidth::One);
+                    crate::stage::ast::TypedExprNode::LogOr(ty, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "incompatible types for logical or comparison".to_string()),
             ExprNode::LogAnd(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(_, lhs, rhs)| {
-                    let ty = ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::One);
-                    ast::TypedExprNode::LogAnd(ty, Box::new(lhs), Box::new(rhs))
+                    let ty = crate::stage::ast::Type::Integer(crate::stage::ast::Signed::Unsigned, crate::stage::ast::IntegerWidth::One);
+                    crate::stage::ast::TypedExprNode::LogAnd(ty, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "incompatible types for logical and comparison".to_string()),
 
             ExprNode::BitOr(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(_, lhs, rhs)| {
-                    let ty = ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::One);
-                    ast::TypedExprNode::BitOr(ty, Box::new(lhs), Box::new(rhs))
+                    let ty = crate::stage::ast::Type::Integer(crate::stage::ast::Signed::Unsigned, crate::stage::ast::IntegerWidth::One);
+                    crate::stage::ast::TypedExprNode::BitOr(ty, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "incompatible types for bitwise or operation".to_string()),
             ExprNode::BitXor(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(_, lhs, rhs)| {
-                    let ty = ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::One);
-                    ast::TypedExprNode::BitXor(ty, Box::new(lhs), Box::new(rhs))
+                    let ty = crate::stage::ast::Type::Integer(crate::stage::ast::Signed::Unsigned, crate::stage::ast::IntegerWidth::One);
+                    crate::stage::ast::TypedExprNode::BitXor(ty, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "incompatible types for bitwise xor operation".to_string()),
             ExprNode::BitAnd(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(_, lhs, rhs)| {
-                    let ty = ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::One);
-                    ast::TypedExprNode::BitAnd(ty, Box::new(lhs), Box::new(rhs))
+                    let ty = crate::stage::ast::Type::Integer(crate::stage::ast::Signed::Unsigned, crate::stage::ast::IntegerWidth::One);
+                    crate::stage::ast::TypedExprNode::BitAnd(ty, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "incompatible types for bitwise and operation".to_string()),
 
             ExprNode::Equal(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
-                    ast::TypedExprNode::Equal(expr_type, Box::new(lhs), Box::new(rhs))
+                    crate::stage::ast::TypedExprNode::Equal(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
             ExprNode::NotEqual(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
-                    ast::TypedExprNode::NotEqual(expr_type, Box::new(lhs), Box::new(rhs))
+                    crate::stage::ast::TypedExprNode::NotEqual(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid_type".to_string()),
             ExprNode::LessEqual(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
-                    ast::TypedExprNode::LessEqual(expr_type, Box::new(lhs), Box::new(rhs))
+                    crate::stage::ast::TypedExprNode::LessEqual(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
             ExprNode::LessThan(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
-                    ast::TypedExprNode::LessThan(expr_type, Box::new(lhs), Box::new(rhs))
+                    crate::stage::ast::TypedExprNode::LessThan(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
             ExprNode::GreaterEqual(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
-                    ast::TypedExprNode::GreaterEqual(expr_type, Box::new(lhs), Box::new(rhs))
+                    crate::stage::ast::TypedExprNode::GreaterEqual(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
             ExprNode::GreaterThan(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
-                    ast::TypedExprNode::GreaterThan(expr_type, Box::new(lhs), Box::new(rhs))
+                    crate::stage::ast::TypedExprNode::GreaterThan(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
 
@@ -661,7 +663,7 @@ impl TypeAnalysis {
                     }
                 })
                 .map(|(expr_type, lhs, rhs)| {
-                    ast::TypedExprNode::BitShiftLeft(expr_type, Box::new(lhs), Box::new(rhs))
+                    crate::stage::ast::TypedExprNode::BitShiftLeft(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "incompatible operands to left shift operation".to_string()),
 
@@ -677,45 +679,45 @@ impl TypeAnalysis {
                     }
                 })
                 .map(|(expr_type, lhs, rhs)| {
-                    ast::TypedExprNode::BitShiftRight(expr_type, Box::new(lhs), Box::new(rhs))
+                    crate::stage::ast::TypedExprNode::BitShiftRight(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "incompatible operands to right shift operation".to_string()),
 
             ExprNode::Addition(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
-                    ast::TypedExprNode::Addition(expr_type, Box::new(lhs), Box::new(rhs))
+                    crate::stage::ast::TypedExprNode::Addition(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
             ExprNode::Subtraction(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
-                    ast::TypedExprNode::Subtraction(expr_type, Box::new(lhs), Box::new(rhs))
+                    crate::stage::ast::TypedExprNode::Subtraction(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
             ExprNode::Multiplication(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
-                    ast::TypedExprNode::Multiplication(expr_type, Box::new(lhs), Box::new(rhs))
+                    crate::stage::ast::TypedExprNode::Multiplication(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
             ExprNode::Division(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
-                    ast::TypedExprNode::Division(expr_type, Box::new(lhs), Box::new(rhs))
+                    crate::stage::ast::TypedExprNode::Division(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
             ExprNode::Modulo(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .map(|(expr_type, lhs, rhs)| {
-                    ast::TypedExprNode::Modulo(expr_type, Box::new(lhs), Box::new(rhs))
+                    crate::stage::ast::TypedExprNode::Modulo(expr_type, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "invalid type".to_string()),
 
             ExprNode::LogicalNot(expr) => self
                 .analyze_expression(*expr)
                 .map(|expr| (expr.r#type(), expr))
-                .map(|(expr_type, expr)| ast::TypedExprNode::LogicalNot(expr_type, Box::new(expr))),
+                .map(|(expr_type, expr)| crate::stage::ast::TypedExprNode::LogicalNot(expr_type, Box::new(expr))),
             ExprNode::Negate(expr) => self
                 .analyze_expression(*expr)
                 .map(|expr| (expr.r#type(), expr))
@@ -733,11 +735,11 @@ impl TypeAnalysis {
                     })
                     .map(|ty| (ty, expr))
                 })
-                .map(|(expr_type, expr)| ast::TypedExprNode::Negate(expr_type, Box::new(expr))),
+                .map(|(expr_type, expr)| crate::stage::ast::TypedExprNode::Negate(expr_type, Box::new(expr))),
             ExprNode::Invert(expr) => self
                 .analyze_expression(*expr)
                 .map(|expr| (expr.r#type(), expr))
-                .map(|(expr_type, expr)| ast::TypedExprNode::Invert(expr_type, Box::new(expr))),
+                .map(|(expr_type, expr)| crate::stage::ast::TypedExprNode::Invert(expr_type, Box::new(expr))),
 
             ExprNode::PreIncrement(expr) => {
                 self.analyze_inc_dec_expr(IncDecExpr::PreIncrement, *expr)
@@ -755,13 +757,13 @@ impl TypeAnalysis {
                 .scopes
                 .lookup(&identifier)
                 .map(|dm| match dm.is_local {
-                    None => ast::TypedExprNode::Ref(
+                    None => crate::stage::ast::TypedExprNode::Ref(
                         dm.r#type.pointer_to(),
-                        ast::IdentifierLocality::Global(identifier),
+                        crate::stage::ast::IdentifierLocality::Global(identifier),
                     ),
-                    Some(offset) => ast::TypedExprNode::Ref(
+                    Some(offset) => crate::stage::ast::TypedExprNode::Ref(
                         dm.r#type.pointer_to(),
-                        ast::IdentifierLocality::Local(offset),
+                        crate::stage::ast::IdentifierLocality::Local(offset),
                     ),
                 })
                 .ok_or_else(|| "invalid type".to_string()),
@@ -774,10 +776,10 @@ impl TypeAnalysis {
                         .ok_or_else(|| "type is not a reference".to_string())
                         .map(|ty| (ty, ty_expr))
                 })
-                .map(|(ty, expr)| ast::TypedExprNode::Deref(ty, Box::new(expr))),
+                .map(|(ty, expr)| crate::stage::ast::TypedExprNode::Deref(ty, Box::new(expr))),
             ExprNode::Index(identifier, index) => {
                 let ptr_width =
-                    ast::Type::Integer(ast::Signed::Signed, ast::IntegerWidth::SixtyFour);
+                    crate::stage::ast::Type::Integer(crate::stage::ast::Signed::Signed, crate::stage::ast::IntegerWidth::SixtyFour);
 
                 let index_expr = self.analyze_expression(*index)?;
                 let index_expr_ty = &index_expr.r#type();
@@ -786,7 +788,7 @@ impl TypeAnalysis {
                     match LeftFlowing.type_compatible(&ptr_width, &index_expr.r#type()) {
                         CompatibilityResult::Equivalent => Some(index_expr),
                         CompatibilityResult::WidenTo(ty) => {
-                            Some(ast::TypedExprNode::Grouping(ty, Box::new(index_expr)))
+                            Some(crate::stage::ast::TypedExprNode::Grouping(ty, Box::new(index_expr)))
                         }
                         CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
                     }
@@ -804,7 +806,7 @@ impl TypeAnalysis {
                         reference.r#type.value_at().map(|value_of_ref| {
                             (
                                 reference,
-                                ast::TypedExprNode::ScaleBy(value_of_ref, Box::new(index_expr)),
+                                crate::stage::ast::TypedExprNode::ScaleBy(value_of_ref, Box::new(index_expr)),
                             )
                         })
                     })
@@ -812,35 +814,35 @@ impl TypeAnalysis {
                         let ref_ty = dm.r#type.clone();
 
                         let l_value_access = match (dm.is_array(), dm.is_local) {
-                            (true, None) => Box::new(ast::TypedExprNode::Ref(
+                            (true, None) => Box::new(crate::stage::ast::TypedExprNode::Ref(
                                 ref_ty.clone(),
-                                ast::IdentifierLocality::Global(identifier.clone()),
+                                crate::stage::ast::IdentifierLocality::Global(identifier.clone()),
                             )),
-                            (false, None) => Box::new(ast::TypedExprNode::Primary(
+                            (false, None) => Box::new(crate::stage::ast::TypedExprNode::Primary(
                                 ref_ty.clone(),
-                                ast::Primary::Identifier(
+                                crate::stage::ast::Primary::Identifier(
                                     ref_ty.clone(),
-                                    ast::IdentifierLocality::Global(identifier.clone()),
+                                    crate::stage::ast::IdentifierLocality::Global(identifier.clone()),
                                 ),
                             )),
-                            (true, Some(offset)) => Box::new(ast::TypedExprNode::Ref(
+                            (true, Some(offset)) => Box::new(crate::stage::ast::TypedExprNode::Ref(
                                 ref_ty.clone(),
-                                ast::IdentifierLocality::Local(offset),
+                                crate::stage::ast::IdentifierLocality::Local(offset),
                             )),
-                            (false, Some(offset)) => Box::new(ast::TypedExprNode::Primary(
+                            (false, Some(offset)) => Box::new(crate::stage::ast::TypedExprNode::Primary(
                                 ref_ty.clone(),
-                                ast::Primary::Identifier(
+                                crate::stage::ast::Primary::Identifier(
                                     ref_ty.clone(),
-                                    ast::IdentifierLocality::Local(offset),
+                                    crate::stage::ast::IdentifierLocality::Local(offset),
                                 ),
                             )),
                         };
 
                         // recast to a pointer as pulled from the above reference
                         if dm.is_local.is_none() {
-                            ast::TypedExprNode::Addition(ref_ty, l_value_access, Box::new(scale))
+                            crate::stage::ast::TypedExprNode::Addition(ref_ty, l_value_access, Box::new(scale))
                         } else {
-                            ast::TypedExprNode::Subtraction(ref_ty, l_value_access, Box::new(scale))
+                            crate::stage::ast::TypedExprNode::Subtraction(ref_ty, l_value_access, Box::new(scale))
                         }
                     })
                     .and_then(|reference| {
@@ -850,7 +852,7 @@ impl TypeAnalysis {
                             .map(|points_to_ty| (points_to_ty, reference))
                     })
                     .map(|(ref_points_to_ty, reference)| {
-                        ast::TypedExprNode::Deref(ref_points_to_ty, Box::new(reference))
+                        crate::stage::ast::TypedExprNode::Deref(ref_points_to_ty, Box::new(reference))
                     })
                     .ok_or_else(|| format!("invalid type for identifier({}) in scale operation", &identifier))
             }
@@ -861,7 +863,7 @@ impl TypeAnalysis {
         &self,
         lhs: crate::parser::ast::ExprNode,
         rhs: crate::parser::ast::ExprNode,
-    ) -> Option<(ast::Type, ast::TypedExprNode, ast::TypedExprNode)> {
+    ) -> Option<(crate::stage::ast::Type, crate::stage::ast::TypedExprNode, crate::stage::ast::TypedExprNode)> {
         let lhs = self.analyze_expression(lhs).unwrap();
         let rhs = self.analyze_expression(rhs).unwrap();
 
@@ -872,7 +874,7 @@ impl TypeAnalysis {
             CompatibilityResult::Scale(ty) => Some((
                 ty.pointer_to(),
                 lhs,
-                ast::TypedExprNode::ScaleBy(ty, Box::new(rhs)),
+                crate::stage::ast::TypedExprNode::ScaleBy(ty, Box::new(rhs)),
             )),
         }
     }
@@ -881,11 +883,11 @@ impl TypeAnalysis {
         &self,
         variant: IncDecExpr,
         expr: crate::parser::ast::ExprNode,
-    ) -> Result<ast::TypedExprNode, String> {
-        use ast::TypedExprNode;
+    ) -> Result<crate::stage::ast::TypedExprNode, String> {
+        use crate::stage::ast::TypedExprNode;
         self.analyze_expression(expr)
             .and_then(|ty_expr| match ty_expr {
-                lvalue_expr @ TypedExprNode::Primary(_, ast::Primary::Identifier(_, _)) => {
+                lvalue_expr @ TypedExprNode::Primary(_, crate::stage::ast::Primary::Identifier(_, _)) => {
                     Ok(lvalue_expr)
                 }
 
@@ -935,7 +937,7 @@ mod tests {
     use crate::parser::ast;
     use crate::stage::{
         self,
-        ast::{IdentifierLocality, IntegerWidth, Signed, Type, TypedExprNode},
+       ast::{IdentifierLocality, IntegerWidth, Signed, Type, TypedExprNode},
     };
 
     macro_rules! pad_to_le_64bit_array {
