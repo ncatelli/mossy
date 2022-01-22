@@ -1,4 +1,4 @@
-use crate::stage::ast::{ByteSized, Type};
+use crate::stage::slotted_type_check::ast::{ByteSized, Type};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Kind {

@@ -1,60 +1,61 @@
-macro_rules! generate_type_specifier {
+// fix me: should be generate_type_specifier
+macro_rules! generate_slotted_type_specifier {
     (integer, $sign:expr, $width:expr) => {
-        $crate::stage::type_check::ast::Type::Integer($sign, $width)
+        $crate::stage::slotted_type_check::ast::Type::Integer($sign, $width)
     };
     (char) => {
-        generate_type_specifier!(i8)
+        generate_slotted_type_specifier!(i8)
     };
     (ptr => $ty:expr) => {
-        $crate::stage::type_check::ast::Type::Pointer(Box::new($ty))
+        $crate::stage::slotted_type_check::ast::Type::Pointer(Box::new($ty))
     };
     (i8) => {
-        generate_type_specifier!(
+        generate_slotted_type_specifier!(
             integer,
-            $crate::stage::type_check::ast::Signed::Signed,
-            $crate::stage::type_check::ast::IntegerWidth::Eight
+            $crate::stage::slotted_type_check::ast::Signed::Signed,
+            $crate::stage::slotted_type_check::ast::IntegerWidth::Eight
         )
     };
     (u8) => {
-        generate_type_specifier!(
+        generate_slotted_type_specifier!(
             integer,
-            $crate::stage::type_check::ast::Signed::Unsigned,
-            $crate::stage::type_check::ast::IntegerWidth::Eight
+            $crate::stage::slotted_type_check::ast::Signed::Unsigned,
+            $crate::stage::slotted_type_check::ast::IntegerWidth::Eight
         )
     };
     (i16) => {
-        generate_type_specifier!(
+        generate_slotted_type_specifier!(
             integer,
-            $crate::stage::type_check::ast::Signed::Signed,
-            $crate::stage::type_check::ast::IntegerWidth::Sixteen
+            $crate::stage::slotted_type_check::ast::Signed::Signed,
+            $crate::stage::slotted_type_check::ast::IntegerWidth::Sixteen
         )
     };
     (i32) => {
-        generate_type_specifier!(
+        generate_slotted_type_specifier!(
             integer,
-            $crate::stage::type_check::ast::Signed::Signed,
-            $crate::stage::type_check::ast::IntegerWidth::ThirtyTwo
+            $crate::stage::slotted_type_check::ast::Signed::Signed,
+            $crate::stage::slotted_type_check::ast::IntegerWidth::ThirtyTwo
         )
     };
     (u32) => {
-        generate_type_specifier!(
+        generate_slotted_type_specifier!(
             integer,
-            $crate::stage::type_check::ast::Signed::Unsigned,
-            $crate::stage::type_check::ast::IntegerWidth::ThirtyTwo
+            $crate::stage::slotted_type_check::ast::Signed::Unsigned,
+            $crate::stage::slotted_type_check::ast::IntegerWidth::ThirtyTwo
         )
     };
     (i64) => {
-        generate_type_specifier!(
+        generate_slotted_type_specifier!(
             integer,
-            $crate::stage::type_check::ast::Signed::Signed,
-            $crate::stage::type_check::ast::IntegerWidth::SixtyFour
+            $crate::stage::slotted_type_check::ast::Signed::Signed,
+            $crate::stage::slotted_type_check::ast::IntegerWidth::SixtyFour
         )
     };
     (u64) => {
-        generate_type_specifier!(
+        generate_slotted_type_specifier!(
             integer,
-            $crate::stage::type_check::ast::Signed::Unsigned,
-            $crate::stage::type_check::ast::IntegerWidth::SixtyFour
+            $crate::stage::slotted_type_check::ast::Signed::Unsigned,
+            $crate::stage::slotted_type_check::ast::IntegerWidth::SixtyFour
         )
     };
 }
@@ -287,7 +288,9 @@ impl Typed for Primary {
                 value: _,
             } => Type::Integer(*sign, *width),
             Primary::Identifier(ty, _) => ty.clone(),
-            Primary::Str(_) => generate_type_specifier!(ptr => generate_type_specifier!(char)),
+            Primary::Str(_) => {
+                generate_slotted_type_specifier!(ptr => generate_slotted_type_specifier!(char))
+            }
         }
     }
 }
@@ -309,6 +312,15 @@ pub enum Signed {
     Unsigned,
 }
 
+impl From<crate::stage::ast::Signed> for Signed {
+    fn from(src: crate::stage::ast::Signed) -> Self {
+        match src {
+            crate::stage::ast::Signed::Signed => Signed::Signed,
+            crate::stage::ast::Signed::Unsigned => Signed::Unsigned,
+        }
+    }
+}
+
 /// Represents valid integer bit widths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub enum IntegerWidth {
@@ -326,6 +338,18 @@ impl ByteSized for IntegerWidth {
             Self::Sixteen => 2,
             Self::ThirtyTwo => 4,
             Self::SixtyFour => 8,
+        }
+    }
+}
+
+impl From<crate::stage::ast::IntegerWidth> for IntegerWidth {
+    fn from(src: crate::stage::ast::IntegerWidth) -> Self {
+        match src {
+            crate::stage::ast::IntegerWidth::One => Self::One,
+            crate::stage::ast::IntegerWidth::Eight => Self::Eight,
+            crate::stage::ast::IntegerWidth::Sixteen => Self::Sixteen,
+            crate::stage::ast::IntegerWidth::ThirtyTwo => Self::ThirtyTwo,
+            crate::stage::ast::IntegerWidth::SixtyFour => Self::SixtyFour,
         }
     }
 }
@@ -383,59 +407,22 @@ impl Type {
 impl From<crate::stage::ast::Type> for Type {
     fn from(src: crate::stage::ast::Type) -> Self {
         match src {
-            crate::stage::ast::Type::Integer(
-                crate::stage::ast::Signed::Signed,
-                crate::stage::ast::IntegerWidth::One,
-            ) => Type::Integer(Signed::Signed, IntegerWidth::One),
-            crate::stage::ast::Type::Integer(
-                crate::stage::ast::Signed::Unsigned,
-                crate::stage::ast::IntegerWidth::One,
-            ) => Type::Integer(Signed::Unsigned, IntegerWidth::One),
-            crate::stage::ast::Type::Integer(
-                crate::stage::ast::Signed::Signed,
-                crate::stage::ast::IntegerWidth::Eight,
-            ) => Type::Integer(Signed::Signed, IntegerWidth::Eight),
-            crate::stage::ast::Type::Integer(
-                crate::stage::ast::Signed::Unsigned,
-                crate::stage::ast::IntegerWidth::Eight,
-            ) => Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
-            crate::stage::ast::Type::Integer(
-                crate::stage::ast::Signed::Signed,
-                crate::stage::ast::IntegerWidth::Sixteen,
-            ) => Type::Integer(Signed::Signed, IntegerWidth::Sixteen),
-            crate::stage::ast::Type::Integer(
-                crate::stage::ast::Signed::Unsigned,
-                crate::stage::ast::IntegerWidth::Sixteen,
-            ) => Type::Integer(Signed::Unsigned, IntegerWidth::Sixteen),
-            crate::stage::ast::Type::Integer(
-                crate::stage::ast::Signed::Signed,
-                crate::stage::ast::IntegerWidth::ThirtyTwo,
-            ) => Type::Integer(Signed::Signed, IntegerWidth::ThirtyTwo),
-            crate::stage::ast::Type::Integer(
-                crate::stage::ast::Signed::Unsigned,
-                crate::stage::ast::IntegerWidth::ThirtyTwo,
-            ) => Type::Integer(Signed::Unsigned, IntegerWidth::ThirtyTwo),
-            crate::stage::ast::Type::Integer(
-                crate::stage::ast::Signed::Signed,
-                crate::stage::ast::IntegerWidth::SixtyFour,
-            ) => Type::Integer(Signed::Signed, IntegerWidth::SixtyFour),
-            crate::stage::ast::Type::Integer(
-                crate::stage::ast::Signed::Unsigned,
-                crate::stage::ast::IntegerWidth::SixtyFour,
-            ) => Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour),
+            crate::stage::ast::Type::Integer(src_sign, src_iw) => {
+                Type::Integer(Signed::from(src_sign), IntegerWidth::from(src_iw))
+            }
             crate::stage::ast::Type::Void => Type::Void,
             crate::stage::ast::Type::Func(src_func_proto) => {
                 let src_rt = *src_func_proto.return_type;
                 let new_ty = Type::from(src_rt);
                 let new_args = src_func_proto.args.into_iter().map(Type::from).collect();
 
-                crate::stage::type_check::ast::Type::Func(FuncProto::new(
+                crate::stage::slotted_type_check::ast::Type::Func(FuncProto::new(
                     Box::new(new_ty),
                     new_args,
                 ))
             }
             crate::stage::ast::Type::Pointer(src_ty) => {
-                crate::stage::type_check::ast::Type::Pointer(Box::new(Type::from(*src_ty)))
+                crate::stage::slotted_type_check::ast::Type::Pointer(Box::new(Type::from(*src_ty)))
             }
         }
     }

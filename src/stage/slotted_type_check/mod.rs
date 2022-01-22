@@ -2,8 +2,10 @@
 //! additional type checking and enrichment.
 
 use super::CompilationStage;
-use crate::stage::ast::{ self, FuncProto, Typed};
 
+#[macro_use]
+pub(crate) mod ast;
+use ast::{FuncProto, Typed};
 
 mod scopes;
 use scopes::ScopeStack;
@@ -240,27 +242,26 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
         &mut self,
         input: crate::parser::ast::GlobalDecls,
     ) -> Result<ast::TypedGlobalDecls, String> {
-        use ast::Declaration;
         match input {
             crate::parser::ast::GlobalDecls::Func(fd) => {
                 self.apply(fd).map(ast::TypedGlobalDecls::Func)
             }
-            crate::parser::ast::GlobalDecls::Var(Declaration::Scalar(ty, ids)) => {
+            crate::parser::ast::GlobalDecls::Var(crate::stage::ast::Declaration::Scalar(ty, ids)) => {
                 for id in ids.iter() {
                     self.scopes
-                        .define_global_mut(id, ty.clone(), scopes::Kind::Basic);
+                        .define_global_mut(id, ast::Type::from(ty.clone()), scopes::Kind::Basic);
                 }
 
                 Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Scalar(
-                    ty, ids,
+                    ast::Type::from(ty), ids,
                 )))
             }
-            crate::parser::ast::GlobalDecls::Var(Declaration::Array { ty, id, size }) => {
+            crate::parser::ast::GlobalDecls::Var(crate::stage::ast::Declaration::Array { ty, id, size }) => {
                 self.scopes
-                    .define_global_mut(&id, ty.pointer_to(), scopes::Kind::Array(size));
+                    .define_global_mut(&id, ast::Type::from(ty.pointer_to()), scopes::Kind::Array(size));
 
                 Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Array {
-                    ty,
+                    ty: ast::Type::from(ty),
                     id,
                     size,
                 }))
@@ -279,13 +280,16 @@ impl
     ) -> Result<ast::TypedFunctionDeclaration, String> {
         let (id, block) = (input.id, input.block);
 
-        let proto = FuncProto::new(Box::new(input.return_type), vec![]);
+        //fix me
+        let rt = ast::Type::from(input.return_type);
+
+        let proto = FuncProto::new(Box::new(rt), vec![]);
         self.scopes
             .define_global_mut(&id, ast::Type::Func(proto.clone()), scopes::Kind::Basic);
 
         self.analyze_function_body(id.clone(), proto, block).map(
             |(typed_block, local_variable_sized)| {
-                ast::TypedFunctionDeclaration::new(id.clone(), typed_block, local_variable_sized)
+                ast::TypedFunctionDeclaration::new(id.clone(), typed_block, vec![],local_variable_sized)
             },
         )
     }
@@ -355,28 +359,32 @@ impl TypeAnalysis {
             crate::parser::ast::StmtNode::Expression(expr) => self
                 .analyze_expression(expr)
                 .map(ast::TypedStmtNode::Expression),
-            crate::parser::ast::StmtNode::Declaration(ast::Declaration::Scalar(ty, ids)) => {
+            // fix me
+            crate::parser::ast::StmtNode::Declaration(crate::stage::ast::Declaration::Scalar(ty, ids)) => {
                 let local_offsets = ids
                     .iter()
                     .map(|id| {
+                        // fix me
                         self.scopes
-                            .define_local_mut(id, ty.clone(), scopes::Kind::Basic)
+                            .define_local_mut(id, ast::Type::from(ty.clone()), scopes::Kind::Basic) as usize
                     })
                     .collect();
 
                 Ok(ast::TypedStmtNode::LocalDeclaration(
-                    ast::Declaration::Scalar(ty, ids),
+                    ast::Declaration::Scalar(ast::Type::from(ty), ids),
                     local_offsets,
                 ))
             }
-            crate::parser::ast::StmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
+            // fix me
+            crate::parser::ast::StmtNode::Declaration(crate::stage::ast::Declaration::Array { ty, id, size }) => {
                 let local_offset =
                     self.scopes
-                        .define_local_mut(&id, ty.pointer_to(), scopes::Kind::Array(size));
+                        .define_local_mut(&id, ast::Type::from(ty.pointer_to()), scopes::Kind::Array(size));
 
                 Ok(ast::TypedStmtNode::LocalDeclaration(
-                    ast::Declaration::Array { ty, id, size },
-                    vec![local_offset],
+                    ast::Declaration::Array { ty: ast::Type::from(ty), id, size },
+                    // fix me
+                    vec![local_offset as usize],
                 ))
             }
             crate::parser::ast::StmtNode::Return(Some(rt_expr)) => {
@@ -464,6 +472,8 @@ impl TypeAnalysis {
 
         match expr {
             ExprNode::Primary(Primary::Integer { sign, width, value }) => {
+                // fix me
+                let (sign, width) = (ast::Signed::from(sign), ast::IntegerWidth::from(width));
                 Ok(ast::TypedExprNode::Primary(
                     ast::Type::Integer(sign, width),
                     ast::Primary::Integer { sign, width, value },
@@ -486,15 +496,17 @@ impl TypeAnalysis {
                         ),
                     ),
                     (true, Some(offset)) => {
-                        ast::TypedExprNode::Ref(dm.r#type, ast::IdentifierLocality::Local(offset))
+                        // fix me
+                        ast::TypedExprNode::Ref(dm.r#type, ast::IdentifierLocality::Local(offset as usize))
                     }
                     (false, Some(offset)) => ast::TypedExprNode::Primary(
                         dm.r#type.clone(),
-                        ast::Primary::Identifier(dm.r#type, ast::IdentifierLocality::Local(offset)),
+                        // fix me
+                        ast::Primary::Identifier(dm.r#type, ast::IdentifierLocality::Local(offset as usize)),
                     ),
                 }),
             ExprNode::Primary(Primary::Str(elems)) => Ok(ast::TypedExprNode::Primary(
-                generate_type_specifier!(ptr => generate_type_specifier!(char)),
+                generate_slotted_type_specifier!(ptr => generate_slotted_type_specifier!(char)),
                 ast::Primary::Str(elems),
             )),
 
@@ -653,7 +665,7 @@ impl TypeAnalysis {
             ExprNode::BitShiftLeft(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .and_then(|(expr_type, lhs, rhs)| {
-                    match LeftFlowing.type_compatible(&generate_type_specifier!(u8), &rhs.r#type())
+                    match LeftFlowing.type_compatible(&generate_slotted_type_specifier!(u8), &rhs.r#type())
                     {
                         CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
                         CompatibilityResult::Equivalent | CompatibilityResult::WidenTo(_) => {
@@ -669,7 +681,7 @@ impl TypeAnalysis {
             ExprNode::BitShiftRight(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
                 .and_then(|(expr_type, lhs, rhs)| {
-                    match LeftFlowing.type_compatible(&generate_type_specifier!(u8), &rhs.r#type())
+                    match LeftFlowing.type_compatible(&generate_slotted_type_specifier!(u8), &rhs.r#type())
                     {
                         CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
                         CompatibilityResult::Equivalent | CompatibilityResult::WidenTo(_) => {
@@ -721,7 +733,7 @@ impl TypeAnalysis {
                 .analyze_expression(*expr)
                 .map(|expr| (expr.r#type(), expr))
                 .and_then(|(expr_type, expr)| {
-                    match LeftFlowing.type_compatible(&expr_type, &generate_type_specifier!(i8)) {
+                    match LeftFlowing.type_compatible(&expr_type, &generate_slotted_type_specifier!(i8)) {
                         CompatibilityResult::Equivalent => Some(expr_type),
                         CompatibilityResult::WidenTo(ty) => Some(ty),
                         CompatibilityResult::Scale(_) | CompatibilityResult::Incompatible => None,
@@ -762,7 +774,8 @@ impl TypeAnalysis {
                     ),
                     Some(offset) => ast::TypedExprNode::Ref(
                         dm.r#type.pointer_to(),
-                        ast::IdentifierLocality::Local(offset),
+                        // fix me
+                        ast::IdentifierLocality::Local(offset as usize),
                     ),
                 })
                 .ok_or_else(|| "invalid type".to_string()),
@@ -826,13 +839,15 @@ impl TypeAnalysis {
                             )),
                             (true, Some(offset)) => Box::new(ast::TypedExprNode::Ref(
                                 ref_ty.clone(),
-                                ast::IdentifierLocality::Local(offset),
+                                // fix me
+                                ast::IdentifierLocality::Local(offset as usize),
                             )),
                             (false, Some(offset)) => Box::new(ast::TypedExprNode::Primary(
                                 ref_ty.clone(),
                                 ast::Primary::Identifier(
                                     ref_ty.clone(),
-                                    ast::IdentifierLocality::Local(offset),
+                                    // fix me
+                                    ast::IdentifierLocality::Local(offset as usize),
                                 ),
                             )),
                         };
@@ -934,10 +949,8 @@ enum IncDecExpr {
 #[cfg(test)]
 mod tests {
     use crate::parser::ast;
-    use crate::stage::{
-        self,
-       ast::{IdentifierLocality, IntegerWidth, Signed, Type, TypedExprNode},
-    };
+    use super::ast::{IdentifierLocality, IntegerWidth, Signed, Type, TypedExprNode};
+    
 
     macro_rules! pad_to_le_64bit_array {
         ($val:literal) => {
@@ -950,8 +963,8 @@ mod tests {
         let analyzer = super::TypeAnalysis::default();
         let pre_typed_ast =
             ast::ExprNode::Grouping(Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Eight,
+                sign: crate::stage::ast::Signed::Unsigned,
+                width: crate::stage::ast::IntegerWidth::Eight,
                 value: pad_to_le_64bit_array!(1u8),
             })));
 
@@ -960,7 +973,7 @@ mod tests {
             Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
             Box::new(TypedExprNode::Primary(
                 Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
-                stage::ast::Primary::Integer {
+                super::ast::Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
                     value: pad_to_le_64bit_array!(1u8),
@@ -974,19 +987,19 @@ mod tests {
 
         let pre_typed_ast = ast::ExprNode::Grouping(Box::new(ast::ExprNode::Multiplication(
             Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Eight,
+                sign: crate::stage::ast::Signed::Unsigned,
+                width: crate::stage::ast::IntegerWidth::Eight,
                 value: pad_to_le_64bit_array!(2u8),
             })),
             Box::new(ast::ExprNode::Addition(
                 Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                    sign: Signed::Unsigned,
-                    width: IntegerWidth::Eight,
+                    sign: crate::stage::ast::Signed::Unsigned,
+                    width: crate::stage::ast::IntegerWidth::Eight,
                     value: pad_to_le_64bit_array!(3u8),
                 })),
                 Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                    sign: Signed::Unsigned,
-                    width: IntegerWidth::Eight,
+                    sign: crate::stage::ast::Signed::Unsigned,
+                    width: crate::stage::ast::IntegerWidth::Eight,
                     value: pad_to_le_64bit_array!(4u8),
                 })),
             )),
@@ -999,7 +1012,7 @@ mod tests {
                 Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
                 Box::new(TypedExprNode::Primary(
                     Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
-                    stage::ast::Primary::Integer {
+                    super::ast::Primary::Integer {
                         sign: Signed::Unsigned,
                         width: IntegerWidth::Eight,
                         value: pad_to_le_64bit_array!(2u8),
@@ -1009,7 +1022,7 @@ mod tests {
                     Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
                     Box::new(TypedExprNode::Primary(
                         Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
-                        stage::ast::Primary::Integer {
+                        super::ast::Primary::Integer {
                             sign: Signed::Unsigned,
                             width: IntegerWidth::Eight,
                             value: pad_to_le_64bit_array!(3u8),
@@ -1017,7 +1030,7 @@ mod tests {
                     )),
                     Box::new(TypedExprNode::Primary(
                         Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
-                        stage::ast::Primary::Integer {
+                        super::ast::Primary::Integer {
                             sign: Signed::Unsigned,
                             width: IntegerWidth::Eight,
                             value: pad_to_le_64bit_array!(4u8),
@@ -1033,6 +1046,7 @@ mod tests {
     #[test]
     fn test_string_assignment_correctly_assigns_pointer_ref() {
         use crate::stage::slotted_type_check::scopes;
+
         let mut analyzer = super::TypeAnalysis::default();
         let pre_typed_ast = assignment_expr!(
             ast::ExprNode::Primary(ast::Primary::Identifier("x".to_string())),
@@ -1044,17 +1058,17 @@ mod tests {
         analyzer.scopes.push_new_scope_mut();
         analyzer.scopes.define_local_mut(
             "x",
-            generate_type_specifier!(char).pointer_to(),
+            generate_slotted_type_specifier!(char).pointer_to(),
             scopes::Kind::Basic,
         );
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
         let expected = TypedExprNode::IdentifierAssignment(
-            generate_type_specifier!(i8).pointer_to(),
-            IdentifierLocality::Local(-8),
+            generate_slotted_type_specifier!(i8).pointer_to(),
+            IdentifierLocality::Local(8),
             Box::new(TypedExprNode::Primary(
-                generate_type_specifier!(i8).pointer_to(),
-                stage::ast::Primary::Str("hello".chars().map(|c| c as u8).collect()),
+                generate_slotted_type_specifier!(i8).pointer_to(),
+                super::ast::Primary::Str("hello".chars().map(|c| c as u8).collect()),
             )),
         );
 
@@ -1069,31 +1083,31 @@ mod tests {
 
         let pre_typed_ast = ast::ExprNode::Addition(
             Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Eight,
+                sign: crate::stage::ast::Signed::Unsigned,
+                width: crate::stage::ast::IntegerWidth::Eight,
                 value: pad_to_le_64bit_array!(1u8),
             })),
             Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Signed,
-                width: IntegerWidth::Eight,
+                sign: crate::stage::ast::Signed::Signed,
+                width: crate::stage::ast::IntegerWidth::Eight,
                 value: pad_to_le_64bit_array!(1u8),
             })),
         );
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
         let expected = TypedExprNode::Addition(
-            generate_type_specifier!(i16),
+            generate_slotted_type_specifier!(i16),
             Box::new(TypedExprNode::Primary(
-                generate_type_specifier!(u8),
-                stage::ast::Primary::Integer {
+                generate_slotted_type_specifier!(u8),
+                super::ast::Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
                     value: pad_to_le_64bit_array!(1u8),
                 },
             )),
             Box::new(TypedExprNode::Primary(
-                generate_type_specifier!(i8),
-                stage::ast::Primary::Integer {
+                generate_slotted_type_specifier!(i8),
+                super::ast::Primary::Integer {
                     sign: Signed::Signed,
                     width: IntegerWidth::Eight,
                     value: pad_to_le_64bit_array!(1u8),
@@ -1107,31 +1121,31 @@ mod tests {
 
         let pre_typed_ast = ast::ExprNode::Addition(
             Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Eight,
+                sign: crate::stage::ast::Signed::Unsigned,
+                width: crate::stage::ast::IntegerWidth::Eight,
                 value: pad_to_le_64bit_array!(1u8),
             })),
             Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Eight,
+                sign: crate::stage::ast::Signed::Unsigned,
+                width: crate::stage::ast::IntegerWidth::Eight,
                 value: pad_to_le_64bit_array!(1u8),
             })),
         );
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
         let expected = TypedExprNode::Addition(
-            generate_type_specifier!(u8),
+            generate_slotted_type_specifier!(u8),
             Box::new(TypedExprNode::Primary(
-                generate_type_specifier!(u8),
-                stage::ast::Primary::Integer {
+                generate_slotted_type_specifier!(u8),
+                super::ast::Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
                     value: pad_to_le_64bit_array!(1u8),
                 },
             )),
             Box::new(TypedExprNode::Primary(
-                generate_type_specifier!(u8),
-                stage::ast::Primary::Integer {
+                generate_slotted_type_specifier!(u8),
+                super::ast::Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::Eight,
                     value: pad_to_le_64bit_array!(1u8),
@@ -1148,31 +1162,31 @@ mod tests {
 
         let pre_typed_ast = ast::ExprNode::Addition(
             Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::ThirtyTwo,
+                sign: crate::stage::ast::Signed::Unsigned,
+                width: crate::stage::ast::IntegerWidth::ThirtyTwo,
                 value: pad_to_le_64bit_array!(1u32),
             })),
             Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Signed,
-                width: IntegerWidth::Eight,
+                sign: crate::stage::ast::Signed::Signed,
+                width: crate::stage::ast::IntegerWidth::Eight,
                 value: pad_to_le_64bit_array!(1u8),
             })),
         );
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
         let expected = TypedExprNode::Addition(
-            generate_type_specifier!(i64),
+            generate_slotted_type_specifier!(i64),
             Box::new(TypedExprNode::Primary(
-                generate_type_specifier!(u32),
-                stage::ast::Primary::Integer {
+                generate_slotted_type_specifier!(u32),
+                super::ast::Primary::Integer {
                     sign: Signed::Unsigned,
                     width: IntegerWidth::ThirtyTwo,
                     value: pad_to_le_64bit_array!(1u32),
                 },
             )),
             Box::new(TypedExprNode::Primary(
-                generate_type_specifier!(i8),
-                stage::ast::Primary::Integer {
+                generate_slotted_type_specifier!(i8),
+                super::ast::Primary::Integer {
                     sign: Signed::Signed,
                     width: IntegerWidth::Eight,
                     value: pad_to_le_64bit_array!(1u8),
