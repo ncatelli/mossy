@@ -1,8 +1,11 @@
 use parcel::parsers::character::*;
 use parcel::prelude::v1::*;
 
-pub use crate::stage::ast::Type;
-use crate::stage::ast::{IntegerWidth, Signed};
+pub use crate::stage::type_check::ast::Type;
+use crate::stage::type_check::{
+    self,
+    ast::{IntegerWidth, Signed},
+};
 
 #[macro_use]
 pub mod ast;
@@ -98,7 +101,7 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
         };
         (ty, id, size)
     })
-    .map(|(ty, id, size)| crate::stage::ast::Declaration::Array { ty, id, size })
+    .map(|(ty, id, size)| type_check::ast::Declaration::Array { ty, id, size })
     .map(StmtNode::Declaration)
     .or(|| {
         parcel::join(
@@ -108,7 +111,7 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
                 whitespace_wrapped(expect_character(',').optional()),
             )))),
         )
-        .map(|(ty, ids)| crate::stage::ast::Declaration::Scalar(ty, ids))
+        .map(|(ty, ids)| type_check::ast::Declaration::Scalar(ty, ids))
         .map(StmtNode::Declaration)
     })
 }

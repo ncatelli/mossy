@@ -1,60 +1,60 @@
 macro_rules! generate_type_specifier {
     (integer, $sign:expr, $width:expr) => {
-        $crate::stage::ast::Type::Integer($sign, $width)
+        $crate::stage::type_check::ast::Type::Integer($sign, $width)
     };
     (char) => {
         generate_type_specifier!(i8)
     };
     (ptr => $ty:expr) => {
-        $crate::stage::ast::Type::Pointer(Box::new($ty))
+        $crate::stage::type_check::ast::Type::Pointer(Box::new($ty))
     };
     (i8) => {
         generate_type_specifier!(
             integer,
-            $crate::stage::ast::Signed::Signed,
-            $crate::stage::ast::IntegerWidth::Eight
+            $crate::stage::type_check::ast::Signed::Signed,
+            $crate::stage::type_check::ast::IntegerWidth::Eight
         )
     };
     (u8) => {
         generate_type_specifier!(
             integer,
-            $crate::stage::ast::Signed::Unsigned,
-            $crate::stage::ast::IntegerWidth::Eight
+            $crate::stage::type_check::ast::Signed::Unsigned,
+            $crate::stage::type_check::ast::IntegerWidth::Eight
         )
     };
     (i16) => {
         generate_type_specifier!(
             integer,
-            $crate::stage::ast::Signed::Signed,
-            $crate::stage::ast::IntegerWidth::Sixteen
+            $crate::stage::type_check::ast::Signed::Signed,
+            $crate::stage::type_check::ast::IntegerWidth::Sixteen
         )
     };
     (i32) => {
         generate_type_specifier!(
             integer,
-            $crate::stage::ast::Signed::Signed,
-            $crate::stage::ast::IntegerWidth::ThirtyTwo
+            $crate::stage::type_check::ast::Signed::Signed,
+            $crate::stage::type_check::ast::IntegerWidth::ThirtyTwo
         )
     };
     (u32) => {
         generate_type_specifier!(
             integer,
-            $crate::stage::ast::Signed::Unsigned,
-            $crate::stage::ast::IntegerWidth::ThirtyTwo
+            $crate::stage::type_check::ast::Signed::Unsigned,
+            $crate::stage::type_check::ast::IntegerWidth::ThirtyTwo
         )
     };
     (i64) => {
         generate_type_specifier!(
             integer,
-            $crate::stage::ast::Signed::Signed,
-            $crate::stage::ast::IntegerWidth::SixtyFour
+            $crate::stage::type_check::ast::Signed::Signed,
+            $crate::stage::type_check::ast::IntegerWidth::SixtyFour
         )
     };
     (u64) => {
         generate_type_specifier!(
             integer,
-            $crate::stage::ast::Signed::Unsigned,
-            $crate::stage::ast::IntegerWidth::SixtyFour
+            $crate::stage::type_check::ast::Signed::Unsigned,
+            $crate::stage::type_check::ast::IntegerWidth::SixtyFour
         )
     };
 }
@@ -75,21 +75,23 @@ impl TypedProgram {
 pub struct TypedFunctionDeclaration {
     pub id: String,
     pub block: TypedCompoundStmts,
-    local_variable_size: isize,
+    local_vars: Vec<(Type, usize)>,
 }
 
 impl TypedFunctionDeclaration {
-    pub fn new(id: String, block: TypedCompoundStmts, local_variable_size: isize) -> Self {
+    pub fn new(id: String, block: TypedCompoundStmts, local_vars: Vec<(Type, usize)>) -> Self {
         Self {
             id,
             block,
-            local_variable_size,
+            local_vars,
         }
     }
 
+    /* fix me
     pub fn alignment(&self) -> isize {
         (self.local_variable_size + 15) & !15
     }
+    */
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -130,7 +132,7 @@ pub enum TypedStmtNode {
     /// Declaration represents a local declaration statement with the
     /// enclosed string representing the Id of the variable and it's local
     /// stack offset.
-    LocalDeclaration(Declaration, Vec<isize>),
+    LocalDeclaration(Declaration, Vec<usize>),
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.
     /// A block return statement.
@@ -158,7 +160,7 @@ pub enum TypedStmtNode {
 #[derive(PartialEq, Debug, Clone)]
 pub enum IdentifierLocality {
     Global(String),
-    Local(isize),
+    Local(usize),
 }
 
 /// Represents a single expression in the ast.
@@ -280,7 +282,9 @@ impl Typed for Primary {
                 value: _,
             } => Type::Integer(*sign, *width),
             Primary::Identifier(ty, _) => ty.clone(),
-            Primary::Str(_) => generate_type_specifier!(ptr => generate_type_specifier!(char)),
+            Primary::Str(_) => {
+                generate_type_specifier!(ptr => generate_type_specifier!(char))
+            }
         }
     }
 }

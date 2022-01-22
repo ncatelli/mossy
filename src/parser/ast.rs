@@ -1,4 +1,4 @@
-use crate::stage::ast::{self, Declaration, IntegerWidth, Signed};
+use crate::stage::type_check::ast::{self, Declaration, IntegerWidth, Signed};
 
 /// Represents a list of reserved keywords in C.
 pub(crate) const RESERVED_KEYWORDS: [&str; 32] = [
@@ -220,60 +220,60 @@ macro_rules! factor_expr {
 macro_rules! primary_expr {
     (i8 $value:expr) => {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::ast::Signed::Signed,
-            width: $crate::stage::ast::IntegerWidth::Eight,
+            sign: $crate::stage::type_check::ast::Signed::Signed,
+            width: $crate::stage::type_check::ast::IntegerWidth::Eight,
             value: $crate::util::pad_to_64bit_array(($value as i8).to_le_bytes()),
         })
     };
     (u8 $value:expr) => {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::ast::Signed::Unsigned,
-            width: $crate::stage::ast::IntegerWidth::Eight,
+            sign: $crate::stage::type_check::ast::Signed::Unsigned,
+            width: $crate::stage::type_check::ast::IntegerWidth::Eight,
             value: $crate::util::pad_to_64bit_array(($value as u8).to_le_bytes()),
         })
     };
 
     (i16 $value:expr) => {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::ast::Signed::Signed,
-            width: $crate::stage::ast::IntegerWidth::Sixteen,
+            sign: $crate::stage::type_check::ast::Signed::Signed,
+            width: $crate::stage::type_check::ast::IntegerWidth::Sixteen,
             value: $crate::util::pad_to_64bit_array(($value as i16).to_le_bytes()),
         })
     };
     (u16 $value:expr) => {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::ast::Signed::Unsigned,
-            width: $crate::stage::ast::IntegerWidth::Sixteen,
+            sign: $crate::stage::type_check::ast::Signed::Unsigned,
+            width: $crate::stage::type_check::ast::IntegerWidth::Sixteen,
             value: $crate::util::pad_to_64bit_array(($value as u16).to_le_bytes()),
         })
     };
 
     (i32 $value:expr) => {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::ast::Signed::Signed,
-            width: $crate::stage::ast::IntegerWidth::ThirtyTwo,
+            sign: $crate::stage::type_check::ast::Signed::Signed,
+            width: $crate::stage::type_check::ast::IntegerWidth::ThirtyTwo,
             value: $crate::util::pad_to_64bit_array(($value as i32).to_le_bytes()),
         })
     };
     (u32 $value:expr) => {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::ast::Signed::Unsigned,
-            width: $crate::stage::ast::IntegerWidth::ThirtyTwo,
+            sign: $crate::stage::type_check::ast::Signed::Unsigned,
+            width: $crate::stage::type_check::ast::IntegerWidth::ThirtyTwo,
             value: $crate::util::pad_to_64bit_array(($value as u32).to_le_bytes()),
         })
     };
 
     (i64 $value:expr) => {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::ast::Signed::Signed,
-            width: $crate::stage::ast::IntegerWidth::SixtyFour,
+            sign: $crate::stage::type_check::ast::Signed::Signed,
+            width: $crate::stage::type_check::ast::IntegerWidth::SixtyFour,
             value: $crate::util::pad_to_64bit_array(($value as i64).to_le_bytes()),
         })
     };
     (u64 $value:expr) => {
         $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::ast::Signed::Unsigned,
-            width: $crate::stage::ast::IntegerWidth::SixtyFour,
+            sign: $crate::stage::type_check::ast::Signed::Unsigned,
+            width: $crate::stage::type_check::ast::IntegerWidth::SixtyFour,
             value: $crate::util::pad_to_64bit_array(($value as u64).to_le_bytes()),
         })
     };

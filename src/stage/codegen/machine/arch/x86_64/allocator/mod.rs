@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-pub use crate::stage::slotted_type_check::ast::ByteSized;
+pub use crate::stage::type_check::ast::ByteSized;
 
 pub mod register;
 

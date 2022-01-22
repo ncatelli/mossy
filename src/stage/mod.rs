@@ -1,10 +1,10 @@
 use core::marker::PhantomData;
 
 #[macro_use]
-pub mod ast;
-pub mod codegen;
-pub mod slotted_type_check;
 pub mod type_check;
+
+#[macro_use]
+pub mod codegen;
 
 /// CompilationStage represents a transformation pass on the ADT. Taking an
 /// `Input` and `Output` type for the stage.
