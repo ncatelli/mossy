@@ -378,3 +378,65 @@ impl Type {
         }
     }
 }
+
+// fix me
+impl From<crate::stage::ast::Type> for Type {
+    fn from(src: crate::stage::ast::Type) -> Self {
+        match src {
+            crate::stage::ast::Type::Integer(
+                crate::stage::ast::Signed::Signed,
+                crate::stage::ast::IntegerWidth::One,
+            ) => Type::Integer(Signed::Signed, IntegerWidth::One),
+            crate::stage::ast::Type::Integer(
+                crate::stage::ast::Signed::Unsigned,
+                crate::stage::ast::IntegerWidth::One,
+            ) => Type::Integer(Signed::Unsigned, IntegerWidth::One),
+            crate::stage::ast::Type::Integer(
+                crate::stage::ast::Signed::Signed,
+                crate::stage::ast::IntegerWidth::Eight,
+            ) => Type::Integer(Signed::Signed, IntegerWidth::Eight),
+            crate::stage::ast::Type::Integer(
+                crate::stage::ast::Signed::Unsigned,
+                crate::stage::ast::IntegerWidth::Eight,
+            ) => Type::Integer(Signed::Unsigned, IntegerWidth::Eight),
+            crate::stage::ast::Type::Integer(
+                crate::stage::ast::Signed::Signed,
+                crate::stage::ast::IntegerWidth::Sixteen,
+            ) => Type::Integer(Signed::Signed, IntegerWidth::Sixteen),
+            crate::stage::ast::Type::Integer(
+                crate::stage::ast::Signed::Unsigned,
+                crate::stage::ast::IntegerWidth::Sixteen,
+            ) => Type::Integer(Signed::Unsigned, IntegerWidth::Sixteen),
+            crate::stage::ast::Type::Integer(
+                crate::stage::ast::Signed::Signed,
+                crate::stage::ast::IntegerWidth::ThirtyTwo,
+            ) => Type::Integer(Signed::Signed, IntegerWidth::ThirtyTwo),
+            crate::stage::ast::Type::Integer(
+                crate::stage::ast::Signed::Unsigned,
+                crate::stage::ast::IntegerWidth::ThirtyTwo,
+            ) => Type::Integer(Signed::Unsigned, IntegerWidth::ThirtyTwo),
+            crate::stage::ast::Type::Integer(
+                crate::stage::ast::Signed::Signed,
+                crate::stage::ast::IntegerWidth::SixtyFour,
+            ) => Type::Integer(Signed::Signed, IntegerWidth::SixtyFour),
+            crate::stage::ast::Type::Integer(
+                crate::stage::ast::Signed::Unsigned,
+                crate::stage::ast::IntegerWidth::SixtyFour,
+            ) => Type::Integer(Signed::Unsigned, IntegerWidth::SixtyFour),
+            crate::stage::ast::Type::Void => Type::Void,
+            crate::stage::ast::Type::Func(src_func_proto) => {
+                let src_rt = *src_func_proto.return_type;
+                let new_ty = Type::from(src_rt);
+                let new_args = src_func_proto.args.into_iter().map(Type::from).collect();
+
+                crate::stage::type_check::ast::Type::Func(FuncProto::new(
+                    Box::new(new_ty),
+                    new_args,
+                ))
+            }
+            crate::stage::ast::Type::Pointer(src_ty) => {
+                crate::stage::type_check::ast::Type::Pointer(Box::new(Type::from(*src_ty)))
+            }
+        }
+    }
+}

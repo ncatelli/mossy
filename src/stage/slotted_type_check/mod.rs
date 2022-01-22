@@ -1032,7 +1032,7 @@ mod tests {
 
     #[test]
     fn test_string_assignment_correctly_assigns_pointer_ref() {
-        use crate::stage::type_check::scopes;
+        use crate::stage::slotted_type_check::scopes;
         let mut analyzer = super::TypeAnalysis::default();
         let pre_typed_ast = assignment_expr!(
             ast::ExprNode::Primary(ast::Primary::Identifier("x".to_string())),
