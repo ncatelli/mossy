@@ -77,27 +77,22 @@ pub struct TypedFunctionDeclaration {
     pub id: String,
     pub block: TypedCompoundStmts,
     local_vars: Vec<(Type, usize)>,
-    local_variable_size: isize,
 }
 
 impl TypedFunctionDeclaration {
-    pub fn new(
-        id: String,
-        block: TypedCompoundStmts,
-        local_vars: Vec<(Type, usize)>,
-        local_variable_size: isize,
-    ) -> Self {
+    pub fn new(id: String, block: TypedCompoundStmts, local_vars: Vec<(Type, usize)>) -> Self {
         Self {
             id,
             block,
             local_vars,
-            local_variable_size,
         }
     }
 
+    /* fix me
     pub fn alignment(&self) -> isize {
         (self.local_variable_size + 15) & !15
     }
+    */
 }
 
 #[derive(PartialEq, Debug, Clone)]

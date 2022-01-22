@@ -249,7 +249,7 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
             crate::parser::ast::GlobalDecls::Var(crate::stage::ast::Declaration::Scalar(ty, ids)) => {
                 for id in ids.iter() {
                     self.scopes
-                        .define_global_mut(id, ast::Type::from(ty.clone()), scopes::Kind::Basic);
+                        .declare_global_mut(id, ast::Type::from(ty.clone()), scopes::Kind::Basic);
                 }
 
                 Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Scalar(
@@ -258,7 +258,7 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
             }
             crate::parser::ast::GlobalDecls::Var(crate::stage::ast::Declaration::Array { ty, id, size }) => {
                 self.scopes
-                    .define_global_mut(&id, ast::Type::from(ty.pointer_to()), scopes::Kind::Array(size));
+                    .declare_global_mut(&id, ast::Type::from(ty.pointer_to()), scopes::Kind::Array(size));
 
                 Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Array {
                     ty: ast::Type::from(ty),
@@ -285,11 +285,11 @@ impl
 
         let proto = FuncProto::new(Box::new(rt), vec![]);
         self.scopes
-            .define_global_mut(&id, ast::Type::Func(proto.clone()), scopes::Kind::Basic);
+            .declare_global_mut(&id, ast::Type::Func(proto.clone()), scopes::Kind::Basic);
 
         self.analyze_function_body(id.clone(), proto, block).map(
-            |(typed_block, local_variable_sized)| {
-                ast::TypedFunctionDeclaration::new(id.clone(), typed_block, vec![],local_variable_sized)
+            |(typed_block, local_vars)| {
+                ast::TypedFunctionDeclaration::new(id.clone(), typed_block, local_vars)
             },
         )
     }
@@ -301,7 +301,7 @@ impl TypeAnalysis {
         id: String,
         func_proto: FuncProto,
         block: crate::parser::ast::CompoundStmts,
-    ) -> Result<(ast::TypedCompoundStmts, isize), String> {
+    ) -> Result<(ast::TypedCompoundStmts, Vec<(ast::Type, usize)>), String> {
         let old_body = self.in_func.replace((id, func_proto.clone()));
         self.scopes.push_new_scope_mut();
 
@@ -322,7 +322,7 @@ impl TypeAnalysis {
             })
             .ok_or_else(|| "invalid return type".to_string())?;
 
-        let local_stack_offsets = self.scopes.local_offset();
+        let local_vars = self.scopes.local_scope().map(|s| s.ordered_local_declarations()).ok_or_else(|| "cannot obtain local declarations on global scope".to_string())?;
 
         // reset scope
         self.scopes.pop_scope_mut();
@@ -330,7 +330,7 @@ impl TypeAnalysis {
 
         Ok((
             ast::TypedCompoundStmts::new(typed_stmts),
-            local_stack_offsets,
+            local_vars,
         ))
     }
 
@@ -366,7 +366,7 @@ impl TypeAnalysis {
                     .map(|id| {
                         // fix me
                         self.scopes
-                            .define_local_mut(id, ast::Type::from(ty.clone()), scopes::Kind::Basic) as usize
+                            .declare_local_mut(id, ast::Type::from(ty.clone()), scopes::Kind::Basic) as usize
                     })
                     .collect();
 
@@ -379,7 +379,7 @@ impl TypeAnalysis {
             crate::parser::ast::StmtNode::Declaration(crate::stage::ast::Declaration::Array { ty, id, size }) => {
                 let local_offset =
                     self.scopes
-                        .define_local_mut(&id, ast::Type::from(ty.pointer_to()), scopes::Kind::Array(size));
+                        .declare_local_mut(&id, ast::Type::from(ty.pointer_to()), scopes::Kind::Array(size));
 
                 Ok(ast::TypedStmtNode::LocalDeclaration(
                     ast::Declaration::Array { ty: ast::Type::from(ty), id, size },
@@ -483,26 +483,24 @@ impl TypeAnalysis {
                 .scopes
                 .lookup(&identifier)
                 .ok_or_else(|| format!("identifier ({}) undefined", &identifier))
-                .map(|dm| match (dm.is_array(), dm.is_local) {
-                    (true, None) => ast::TypedExprNode::Ref(
+                .map(|dm| match (dm.is_array(), dm.locality) {
+                    (true, scopes::Locality::Global) => ast::TypedExprNode::Ref(
                         dm.r#type,
                         ast::IdentifierLocality::Global(identifier),
                     ),
-                    (false, None) => ast::TypedExprNode::Primary(
+                    (false, scopes::Locality::Global) => ast::TypedExprNode::Primary(
                         dm.r#type.clone(),
                         ast::Primary::Identifier(
                             dm.r#type,
                             ast::IdentifierLocality::Global(identifier),
                         ),
                     ),
-                    (true, Some(offset)) => {
-                        // fix me
-                        ast::TypedExprNode::Ref(dm.r#type, ast::IdentifierLocality::Local(offset as usize))
+                    (true, scopes::Locality::Local(offset)) => {
+                        ast::TypedExprNode::Ref(dm.r#type, ast::IdentifierLocality::Local(offset))
                     }
-                    (false, Some(offset)) => ast::TypedExprNode::Primary(
+                    (false, scopes::Locality::Local(offset)) => ast::TypedExprNode::Primary(
                         dm.r#type.clone(),
-                        // fix me
-                        ast::Primary::Identifier(dm.r#type, ast::IdentifierLocality::Local(offset as usize)),
+                        ast::Primary::Identifier(dm.r#type, ast::IdentifierLocality::Local(offset)),
                     ),
                 }),
             ExprNode::Primary(Primary::Str(elems)) => Ok(ast::TypedExprNode::Primary(
@@ -767,15 +765,14 @@ impl TypeAnalysis {
             ExprNode::Ref(identifier) => self
                 .scopes
                 .lookup(&identifier)
-                .map(|dm| match dm.is_local {
-                    None => ast::TypedExprNode::Ref(
+                .map(|dm| match dm.locality {
+                    scopes::Locality::Global => ast::TypedExprNode::Ref(
                         dm.r#type.pointer_to(),
                         ast::IdentifierLocality::Global(identifier),
                     ),
-                    Some(offset) => ast::TypedExprNode::Ref(
+                    scopes::Locality::Local(slot) => ast::TypedExprNode::Ref(
                         dm.r#type.pointer_to(),
-                        // fix me
-                        ast::IdentifierLocality::Local(offset as usize),
+                        ast::IdentifierLocality::Local(slot),
                     ),
                 })
                 .ok_or_else(|| "invalid type".to_string()),
@@ -825,35 +822,33 @@ impl TypeAnalysis {
                     .map(|(dm, scale)| {
                         let ref_ty = dm.r#type.clone();
 
-                        let l_value_access = match (dm.is_array(), dm.is_local) {
-                            (true, None) => Box::new(ast::TypedExprNode::Ref(
+                        let l_value_access = match (dm.is_array(), dm.locality) {
+                            (true, scopes::Locality::Global) => Box::new(ast::TypedExprNode::Ref(
                                 ref_ty.clone(),
                                 ast::IdentifierLocality::Global(identifier.clone()),
                             )),
-                            (false, None) => Box::new(ast::TypedExprNode::Primary(
+                            (false, scopes::Locality::Global) => Box::new(ast::TypedExprNode::Primary(
                                 ref_ty.clone(),
                                 ast::Primary::Identifier(
                                     ref_ty.clone(),
                                     ast::IdentifierLocality::Global(identifier.clone()),
                                 ),
                             )),
-                            (true, Some(offset)) => Box::new(ast::TypedExprNode::Ref(
+                            (true, scopes::Locality::Local(offset)) => Box::new(ast::TypedExprNode::Ref(
                                 ref_ty.clone(),
-                                // fix me
-                                ast::IdentifierLocality::Local(offset as usize),
+                                ast::IdentifierLocality::Local(offset ),
                             )),
-                            (false, Some(offset)) => Box::new(ast::TypedExprNode::Primary(
+                            (false, scopes::Locality::Local(offset)) => Box::new(ast::TypedExprNode::Primary(
                                 ref_ty.clone(),
                                 ast::Primary::Identifier(
                                     ref_ty.clone(),
-                                    // fix me
-                                    ast::IdentifierLocality::Local(offset as usize),
+                                    ast::IdentifierLocality::Local(offset),
                                 ),
                             )),
                         };
 
                         // recast to a pointer as pulled from the above reference
-                        if dm.is_local.is_none() {
+                        if dm.locality.is_local().is_none() {
                             ast::TypedExprNode::Addition(ref_ty, l_value_access, Box::new(scale))
                         } else {
                             ast::TypedExprNode::Subtraction(ref_ty, l_value_access, Box::new(scale))
@@ -1056,7 +1051,7 @@ mod tests {
 
         // allocate x with predefined type prior to analysis
         analyzer.scopes.push_new_scope_mut();
-        analyzer.scopes.define_local_mut(
+        analyzer.scopes.declare_local_mut(
             "x",
             generate_slotted_type_specifier!(char).pointer_to(),
             scopes::Kind::Basic,
@@ -1065,7 +1060,7 @@ mod tests {
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
         let expected = TypedExprNode::IdentifierAssignment(
             generate_slotted_type_specifier!(i8).pointer_to(),
-            IdentifierLocality::Local(8),
+            IdentifierLocality::Local(0),
             Box::new(TypedExprNode::Primary(
                 generate_slotted_type_specifier!(i8).pointer_to(),
                 super::ast::Primary::Str("hello".chars().map(|c| c as u8).collect()),
