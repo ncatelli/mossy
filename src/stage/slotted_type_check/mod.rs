@@ -361,7 +361,7 @@ impl TypeAnalysis {
                 .map(ast::TypedStmtNode::Expression),
             // fix me
             crate::parser::ast::StmtNode::Declaration(crate::stage::ast::Declaration::Scalar(ty, ids)) => {
-                let local_offsets = ids
+                let slot_ids = ids
                     .iter()
                     .map(|id| {
                         // fix me
@@ -372,19 +372,19 @@ impl TypeAnalysis {
 
                 Ok(ast::TypedStmtNode::LocalDeclaration(
                     ast::Declaration::Scalar(ast::Type::from(ty), ids),
-                    local_offsets,
+                    slot_ids,
                 ))
             }
             // fix me
             crate::parser::ast::StmtNode::Declaration(crate::stage::ast::Declaration::Array { ty, id, size }) => {
-                let local_offset =
+                let slot_ids =
                     self.scopes
                         .declare_local_mut(&id, ast::Type::from(ty.pointer_to()), scopes::Kind::Array(size));
 
                 Ok(ast::TypedStmtNode::LocalDeclaration(
                     ast::Declaration::Array { ty: ast::Type::from(ty), id, size },
                     // fix me
-                    vec![local_offset as usize],
+                    vec![slot_ids as usize],
                 ))
             }
             crate::parser::ast::StmtNode::Return(Some(rt_expr)) => {
