@@ -1,4 +1,4 @@
-use crate::stage::ast::{ByteSized, Type};
+use crate::stage::type_check::ast::Type;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Kind {
@@ -19,6 +19,12 @@ impl Kind {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum Locality {
+    Global,
+    Local(usize),
+}
+
 /// DeclarationMetadata contains information about a given declared variable.
 /// This information currenntly includes defined size and type.
 #[derive(Debug, Clone)]
@@ -28,15 +34,15 @@ pub struct DeclarationMetadata {
     // Otherwise it is a singular type be it a known value or pointer to a
     // value.
     pub elems: Option<usize>,
-    pub is_local: Option<isize>,
+    pub locality: Locality,
 }
 
 impl DeclarationMetadata {
-    fn new(ty: Type, kind: Kind, local_offset: Option<isize>) -> Self {
+    fn new(ty: Type, kind: Kind, locality: Locality) -> Self {
         Self {
             r#type: ty,
             elems: kind.array_elems(),
-            is_local: local_offset,
+            locality,
         }
     }
 
@@ -56,8 +62,22 @@ impl DeclarationMetadata {
 // Alias for a hashmap of String/Type
 #[derive(Debug, Default)]
 pub(crate) struct Scope {
-    local_offset: isize,
+    local_slots: Vec<String>,
     symbols: std::collections::HashMap<String, DeclarationMetadata>,
+}
+
+impl Scope {
+    pub fn ordered_local_declarations(&self) -> Vec<(Type, usize)> {
+        self.local_slots
+            .iter()
+            .map(|id| {
+                self.symbols
+                    .get(id.as_str())
+                    .map(|dm| (dm.r#type.clone(), dm.elems.unwrap_or(1)))
+            })
+            .flatten()
+            .collect()
+    }
 }
 
 /// Provides a stack of hashmaps for tracking scopes
@@ -82,38 +102,34 @@ impl ScopeStack {
         self.scopes.pop();
     }
 
-    pub fn define_global_mut(&mut self, id: &str, ty: Type, kind: Kind) {
+    pub fn declare_global_mut(&mut self, id: &str, ty: Type, kind: Kind) {
         self.scopes.first_mut().map(|scope| {
-            scope
-                .symbols
-                .insert(id.to_string(), DeclarationMetadata::new(ty, kind, None))
+            scope.symbols.insert(
+                id.to_string(),
+                DeclarationMetadata::new(ty, kind, Locality::Global),
+            )
         });
     }
 
-    pub fn define_local_mut(&mut self, id: &str, ty: Type, kind: Kind) -> isize {
-        let offset = round_sized_type_for_local_offset(ty.size()) as isize;
+    pub fn declare_local_mut(&mut self, id: &str, ty: Type, kind: Kind) -> usize {
         self.scopes
             .last_mut()
             .map(|scope| {
-                scope.local_offset += offset;
-                // offset is a negative offset of stack.
-                let variable_offset = scope.local_offset;
+                let slot_id = scope.local_slots.len();
 
+                scope.local_slots.push(id.to_string());
                 scope.symbols.insert(
                     id.to_string(),
-                    DeclarationMetadata::new(ty, kind, Some(-variable_offset)),
+                    DeclarationMetadata::new(ty, kind, Locality::Local(slot_id)),
                 );
 
-                variable_offset
+                slot_id
             })
             .expect("attempted to allocate local variable on non-local scope")
     }
 
-    pub fn local_offset(&self) -> isize {
-        self.scopes
-            .last()
-            .map(|scope| scope.local_offset)
-            .unwrap_or(0)
+    pub fn local_scope(&self) -> Option<&Scope> {
+        self.scopes.last()
     }
 
     /// looks up variable in place.
@@ -124,12 +140,5 @@ impl ScopeStack {
             .find(|scope| scope.symbols.get(id).is_some())
             .and_then(|scope| scope.symbols.get(id))
             .cloned()
-    }
-}
-
-const fn round_sized_type_for_local_offset(size: usize) -> usize {
-    match size {
-        size if size > 4 => size,
-        _ => 4,
     }
 }

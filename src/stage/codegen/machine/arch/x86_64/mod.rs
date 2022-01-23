@@ -1,20 +1,23 @@
-use crate::stage::ast::{self, ByteSized, Type, Typed};
-use crate::stage::codegen::machine::arch::x86_64::register::WidthFormatted;
 use crate::stage::codegen::machine::arch::TargetArchitecture;
 use crate::stage::codegen::{self, CodeGenerationErr};
+
+use crate::stage::type_check::ast::{self, ByteSized, Type, Typed};
 use crate::stage::CompilationStage;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 static BLOCK_ID: AtomicUsize = AtomicUsize::new(0);
 
+mod allocator;
+use allocator::{
+    register::{
+        BasePointerRegister, GPRegisterAllocator, GeneralPurposeRegister, OperandWidth,
+        PointerRegister, ScalarRegister, WidthFormatted,
+    },
+    SysVAllocator,
+};
+
 /// X86_64 represents the x86_64 bit machine target.
 pub struct X86_64;
-
-mod register;
-use register::{
-    BasePointerRegister, GPRegisterAllocator, GeneralPurposeRegister, OperandWidth,
-    PointerRegister, ScalarRegister,
-};
 
 impl TargetArchitecture for X86_64 {}
 
@@ -52,31 +55,41 @@ impl CompilationStage<ast::TypedFunctionDeclaration, Vec<String>, CodeGeneration
         &mut self,
         input: ast::TypedFunctionDeclaration,
     ) -> Result<Vec<String>, CodeGenerationErr> {
-        let mut allocator = GPRegisterAllocator::default();
-        let alignment = input.alignment();
-        let (id, block) = (input.id, input.block);
+        let mut allocator = SysVAllocator::new(GPRegisterAllocator::default());
+        allocator.allocate_new_local_stack_scope(|allocator| {
+            let (id, block) = (input.id, input.block);
 
-        codegen_statements(&mut allocator, block)
-            .map(|block| {
-                vec![
-                    codegen_function_preamble(&id, alignment),
-                    block,
-                    codegen_function_postamble(&id, alignment),
-                ]
-            })
-            .map(|output| output.into_iter().flatten().collect())
+            codegen_statements(allocator, block)
+                .map(|block| {
+                    let last = allocator
+                        .local_stack_offsets
+                        .last()
+                        .map(|local_declarations| local_declarations.start)
+                        .unwrap_or(0);
+
+                    let alignment = allocator.align_stack_pointer(last);
+                    vec![
+                        codegen_function_preamble(&id, alignment),
+                        block,
+                        codegen_function_postamble(&id, alignment),
+                    ]
+                })
+                .map(|output| output.into_iter().flatten().collect())
+        })
     }
 }
 
+// used for testing.
 impl CompilationStage<ast::TypedCompoundStmts, Vec<String>, CodeGenerationErr> for X86_64 {
     fn apply(&mut self, input: ast::TypedCompoundStmts) -> Result<Vec<String>, CodeGenerationErr> {
-        let mut allocator = GPRegisterAllocator::default();
+        let mut allocator = SysVAllocator::new(GPRegisterAllocator::default());
         codegen_statements(&mut allocator, input)
     }
 }
 
+// slotted
 fn codegen_statements(
-    allocator: &mut GPRegisterAllocator,
+    allocator: &mut SysVAllocator,
     input: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, CodeGenerationErr> {
     let stmts = Vec::<ast::TypedStmtNode>::from(input);
@@ -87,26 +100,62 @@ fn codegen_statements(
         .collect::<Result<Vec<String>, _>>()
 }
 
+macro_rules! flattenable_instructions {
+    ($($instruction:expr,)*) => {
+        vec![
+            $(
+                $instruction,
+            )*
+        ]
+        .into_iter()
+        .flatten()
+        .collect()
+    };
+}
+
 fn codegen_statement(
-    allocator: &mut GPRegisterAllocator,
+    allocator: &mut SysVAllocator,
     input: ast::TypedStmtNode,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     match input {
-        ast::TypedStmtNode::Expression(expr) => allocator
-            .allocate_then(|allocator, ret_val| Ok(vec![codegen_expr(allocator, ret_val, expr)])),
-        ast::TypedStmtNode::LocalDeclaration(_, _) => Ok(vec![]),
-        ast::TypedStmtNode::Return(ty, id, arg) => allocator.allocate_then(|allocator, ret_val| {
-            let res: Vec<String> = if let Some(expr) = arg {
-                codegen_expr(allocator, ret_val, expr)
-            } else {
-                vec![]
-            }
-            .into_iter()
-            .chain(codegen_return(ty, ret_val, &id))
-            .collect();
+        ast::TypedStmtNode::Expression(expr) => {
+            allocator.allocate_gp_register_then(|allocator, ret_val| {
+                Ok(vec![codegen_expr(allocator, ret_val, expr)])
+            })
+        }
+        ast::TypedStmtNode::LocalDeclaration(dec, slot_ids) => {
+            match dec {
+                ast::Declaration::Scalar(ty, _) => {
+                    for slot in slot_ids {
+                        allocator.calculate_and_insert_local_offset(slot, ty.clone());
+                    }
+                }
+                ast::Declaration::Array { ty, size, .. } => {
+                    let slot = slot_ids.last().ok_or_else(|| {
+                        codegen::CodeGenerationErr::UndefinedReference(
+                            "no array slot ids for local array declaration".to_string(),
+                        )
+                    })?;
+                    allocator.calculate_and_insert_local_offset_with_cnt(*slot, ty, size);
+                }
+            };
 
-            Ok(vec![res])
-        }),
+            Ok(vec![])
+        }
+        ast::TypedStmtNode::Return(ty, id, arg) => {
+            allocator.allocate_gp_register_then(|allocator, ret_val| {
+                let res: Vec<String> = if let Some(expr) = arg {
+                    codegen_expr(allocator, ret_val, expr)
+                } else {
+                    vec![]
+                }
+                .into_iter()
+                .chain(codegen_return(ty, ret_val, &id))
+                .collect();
+
+                Ok(vec![res])
+            })
+        }
 
         // with else case
         ast::TypedStmtNode::If(cond, true_case, Some(false_case)) => {
@@ -128,26 +177,13 @@ fn codegen_statement(
     .map(|insts| insts.into_iter().flatten().collect())
 }
 
-macro_rules! flattenable_instructions {
-    ($($instruction:expr,)*) => {
-        vec![
-            $(
-                $instruction,
-            )*
-        ]
-        .into_iter()
-        .flatten()
-        .collect()
-    };
-}
-
 fn codegen_if_statement_with_else(
-    allocator: &mut GPRegisterAllocator,
+    allocator: &mut SysVAllocator,
     cond: ast::TypedExprNode,
     true_case: ast::TypedCompoundStmts,
     false_case: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
-    allocator.allocate_then(|allocator, ret_val| {
+    allocator.allocate_gp_register_then(|allocator, ret_val| {
         let cond_ctx = codegen_expr(allocator, ret_val, cond);
         let exit_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
         let true_case_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
@@ -174,11 +210,11 @@ fn codegen_if_statement_with_else(
 }
 
 fn codegen_if_statement_without_else(
-    allocator: &mut GPRegisterAllocator,
+    allocator: &mut SysVAllocator,
     cond: ast::TypedExprNode,
     true_case: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
-    allocator.allocate_then(|allocator, ret_val| {
+    allocator.allocate_gp_register_then(|allocator, ret_val| {
         let cond_ctx = codegen_expr(allocator, ret_val, cond);
         let exit_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
         let true_case_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
@@ -200,11 +236,11 @@ fn codegen_if_statement_without_else(
 }
 
 fn codegen_while_statement(
-    allocator: &mut GPRegisterAllocator,
+    allocator: &mut SysVAllocator,
     cond: ast::TypedExprNode,
     block: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
-    allocator.allocate_then(|allocator, ret_val| {
+    allocator.allocate_gp_register_then(|allocator, ret_val| {
         let cond_ctx = codegen_expr(allocator, ret_val, cond);
         let loop_cond_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
         let loop_start_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
@@ -229,13 +265,13 @@ fn codegen_while_statement(
 }
 
 fn codegen_for_statement(
-    allocator: &mut GPRegisterAllocator,
+    allocator: &mut SysVAllocator,
     preop: ast::TypedStmtNode,
     cond: ast::TypedExprNode,
     postop: ast::TypedStmtNode,
     block: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
-    allocator.allocate_then(|allocator, ret_val| {
+    allocator.allocate_gp_register_then(|allocator, ret_val| {
         let preop_ctx = codegen_statement(allocator, preop)?;
         let cond_ctx = codegen_expr(allocator, ret_val, cond);
         let postop_ctx = codegen_statement(allocator, postop)?;
@@ -292,7 +328,7 @@ pub fn codegen_function_postamble(identifier: &str, alignment: isize) -> Vec<Str
         .collect()
 }
 
-fn codegen_global_symbol(ty: &Type, identifier: &str, count: usize) -> Vec<String> {
+fn codegen_global_symbol(ty: &ast::Type, identifier: &str, count: usize) -> Vec<String> {
     let reserve_bytes = ty.size() * count;
 
     vec![format!(
@@ -302,8 +338,8 @@ fn codegen_global_symbol(ty: &Type, identifier: &str, count: usize) -> Vec<Strin
 }
 
 fn codegen_store_global(
-    ty: Type,
-    ret: &mut GeneralPurposeRegister,
+    ty: ast::Type,
+    ret: &GeneralPurposeRegister,
     identifier: &str,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
@@ -328,7 +364,7 @@ fn codegen_global_str(identifier: &str, str_literal: &[u8]) -> Vec<String> {
     )
 }
 
-fn codegen_store_local(ty: Type, ret: &mut GeneralPurposeRegister, offset: isize) -> Vec<String> {
+fn codegen_store_local(ty: ast::Type, ret: &GeneralPurposeRegister, offset: isize) -> Vec<String> {
     let width = operand_width_of_type(ty);
     vec![format!(
         "\tmov{}\t%{}, {}(%{})\n",
@@ -340,8 +376,8 @@ fn codegen_store_local(ty: Type, ret: &mut GeneralPurposeRegister, offset: isize
 }
 
 fn codegen_load_local(
-    ty: Type,
-    ret: &mut GeneralPurposeRegister,
+    ty: ast::Type,
+    ret: &GeneralPurposeRegister,
     offset: isize,
     scale: usize,
 ) -> Vec<String> {
@@ -377,8 +413,8 @@ enum IncDecExpression {
 }
 
 fn codegen_inc_or_dec_expression_from_identifier(
-    ty: Type,
-    ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
+    ret_val: &GeneralPurposeRegister,
     identifier: &str,
     expr_op: IncDecExpression,
 ) -> Vec<String> {
@@ -410,14 +446,14 @@ fn codegen_inc_or_dec_expression_from_identifier(
 }
 
 fn codegen_inc_or_dec_expression_from_pointer(
-    ty: Type,
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     expr_op: IncDecExpression,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_then(|_, ptr_reg| {
+    allocator.allocate_gp_register_then(|_, ptr_reg| {
         let op = match expr_op {
             IncDecExpression::PreIncrement | IncDecExpression::PostIncrement => format!(
                 "\tinc{}\t(%{})\n",
@@ -463,8 +499,8 @@ fn codegen_inc_or_dec_expression_from_pointer(
 }
 
 fn codegen_load_global(
-    ty: Type,
-    ret: &mut GeneralPurposeRegister,
+    ty: ast::Type,
+    ret: &GeneralPurposeRegister,
     identifier: &str,
     scale: usize,
 ) -> Vec<String> {
@@ -538,11 +574,11 @@ where
 }
 
 fn codegen_expr(
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     expr: ast::TypedExprNode,
 ) -> Vec<String> {
-    use crate::stage::ast::{IntegerWidth, Primary, Signed, TypedExprNode};
+    use crate::stage::type_check::ast::{IntegerWidth, Primary, Signed, TypedExprNode};
 
     match expr {
         TypedExprNode::Primary(_, Primary::Integer { sign, width, value }) => match (sign, width) {
@@ -604,8 +640,11 @@ fn codegen_expr(
         }
         TypedExprNode::Primary(
             ty,
-            Primary::Identifier(_, ast::IdentifierLocality::Local(offset)),
-        ) => codegen_load_local(ty, ret_val, offset, 0),
+            Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
+        ) => allocator
+            .get_slot_offset(slot)
+            .map(|offset_start| codegen_load_local(ty, ret_val, offset_start, 0))
+            .expect("local stack slot is undeclared"),
         TypedExprNode::Primary(_, Primary::Str(lit)) => {
             let identifier = format!("V{}", BLOCK_ID.fetch_add(1, Ordering::SeqCst));
 
@@ -631,16 +670,19 @@ fn codegen_expr(
         }
         ast::TypedExprNode::IdentifierAssignment(
             ty,
-            ast::IdentifierLocality::Local(offset),
+            ast::IdentifierLocality::Local(slot),
             expr,
         ) => {
             flattenable_instructions!(
                 codegen_expr(allocator, ret_val, *expr),
-                codegen_store_local(ty, ret_val, offset),
+                allocator
+                    .get_slot_offset(slot)
+                    .map(|offset_start| { codegen_store_local(ty, ret_val, offset_start) })
+                    .expect("local stack slot is undeclared"),
             )
         }
         TypedExprNode::DerefAssignment(ty, lhs, rhs) => {
-            allocator.allocate_then(|allocator, rhs_ret_val| {
+            allocator.allocate_gp_register_then(|allocator, rhs_ret_val| {
                 flattenable_instructions!(
                     codegen_expr(allocator, rhs_ret_val, *rhs),
                     codegen_expr(allocator, ret_val, *lhs),
@@ -713,7 +755,7 @@ fn codegen_expr(
             codegen_shift_right(ty, allocator, ret_val, *lhs, *rhs)
         }
 
-        TypedExprNode::Addition(Type::Pointer(ty), lhs, rhs) => {
+        TypedExprNode::Addition(ast::Type::Pointer(ty), lhs, rhs) => {
             codegen_addition(allocator, ret_val, ty.pointer_to(), lhs, rhs)
         }
         TypedExprNode::Addition(ty, lhs, rhs) => codegen_addition(allocator, ret_val, ty, lhs, rhs),
@@ -842,9 +884,10 @@ fn codegen_expr(
         TypedExprNode::Ref(_, ast::IdentifierLocality::Global(identifier)) => {
             codegen_reference_from_identifier(ret_val, &identifier)
         }
-        TypedExprNode::Ref(_, ast::IdentifierLocality::Local(offset)) => {
-            codegen_reference_from_stack_offset(ret_val, offset)
-        }
+        TypedExprNode::Ref(_, ast::IdentifierLocality::Local(slot)) => allocator
+            .get_slot_offset(slot)
+            .map(|offset_start| codegen_reference_from_stack_offset(ret_val, offset_start))
+            .expect("local stack slot is undeclared"),
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(
                 codegen_expr(allocator, ret_val, *expr),
@@ -859,7 +902,7 @@ fn codegen_expr(
     }
 }
 
-fn codegen_constant_i8(ret_val: &mut GeneralPurposeRegister, constant: i8) -> Vec<String> {
+fn codegen_constant_i8(ret_val: &GeneralPurposeRegister, constant: i8) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
     vec![format!(
         "\tmov{}\t${}, %{}\n",
@@ -869,7 +912,7 @@ fn codegen_constant_i8(ret_val: &mut GeneralPurposeRegister, constant: i8) -> Ve
     )]
 }
 
-fn codegen_constant_u8(ret_val: &mut GeneralPurposeRegister, constant: u8) -> Vec<String> {
+fn codegen_constant_u8(ret_val: &GeneralPurposeRegister, constant: u8) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
     vec![format!(
         "\tmov{}\t${}, %{}\n",
@@ -879,18 +922,7 @@ fn codegen_constant_u8(ret_val: &mut GeneralPurposeRegister, constant: u8) -> Ve
     )]
 }
 
-fn codegen_constant_i16(ret_val: &mut GeneralPurposeRegister, constant: i16) -> Vec<String> {
-    const WIDTH: OperandWidth = OperandWidth::QuadWord;
-
-    vec![format!(
-        "\tmov{}\t${}, %{}\n",
-        operator_suffix(WIDTH),
-        constant,
-        ret_val.fmt_with_operand_width(WIDTH)
-    )]
-}
-
-fn codegen_constant_u16(ret_val: &mut GeneralPurposeRegister, constant: u16) -> Vec<String> {
+fn codegen_constant_i16(ret_val: &GeneralPurposeRegister, constant: i16) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
@@ -901,7 +933,7 @@ fn codegen_constant_u16(ret_val: &mut GeneralPurposeRegister, constant: u16) -> 
     )]
 }
 
-fn codegen_constant_i32(ret_val: &mut GeneralPurposeRegister, constant: i32) -> Vec<String> {
+fn codegen_constant_u16(ret_val: &GeneralPurposeRegister, constant: u16) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
@@ -912,7 +944,7 @@ fn codegen_constant_i32(ret_val: &mut GeneralPurposeRegister, constant: i32) -> 
     )]
 }
 
-fn codegen_constant_u32(ret_val: &mut GeneralPurposeRegister, constant: u32) -> Vec<String> {
+fn codegen_constant_i32(ret_val: &GeneralPurposeRegister, constant: i32) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
@@ -923,7 +955,7 @@ fn codegen_constant_u32(ret_val: &mut GeneralPurposeRegister, constant: u32) -> 
     )]
 }
 
-fn codegen_constant_i64(ret_val: &mut GeneralPurposeRegister, constant: i64) -> Vec<String> {
+fn codegen_constant_u32(ret_val: &GeneralPurposeRegister, constant: u32) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
@@ -934,7 +966,18 @@ fn codegen_constant_i64(ret_val: &mut GeneralPurposeRegister, constant: i64) -> 
     )]
 }
 
-fn codegen_constant_u64(ret_val: &mut GeneralPurposeRegister, constant: u64) -> Vec<String> {
+fn codegen_constant_i64(ret_val: &GeneralPurposeRegister, constant: i64) -> Vec<String> {
+    const WIDTH: OperandWidth = OperandWidth::QuadWord;
+
+    vec![format!(
+        "\tmov{}\t${}, %{}\n",
+        operator_suffix(WIDTH),
+        constant,
+        ret_val.fmt_with_operand_width(WIDTH)
+    )]
+}
+
+fn codegen_constant_u64(ret_val: &GeneralPurposeRegister, constant: u64) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
@@ -946,7 +989,7 @@ fn codegen_constant_u64(ret_val: &mut GeneralPurposeRegister, constant: u64) -> 
 }
 
 fn codegen_reference_from_identifier(
-    ret: &mut GeneralPurposeRegister,
+    ret: &GeneralPurposeRegister,
     identifier: &str,
 ) -> Vec<String> {
     vec![format!(
@@ -957,10 +1000,7 @@ fn codegen_reference_from_identifier(
     )]
 }
 
-fn codegen_reference_from_stack_offset(
-    ret: &mut GeneralPurposeRegister,
-    offset: isize,
-) -> Vec<String> {
+fn codegen_reference_from_stack_offset(ret: &GeneralPurposeRegister, offset: isize) -> Vec<String> {
     vec![format!(
         "\tleaq\t{}(%{}), %{}\n",
         offset,
@@ -970,9 +1010,9 @@ fn codegen_reference_from_stack_offset(
 }
 
 fn codegen_store_deref(
-    ty: Type,
-    dest: &mut GeneralPurposeRegister,
-    src: &mut GeneralPurposeRegister,
+    ty: ast::Type,
+    dest: &GeneralPurposeRegister,
+    src: &GeneralPurposeRegister,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
 
@@ -984,7 +1024,7 @@ fn codegen_store_deref(
     )]
 }
 
-fn codegen_deref(ret: &mut GeneralPurposeRegister, ty: ast::Type, scale: usize) -> Vec<String> {
+fn codegen_deref(ret: &GeneralPurposeRegister, ty: ast::Type, scale: usize) -> Vec<String> {
     let scale_by = ty.size() * scale;
     let width = operand_width_of_type(ty);
 
@@ -1007,8 +1047,8 @@ fn codegen_deref(ret: &mut GeneralPurposeRegister, ty: ast::Type, scale: usize) 
 }
 
 fn codegen_scaleby(
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     size_of: usize,
     expr: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
@@ -1035,15 +1075,15 @@ fn codegen_scaleby(
 }
 
 fn codegen_addition(
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
 
-    allocator.allocate_then(|allocator, lhs_retval| {
+    allocator.allocate_gp_register_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
         let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
 
@@ -1064,15 +1104,15 @@ fn codegen_addition(
 }
 
 fn codegen_subtraction(
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
 
-    allocator.allocate_then(|allocator, rhs_ret_val| {
+    allocator.allocate_gp_register_then(|allocator, rhs_ret_val| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
         let rhs_ctx = codegen_expr(allocator, rhs_ret_val, *rhs);
 
@@ -1090,15 +1130,15 @@ fn codegen_subtraction(
 }
 
 fn codegen_multiplication(
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
 
-    allocator.allocate_then(|allocator, lhs_retval| {
+    allocator.allocate_gp_register_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
         let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
 
@@ -1122,19 +1162,19 @@ enum DivisionVariant {
 }
 
 fn codegen_division(
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
-    sign: crate::stage::ast::Signed,
+    sign: ast::Signed,
     division_variant: DivisionVariant,
 ) -> Vec<String> {
-    use crate::stage::ast::Signed;
+    use crate::stage::type_check::ast::Signed;
 
     let width = operand_width_of_type(ty);
 
-    allocator.allocate_then(|allocator, rhs_retval| {
+    allocator.allocate_gp_register_then(|allocator, rhs_retval| {
         let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
         let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
         let operand_suffix = operator_suffix(width);
@@ -1189,17 +1229,16 @@ fn codegen_division(
 
 // Binary
 
-#[allow(unused)]
 fn codegen_or(
-    ty: Type,
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
 
-    allocator.allocate_then(|allocator, rhs_ret_val| {
+    allocator.allocate_gp_register_then(|allocator, rhs_ret_val| {
         let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
         let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
 
@@ -1217,15 +1256,15 @@ fn codegen_or(
 }
 
 fn codegen_xor(
-    ty: Type,
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
 
-    allocator.allocate_then(|allocator, rhs_ret_val| {
+    allocator.allocate_gp_register_then(|allocator, rhs_ret_val| {
         let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
         let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
 
@@ -1242,17 +1281,16 @@ fn codegen_xor(
     })
 }
 
-#[allow(unused)]
 fn codegen_and(
-    ty: Type,
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
 
-    allocator.allocate_then(|allocator, rhs_ret_val| {
+    allocator.allocate_gp_register_then(|allocator, rhs_ret_val| {
         let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
         let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
 
@@ -1270,15 +1308,15 @@ fn codegen_and(
 }
 
 fn codegen_shift_left(
-    ty: Type,
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
 
-    allocator.allocate_then(|allocator, rhs_ret_val| {
+    allocator.allocate_gp_register_then(|allocator, rhs_ret_val| {
         let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
         let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
 
@@ -1302,15 +1340,15 @@ fn codegen_shift_left(
 }
 
 fn codegen_shift_right(
-    ty: Type,
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    ty: ast::Type,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
 
-    allocator.allocate_then(|allocator, rhs_ret_val| {
+    allocator.allocate_gp_register_then(|allocator, rhs_ret_val| {
         let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
         let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
 
@@ -1334,10 +1372,9 @@ fn codegen_shift_right(
 }
 
 /// Invert a register's value.
-#[allow(unused)]
 fn codegen_invert(
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     expr: ast::TypedExprNode,
 ) -> Vec<String> {
     let width = operand_width_of_type(expr.r#type());
@@ -1364,8 +1401,8 @@ enum ComparisonOperation {
 }
 
 fn codegen_compare_and_set(
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     comparison_op: ComparisonOperation,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
@@ -1373,7 +1410,7 @@ fn codegen_compare_and_set(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
 
-    allocator.allocate_then(|allocator, lhs_retval| {
+    allocator.allocate_gp_register_then(|allocator, lhs_retval| {
         let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
         let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
 
@@ -1413,8 +1450,8 @@ fn codegen_compare_and_set(
 }
 
 fn codegen_compare_and_jmp<L>(
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     cond_true_id: L,
     cond_false_id: L,
 ) -> Vec<String>
@@ -1423,7 +1460,7 @@ where
 {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
     let operand_suffix = operator_suffix(WIDTH);
-    allocator.allocate_then(|_, zero_val| {
+    allocator.allocate_gp_register_then(|_, zero_val| {
         vec![
             format!("\tandq\t$0, %{}\n", zero_val.fmt_with_operand_width(WIDTH)),
             format!(
@@ -1452,10 +1489,9 @@ where
 // Unary
 
 /// Negate a register's value.
-#[allow(unused)]
 fn codegen_negate(
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     expr: ast::TypedExprNode,
 ) -> Vec<String> {
     let width = operand_width_of_type(expr.r#type());
@@ -1473,8 +1509,8 @@ fn codegen_negate(
 
 /// Logically negate a register's value.
 fn codegen_not(
-    allocator: &mut GPRegisterAllocator,
-    ret_val: &mut GeneralPurposeRegister,
+    allocator: &mut SysVAllocator,
+    ret_val: &GeneralPurposeRegister,
     expr: ast::TypedExprNode,
 ) -> Vec<String> {
     let expr_ctx = codegen_expr(allocator, ret_val, expr);
@@ -1498,9 +1534,9 @@ fn codegen_not(
 }
 
 fn codegen_call(
-    allocator: &mut GPRegisterAllocator,
-    ty: Type,
-    ret_val: &mut GeneralPurposeRegister,
+    allocator: &mut SysVAllocator,
+    ty: ast::Type,
+    ret_val: &GeneralPurposeRegister,
     func_name: &str,
     arg: Option<Box<ast::TypedExprNode>>,
 ) -> Vec<String> {
@@ -1508,7 +1544,7 @@ fn codegen_call(
     if let Some(arg_expr) = arg {
         let width = operand_width_of_type(arg_expr.r#type());
 
-        allocator.allocate_then(|allocator, arg_retval| {
+        allocator.allocate_gp_register_then(|allocator, arg_retval| {
             let arg_ctx = codegen_expr(allocator, arg_retval, *arg_expr);
 
             flattenable_instructions!(
@@ -1543,7 +1579,7 @@ fn codegen_call(
     }
 }
 
-fn codegen_return(ty: Type, ret_val: &mut GeneralPurposeRegister, func_name: &str) -> Vec<String> {
+fn codegen_return(ty: ast::Type, ret_val: &GeneralPurposeRegister, func_name: &str) -> Vec<String> {
     let width = operand_width_of_type(ty);
     vec![format!(
         "\tmov{}\t%{}, %{}\n",
@@ -1565,7 +1601,7 @@ const fn operator_suffix(width: OperandWidth) -> &'static str {
     }
 }
 
-fn operand_width_of_type(ty: Type) -> OperandWidth {
+fn operand_width_of_type(ty: ast::Type) -> OperandWidth {
     match ty {
         Type::Integer(_, iw) => match iw {
             ast::IntegerWidth::One | ast::IntegerWidth::Eight => OperandWidth::Byte,
@@ -1580,11 +1616,10 @@ fn operand_width_of_type(ty: Type) -> OperandWidth {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::stage::ast;
 
     macro_rules! compound_statements {
         ($($stmt:expr,)*) => {
-               $crate::stage::ast::TypedCompoundStmts::new(
+               ast::TypedCompoundStmts::new(
                    vec![
                     $(
                         $stmt,
