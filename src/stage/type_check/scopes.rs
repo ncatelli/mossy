@@ -25,15 +25,6 @@ pub enum Locality {
     Local(usize),
 }
 
-impl Locality {
-    pub fn is_local(&self) -> Option<usize> {
-        match self {
-            Locality::Global => None,
-            Locality::Local(slot) => Some(*slot),
-        }
-    }
-}
-
 /// DeclarationMetadata contains information about a given declared variable.
 /// This information currenntly includes defined size and type.
 #[derive(Debug, Clone)]

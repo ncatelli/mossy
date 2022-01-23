@@ -561,7 +561,6 @@ impl TypeAnalysis {
                         .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, ast::IdentifierLocality::Local(offset), Box::new(rhs)))
                     }
                     TypedExprNode::Deref(ty, expr) => match LeftFlowing.type_compatible(&ty, &rhs.r#type())
-                
                     {
                         CompatibilityResult::Equivalent => Ok(ty),
                         CompatibilityResult::WidenTo(ty) => Ok(ty),
@@ -837,12 +836,7 @@ impl TypeAnalysis {
                             )),
                         };
 
-                        // recast to a pointer as pulled from the above reference
-                        if dm.locality.is_local().is_none() {
-                            ast::TypedExprNode::Addition(ref_ty, l_value_access, Box::new(scale))
-                        } else {
-                            ast::TypedExprNode::Subtraction(ref_ty, l_value_access, Box::new(scale))
-                        }
+                        ast::TypedExprNode::Addition(ref_ty, l_value_access, Box::new(scale))
                     })
                     .and_then(|reference| {
                         reference
