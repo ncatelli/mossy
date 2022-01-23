@@ -526,6 +526,7 @@ fn postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Expr
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     number()
         .map(ExprNode::Primary)
+        .or(|| character_literal().map(ExprNode::Primary))
         .or(|| string_literal().map(ExprNode::Primary))
         .or(|| identifier().map(|id| ExprNode::Primary(Primary::Identifier(id))))
         .or(grouping)
@@ -556,6 +557,14 @@ fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary>
         ),
     )
     .map(ast::Primary::Str)
+}
+
+fn character_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
+    character_wrapped('\'', '\'', ascii().map(|c| c as u8)).map(|num| Primary::Integer {
+        sign: Signed::Unsigned,
+        width: IntegerWidth::Eight,
+        value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+    })
 }
 
 fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
@@ -807,6 +816,10 @@ numeric_type_parser!(
     unsigned, dec_u64, u64,
 );
 
+fn ascii<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
+    any_character().predicate(|c| c.is_ascii())
+}
+
 fn ascii_whitespace<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
     any_character().predicate(|c| c.is_ascii_whitespace())
 }
@@ -991,6 +1004,22 @@ mod tests {
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
             primary_expr!(str "hello\n\t\"world\""),
+        )]));
+
+        assert_eq!(&expected_result, &res);
+    }
+
+    #[test]
+    fn should_parse_character_literals() {
+        use parcel::Parser;
+
+        let input: Vec<(usize, char)> = "{ \'a\'; }".chars().enumerate().collect();
+        let res = crate::parser::compound_statements()
+            .parse(&input)
+            .map(|ms| ms.unwrap());
+
+        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
+            primary_expr!(u8 97),
         )]));
 
         assert_eq!(&expected_result, &res);

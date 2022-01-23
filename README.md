@@ -127,11 +127,16 @@ postfix_expression: identifier '[' expression ']'
 primary: identifier
         | string_literal
         | digit
+        | char
         | grouping 
         ;
 
 char:   ascii_alphabetic
         ;
+
+char_literal: '\'' ascii_alphabetic '\''
+        ;
+
 
 grouping: '(' expression ')'
         ;
