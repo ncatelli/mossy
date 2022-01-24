@@ -481,7 +481,7 @@ fn codegen_inc_or_dec_expression_from_pointer<OP: Operand>(
                         ),
                         op,
                     ],
-                    codegen_deref(ret_val, ty, 0),
+                    codegen_deref(ty, ret_val, 0),
                 )
             }
             IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => {
@@ -492,7 +492,7 @@ fn codegen_inc_or_dec_expression_from_pointer<OP: Operand>(
                         ret_val.fmt_with_operand_width(OperandWidth::QuadWord),
                         ptr_reg.fmt_with_operand_width(OperandWidth::QuadWord)
                     )],
-                    codegen_deref(ret_val, ty, 0),
+                    codegen_deref(ty, ret_val, 0),
                     vec![op],
                 )
             }
@@ -893,7 +893,7 @@ fn codegen_expr<OP: Operand>(
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(
                 codegen_expr(allocator, ret_val, *expr),
-                codegen_deref(ret_val, ty, 0),
+                codegen_deref(ty, ret_val, 0),
             )
         }
         TypedExprNode::ScaleBy(ty, lhs) => {
@@ -1023,7 +1023,7 @@ where
     )]
 }
 
-fn codegen_deref<OP: Operand>(ret: &OP, ty: ast::Type, scale: usize) -> Vec<String> {
+fn codegen_deref<OP: Operand>(ty: ast::Type, ret: &OP, scale: usize) -> Vec<String> {
     let scale_by = ty.size() * scale;
     let width = operand_width_of_type(ty);
 
