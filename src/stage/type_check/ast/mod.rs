@@ -86,12 +86,6 @@ impl TypedFunctionDeclaration {
             local_vars,
         }
     }
-
-    /* fix me
-    pub fn alignment(&self) -> isize {
-        (self.local_variable_size + 15) & !15
-    }
-    */
 }
 
 #[derive(PartialEq, Debug, Clone)]

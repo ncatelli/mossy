@@ -995,6 +995,21 @@ fn codegen_constant_u64<OP: Operand>(ret_val: &mut OP, constant: u64) -> Vec<Str
     )]
 }
 
+fn codegen_mov<SRC, DST>(ty: ast::Type, src: &mut SRC, dst: &mut DST) -> Vec<String>
+where
+    SRC: Operand,
+    DST: Operand,
+{
+    let width = operand_width_of_type(ty);
+
+    vec![format!(
+        "\tmov{}\t{}, {}\n",
+        operator_suffix(width),
+        src.fmt_with_operand_width(width),
+        dst.fmt_with_operand_width(width)
+    )]
+}
+
 fn codegen_reference_from_identifier<OP: Operand>(ret: &mut OP, identifier: &str) -> Vec<String> {
     vec![format!(
         "\tleaq\t{}({}), {}\n",
@@ -1089,30 +1104,23 @@ fn codegen_addition(
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_general_purpose_register_then(|allocator, rhs_retval| {
-        allocator.allocate_general_purpose_register_then(|allocator, lhs_retval| {
-            let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
-            let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
+    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret_val| {
+        allocator.allocate_general_purpose_register_then(|allocator, lhs_ret_val| {
+            let lhs_ctx = codegen_expr(allocator, lhs_ret_val, *lhs);
+            let rhs_ctx = codegen_expr(allocator, rhs_ret_val, *rhs);
 
             vec![
                 lhs_ctx,
                 rhs_ctx,
-                vec![
-                    format!(
-                        "\tmov{}\t{}, {}\n",
-                        operator_suffix(width),
-                        rhs_retval.fmt_with_operand_width(width),
-                        ret_val.fmt_with_operand_width(width)
-                    ),
-                    format!(
-                        "\tadd{}\t{}, {}\n",
-                        operator_suffix(width),
-                        lhs_retval.fmt_with_operand_width(width),
-                        ret_val.fmt_with_operand_width(width)
-                    ),
-                ],
+                codegen_mov(ty, rhs_ret_val, ret_val),
+                vec![format!(
+                    "\tadd{}\t{}, {}\n",
+                    operator_suffix(width),
+                    lhs_ret_val.fmt_with_operand_width(width),
+                    ret_val.fmt_with_operand_width(width)
+                )],
             ]
             .into_iter()
             .flatten()
@@ -1128,7 +1136,7 @@ fn codegen_subtraction(
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
     allocator.allocate_general_purpose_register_then(|allocator, rhs_ret_val| {
         allocator.allocate_general_purpose_register_then(|allocator, lhs_ret_val| {
@@ -1138,20 +1146,13 @@ fn codegen_subtraction(
             flattenable_instructions!(
                 lhs_ctx,
                 rhs_ctx,
-                vec![
-                    format!(
-                        "\tmov{}\t{}, {}\n",
-                        operator_suffix(width),
-                        lhs_ret_val.fmt_with_operand_width(width),
-                        ret_val.fmt_with_operand_width(width)
-                    ),
-                    format!(
-                        "\tsub{}\t{}, {}\n",
-                        operator_suffix(width),
-                        rhs_ret_val.fmt_with_operand_width(width),
-                        ret_val.fmt_with_operand_width(width)
-                    )
-                ],
+                codegen_mov(ty, lhs_ret_val, ret_val),
+                vec![format!(
+                    "\tsub{}\t{}, {}\n",
+                    operator_suffix(width),
+                    rhs_ret_val.fmt_with_operand_width(width),
+                    ret_val.fmt_with_operand_width(width)
+                )],
             )
         })
     })
@@ -1164,7 +1165,7 @@ fn codegen_multiplication(
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
     allocator.allocate_general_purpose_register_then(|allocator, rhs_ret_val| {
         allocator.allocate_general_purpose_register_then(|allocator, lhs_ret_val| {
@@ -1174,20 +1175,13 @@ fn codegen_multiplication(
             flattenable_instructions!(
                 lhs_ctx,
                 rhs_ctx,
-                vec![
-                    format!(
-                        "\tmov{}\t{}, {}\n",
-                        operator_suffix(width),
-                        rhs_ret_val.fmt_with_operand_width(width),
-                        ret_val.fmt_with_operand_width(width)
-                    ),
-                    format!(
-                        "\timul{}\t{}, {}\n",
-                        operator_suffix(width),
-                        lhs_ret_val.fmt_with_operand_width(width),
-                        ret_val.fmt_with_operand_width(width)
-                    )
-                ],
+                codegen_mov(ty, rhs_ret_val, ret_val),
+                vec![format!(
+                    "\timul{}\t{}, {}\n",
+                    operator_suffix(width),
+                    lhs_ret_val.fmt_with_operand_width(width),
+                    ret_val.fmt_with_operand_width(width)
+                )],
             )
         })
     })
@@ -1276,22 +1270,25 @@ fn codegen_or(
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
     allocator.allocate_general_purpose_register_then(|allocator, rhs_ret_val| {
-        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
-        let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
+        allocator.allocate_general_purpose_register_then(|allocator, lhs_ret_val| {
+            let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
+            let lhs_ctx = codegen_expr(allocator, lhs_ret_val, lhs);
 
-        flattenable_instructions!(
-            rhs_ctx,
-            lhs_ctx,
-            vec![format!(
-                "\tor{}\t{}, {}\n",
-                operator_suffix(width),
-                rhs_ret_val.fmt_with_operand_width(width),
-                ret_val.fmt_with_operand_width(width)
-            )],
-        )
+            flattenable_instructions!(
+                rhs_ctx,
+                lhs_ctx,
+                codegen_mov(ty, lhs_ret_val, ret_val),
+                vec![format!(
+                    "\tor{}\t{}, {}\n",
+                    operator_suffix(width),
+                    rhs_ret_val.fmt_with_operand_width(width),
+                    ret_val.fmt_with_operand_width(width)
+                )],
+            )
+        })
     })
 }
 
