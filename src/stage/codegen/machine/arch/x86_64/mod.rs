@@ -10,8 +10,8 @@ static BLOCK_ID: AtomicUsize = AtomicUsize::new(0);
 mod allocator;
 use allocator::{
     register::{
-        BasePointerRegister, GPRegisterAllocator, GeneralPurposeRegister, OperandWidth,
-        PointerRegister, ScalarRegister, WidthFormatted,
+        BasePointerRegister, GPRegisterAllocator, GeneralPurposeRegister, IntegerRegister,
+        OperandWidth, PointerRegister, WidthFormatted,
     },
     SysVAllocator,
 };
@@ -21,6 +21,33 @@ use allocator::{
 trait Operand: WidthFormatted {}
 
 impl Operand for GeneralPurposeRegister {}
+
+pub(crate) enum RegisterOrOffset<GP, BP>
+where
+    GP: WidthFormatted,
+    BP: WidthFormatted,
+{
+    Register(GP),
+    Offset(BP, isize),
+}
+
+impl<GP, BP> WidthFormatted for RegisterOrOffset<GP, BP>
+where
+    GP: WidthFormatted,
+    BP: WidthFormatted,
+    <GP as allocator::register::WidthFormatted>::Output: std::string::ToString,
+{
+    type Output = String;
+
+    fn fmt_with_operand_width(&self, width: OperandWidth) -> Self::Output {
+        match self {
+            RegisterOrOffset::Register(reg) => reg.fmt_with_operand_width(width).to_string(),
+            RegisterOrOffset::Offset(bp, offset) => {
+                format!("{}({})", offset, bp.fmt_with_operand_width(width))
+            }
+        }
+    }
+}
 
 /// X86_64 represents the x86_64 bit machine target.
 pub struct X86_64;
@@ -1186,7 +1213,7 @@ fn codegen_division<OP: Operand>(
                     "\tmov{}\t%{}, %{}\n",
                     operand_suffix,
                     ret_val.fmt_with_operand_width(width),
-                    ScalarRegister::A.fmt_with_operand_width(width)
+                    IntegerRegister::A.fmt_with_operand_width(width)
                 ),
                 match sign {
                     Signed::Signed => format!(
@@ -1196,7 +1223,7 @@ fn codegen_division<OP: Operand>(
                     ),
                     Signed::Unsigned => {
                         let d_reg =
-                            ScalarRegister::D.fmt_with_operand_width(OperandWidth::QuadWord);
+                            IntegerRegister::D.fmt_with_operand_width(OperandWidth::QuadWord);
 
                         format!(
                             "\txorq\t%{}, %{}\n\tdiv{}\t%{}\n",
@@ -1211,13 +1238,13 @@ fn codegen_division<OP: Operand>(
                     DivisionVariant::Division => format!(
                         "\tmov{}\t%{}, %{}\n",
                         operand_suffix,
-                        ScalarRegister::A.fmt_with_operand_width(width),
+                        IntegerRegister::A.fmt_with_operand_width(width),
                         ret_val.fmt_with_operand_width(width)
                     ),
                     DivisionVariant::Modulo => format!(
                         "\tmov{}\t%{}, %{}\n",
                         operand_suffix,
-                        ScalarRegister::D.fmt_with_operand_width(width),
+                        IntegerRegister::D.fmt_with_operand_width(width),
                         ret_val.fmt_with_operand_width(width)
                     ),
                 }
@@ -1553,13 +1580,13 @@ fn codegen_call<OP: Operand>(
                         "\tmov{}\t%{}, %{}\n",
                         operator_suffix(width),
                         arg_retval.fmt_with_operand_width(width),
-                        ScalarRegister::D.fmt_with_operand_width(width)
+                        IntegerRegister::D.fmt_with_operand_width(width)
                     ),
                     format!("\tcall\t{}\n", func_name),
                     format!(
                         "\tmov{}\t%{}, {}\n",
                         operator_suffix(width),
-                        ScalarRegister::A.fmt_with_operand_width(width),
+                        IntegerRegister::A.fmt_with_operand_width(width),
                         ret_val.fmt_with_operand_width(width),
                     ),
                 ],
@@ -1571,7 +1598,7 @@ fn codegen_call<OP: Operand>(
             format!(
                 "\tmov{}\t%{}, %{}\n",
                 operator_suffix(width),
-                ScalarRegister::A.fmt_with_operand_width(width),
+                IntegerRegister::A.fmt_with_operand_width(width),
                 ret_val.fmt_with_operand_width(width),
             ),
         ]
@@ -1584,7 +1611,7 @@ fn codegen_return<OP: Operand>(ty: ast::Type, ret_val: &OP, func_name: &str) -> 
         "\tmov{}\t%{}, %{}\n",
         operator_suffix(width),
         ret_val.fmt_with_operand_width(width),
-        ScalarRegister::A.fmt_with_operand_width(width)
+        IntegerRegister::A.fmt_with_operand_width(width)
     )]
     .into_iter()
     .chain(codegen_jump(format!("func_{}_ret", func_name)).into_iter())
