@@ -406,30 +406,8 @@ fn codegen_load_local(
     scale: usize,
 ) -> Vec<String> {
     let scale_by = -((ty.size() * scale) as isize);
-    /*
-    let width = operand_width_of_type(ty);
-
-    if scale == 0 {
-        vec![format!(
-            "\tmov{}\t{}({}), {}\n",
-            operator_suffix(width),
-            offset,
-            BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
-            ret.fmt_with_operand_width(width)
-        )]
-    } else {
-        vec![format!(
-            "\tmov{}\t{}+{}({}), {}\n",
-            operator_suffix(width),
-            offset,
-            scale_by,
-            BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
-            ret.fmt_with_operand_width(width)
-        )]
-    }
-    */
-
     let scaled_offset = offset + scale_by;
+
     *ret = RegisterOrOffset::Offset(scaled_offset);
     vec![]
 }
@@ -1153,19 +1131,29 @@ fn codegen_subtraction(
     let width = operand_width_of_type(ty);
 
     allocator.allocate_general_purpose_register_then(|allocator, rhs_ret_val| {
-        let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
-        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, *rhs);
+        allocator.allocate_general_purpose_register_then(|allocator, lhs_ret_val| {
+            let lhs_ctx = codegen_expr(allocator, lhs_ret_val, *lhs);
+            let rhs_ctx = codegen_expr(allocator, rhs_ret_val, *rhs);
 
-        flattenable_instructions!(
-            lhs_ctx,
-            rhs_ctx,
-            vec![format!(
-                "\tsub{}\t{}, {}\n",
-                operator_suffix(width),
-                rhs_ret_val.fmt_with_operand_width(width),
-                ret_val.fmt_with_operand_width(width)
-            )],
-        )
+            flattenable_instructions!(
+                lhs_ctx,
+                rhs_ctx,
+                vec![
+                    format!(
+                        "\tmov{}\t{}, {}\n",
+                        operator_suffix(width),
+                        lhs_ret_val.fmt_with_operand_width(width),
+                        ret_val.fmt_with_operand_width(width)
+                    ),
+                    format!(
+                        "\tsub{}\t{}, {}\n",
+                        operator_suffix(width),
+                        rhs_ret_val.fmt_with_operand_width(width),
+                        ret_val.fmt_with_operand_width(width)
+                    )
+                ],
+            )
+        })
     })
 }
 
@@ -1178,20 +1166,30 @@ fn codegen_multiplication(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
 
-    allocator.allocate_general_purpose_register_then(|allocator, lhs_retval| {
-        let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
-        let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
+    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret_val| {
+        allocator.allocate_general_purpose_register_then(|allocator, lhs_ret_val| {
+            let lhs_ctx = codegen_expr(allocator, lhs_ret_val, *lhs);
+            let rhs_ctx = codegen_expr(allocator, rhs_ret_val, *rhs);
 
-        flattenable_instructions!(
-            lhs_ctx,
-            rhs_ctx,
-            vec![format!(
-                "\timul{}\t{}, {}\n",
-                operator_suffix(width),
-                lhs_retval.fmt_with_operand_width(width),
-                ret_val.fmt_with_operand_width(width)
-            )],
-        )
+            flattenable_instructions!(
+                lhs_ctx,
+                rhs_ctx,
+                vec![
+                    format!(
+                        "\tmov{}\t{}, {}\n",
+                        operator_suffix(width),
+                        rhs_ret_val.fmt_with_operand_width(width),
+                        ret_val.fmt_with_operand_width(width)
+                    ),
+                    format!(
+                        "\timul{}\t{}, {}\n",
+                        operator_suffix(width),
+                        lhs_ret_val.fmt_with_operand_width(width),
+                        ret_val.fmt_with_operand_width(width)
+                    )
+                ],
+            )
+        })
     })
 }
 
@@ -1214,56 +1212,58 @@ fn codegen_division(
 
     let width = operand_width_of_type(ty);
 
-    allocator.allocate_general_purpose_register_then(|allocator, rhs_retval| {
-        let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
-        let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
-        let operand_suffix = operator_suffix(width);
+    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret_val| {
+        allocator.allocate_general_purpose_register_then(|allocator, rhs_ret_val| {
+            let lhs_ctx = codegen_expr(allocator, lhs_ret_val, *lhs);
+            let rhs_ctx = codegen_expr(allocator, rhs_ret_val, *rhs);
+            let operand_suffix = operator_suffix(width);
 
-        flattenable_instructions!(
-            lhs_ctx,
-            rhs_ctx,
-            vec![
-                format!(
-                    "\tmov{}\t{}, {}\n",
-                    operand_suffix,
-                    ret_val.fmt_with_operand_width(width),
-                    IntegerRegister::A.fmt_with_operand_width(width)
-                ),
-                match sign {
-                    Signed::Signed => format!(
-                        "\tcqo\n\tidiv{}\t{}\n",
+            flattenable_instructions!(
+                lhs_ctx,
+                rhs_ctx,
+                vec![
+                    format!(
+                        "\tmov{}\t{}, {}\n",
                         operand_suffix,
-                        rhs_retval.fmt_with_operand_width(width)
+                        lhs_ret_val.fmt_with_operand_width(width),
+                        IntegerRegister::A.fmt_with_operand_width(width)
                     ),
-                    Signed::Unsigned => {
-                        let d_reg =
-                            IntegerRegister::D.fmt_with_operand_width(OperandWidth::QuadWord);
-
-                        format!(
-                            "\txorq\t{}, {}\n\tdiv{}\t{}\n",
-                            d_reg,
-                            d_reg,
+                    match sign {
+                        Signed::Signed => format!(
+                            "\tcqo\n\tidiv{}\t{}\n",
                             operand_suffix,
-                            rhs_retval.fmt_with_operand_width(width)
-                        )
+                            rhs_ret_val.fmt_with_operand_width(width)
+                        ),
+                        Signed::Unsigned => {
+                            let d_reg =
+                                IntegerRegister::D.fmt_with_operand_width(OperandWidth::QuadWord);
+
+                            format!(
+                                "\txorq\t{}, {}\n\tdiv{}\t{}\n",
+                                d_reg,
+                                d_reg,
+                                operand_suffix,
+                                rhs_ret_val.fmt_with_operand_width(width)
+                            )
+                        }
+                    },
+                    match division_variant {
+                        DivisionVariant::Division => format!(
+                            "\tmov{}\t{}, {}\n",
+                            operand_suffix,
+                            IntegerRegister::A.fmt_with_operand_width(width),
+                            ret_val.fmt_with_operand_width(width)
+                        ),
+                        DivisionVariant::Modulo => format!(
+                            "\tmov{}\t{}, {}\n",
+                            operand_suffix,
+                            IntegerRegister::D.fmt_with_operand_width(width),
+                            ret_val.fmt_with_operand_width(width)
+                        ),
                     }
-                },
-                match division_variant {
-                    DivisionVariant::Division => format!(
-                        "\tmov{}\t{}, {}\n",
-                        operand_suffix,
-                        IntegerRegister::A.fmt_with_operand_width(width),
-                        ret_val.fmt_with_operand_width(width)
-                    ),
-                    DivisionVariant::Modulo => format!(
-                        "\tmov{}\t{}, {}\n",
-                        operand_suffix,
-                        IntegerRegister::D.fmt_with_operand_width(width),
-                        ret_val.fmt_with_operand_width(width)
-                    ),
-                }
-            ],
-        )
+                ],
+            )
+        })
     })
 }
 
