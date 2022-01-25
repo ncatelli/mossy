@@ -405,7 +405,8 @@ fn codegen_load_local(
     offset: isize,
     scale: usize,
 ) -> Vec<String> {
-    let scale_by = ty.size() * scale;
+    let scale_by = -((ty.size() * scale) as isize);
+    /*
     let width = operand_width_of_type(ty);
 
     if scale == 0 {
@@ -426,6 +427,11 @@ fn codegen_load_local(
             ret.fmt_with_operand_width(width)
         )]
     }
+    */
+
+    let scaled_offset = offset + scale_by;
+    *ret = RegisterOrOffset::Offset(scaled_offset);
+    vec![]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

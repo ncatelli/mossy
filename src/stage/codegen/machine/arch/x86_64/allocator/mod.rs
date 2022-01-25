@@ -42,7 +42,8 @@ where
                 format!(
                     "{}({})",
                     offset,
-                    register::BasePointerRegister.fmt_with_operand_width(width)
+                    register::BasePointerRegister
+                        .fmt_with_operand_width(register::OperandWidth::QuadWord)
                 )
             }
         }
