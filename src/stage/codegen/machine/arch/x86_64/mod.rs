@@ -490,6 +490,45 @@ fn codegen_inc_or_dec_expression_from_identifier(
     }
 }
 
+fn codegen_inc_or_dec_expression_from_local_offset(
+    ty: ast::Type,
+    allocator: &mut SysVAllocator,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
+    offset: isize,
+    expr_op: IncDecExpression,
+) -> Vec<String> {
+    let width = operand_width_of_type(ty.clone());
+
+    let op = match expr_op {
+        IncDecExpression::PreIncrement | IncDecExpression::PostIncrement => format!(
+            "\tinc{}\t{}({})\n",
+            operator_suffix(width),
+            offset,
+            BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+        ),
+        IncDecExpression::PreDecrement | IncDecExpression::PostDecrement => format!(
+            "\tdec{}\t{}({})\n",
+            operator_suffix(width),
+            offset,
+            BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+        ),
+    };
+
+    match expr_op {
+        IncDecExpression::PreIncrement | IncDecExpression::PreDecrement => {
+            flattenable_instructions!(vec![op], codegen_load_local(ty, ret, offset, 0),)
+        }
+        IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => allocator
+            .allocate_general_purpose_register_then(|_, post_inc_op_reg| {
+                flattenable_instructions!(
+                    codegen_load_local(ty.clone(), post_inc_op_reg, offset, 0),
+                    codegen_mov(ty, post_inc_op_reg, ret),
+                    vec![op],
+                )
+            }),
+    }
+}
+
 fn codegen_inc_or_dec_expression_from_pointer(
     ty: ast::Type,
     allocator: &mut SysVAllocator,
@@ -817,6 +856,21 @@ fn codegen_expr(
                 &identifier,
                 IncDecExpression::PreIncrement,
             ),
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
+            ) => allocator
+                .get_slot_offset(slot)
+                .map(|offset_start| {
+                    codegen_inc_or_dec_expression_from_local_offset(
+                        ty,
+                        allocator,
+                        ret,
+                        offset_start,
+                        IncDecExpression::PreIncrement,
+                    )
+                })
+                .expect("local stack slot is undeclared"),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret, *expr),
@@ -840,6 +894,21 @@ fn codegen_expr(
                 &identifier,
                 IncDecExpression::PreDecrement,
             ),
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
+            ) => allocator
+                .get_slot_offset(slot)
+                .map(|offset_start| {
+                    codegen_inc_or_dec_expression_from_local_offset(
+                        ty,
+                        allocator,
+                        ret,
+                        offset_start,
+                        IncDecExpression::PreDecrement,
+                    )
+                })
+                .expect("local stack slot is undeclared"),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret, *expr),
@@ -863,6 +932,21 @@ fn codegen_expr(
                 &identifier,
                 IncDecExpression::PostIncrement,
             ),
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
+            ) => allocator
+                .get_slot_offset(slot)
+                .map(|offset_start| {
+                    codegen_inc_or_dec_expression_from_local_offset(
+                        ty,
+                        allocator,
+                        ret,
+                        offset_start,
+                        IncDecExpression::PostIncrement,
+                    )
+                })
+                .expect("local stack slot is undeclared"),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret, *expr),
@@ -886,6 +970,21 @@ fn codegen_expr(
                 &identifier,
                 IncDecExpression::PostDecrement,
             ),
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
+            ) => allocator
+                .get_slot_offset(slot)
+                .map(|offset_start| {
+                    codegen_inc_or_dec_expression_from_local_offset(
+                        ty,
+                        allocator,
+                        ret,
+                        offset_start,
+                        IncDecExpression::PostDecrement,
+                    )
+                })
+                .expect("local stack slot is undeclared"),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret, *expr),
