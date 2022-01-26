@@ -592,22 +592,19 @@ impl TypeAnalysis {
 
             ExprNode::BitOr(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
-                .map(|(_, lhs, rhs)| {
-                    let ty = ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::One);
+                .map(|(ty, lhs, rhs)| {
                     ast::TypedExprNode::BitOr(ty, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "incompatible types for bitwise or operation".to_string()),
             ExprNode::BitXor(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
-                .map(|(_, lhs, rhs)| {
-                    let ty = ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::One);
+                .map(|(ty, lhs, rhs)| {
                     ast::TypedExprNode::BitXor(ty, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "incompatible types for bitwise xor operation".to_string()),
             ExprNode::BitAnd(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
-                .map(|(_, lhs, rhs)| {
-                    let ty = ast::Type::Integer(ast::Signed::Unsigned, ast::IntegerWidth::One);
+                .map(|(ty, lhs, rhs)| {
                     ast::TypedExprNode::BitAnd(ty, Box::new(lhs), Box::new(rhs))
                 })
                 .ok_or_else(|| "incompatible types for bitwise and operation".to_string()),

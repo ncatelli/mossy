@@ -3,6 +3,52 @@ use std::ops::Range;
 pub use crate::stage::type_check::ast::ByteSized;
 
 pub mod register;
+use register::WidthFormatted;
+
+/// Provides an enumerable type for a location that can be either a
+/// register or offset.
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum RegisterOrOffset<GP>
+where
+    GP: WidthFormatted,
+{
+    Register(GP),
+    Offset(isize),
+}
+
+impl<GP> WidthFormatted for RegisterOrOffset<GP>
+where
+    GP: WidthFormatted,
+    <GP as register::WidthFormatted>::Output: std::string::ToString,
+{
+    type Output = String;
+
+    fn fmt_with_operand_width(&self, width: register::OperandWidth) -> Self::Output {
+        (&self).fmt_with_operand_width(width)
+    }
+}
+
+impl<GP> WidthFormatted for &RegisterOrOffset<GP>
+where
+    GP: WidthFormatted,
+    <GP as register::WidthFormatted>::Output: std::string::ToString,
+{
+    type Output = String;
+
+    fn fmt_with_operand_width(&self, width: register::OperandWidth) -> Self::Output {
+        match self {
+            RegisterOrOffset::Register(reg) => reg.fmt_with_operand_width(width).to_string(),
+            RegisterOrOffset::Offset(offset) => {
+                format!(
+                    "{}({})",
+                    offset,
+                    register::BasePointerRegister
+                        .fmt_with_operand_width(register::OperandWidth::QuadWord)
+                )
+            }
+        }
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct SysVAllocator {
@@ -20,16 +66,31 @@ impl SysVAllocator {
 }
 
 impl SysVAllocator {
-    pub fn allocate_gp_register_then<F, R>(&mut self, f: F) -> R
+    /// Handles the allocation of, and corresponding free of a general-purpose
+    /// register, which is passed to a given closure. The return of the closure
+    /// is returned after freeing the register.
+    pub fn allocate_general_purpose_register_then<F, R>(&mut self, f: F) -> R
     where
-        F: FnOnce(&mut Self, &register::GeneralPurposeRegister) -> R,
+        F: FnOnce(&mut Self, &mut RegisterOrOffset<&register::GeneralPurposeRegister>) -> R,
     {
         self.general_purpose_reg_allocator
             .allocate()
             .map(|guard| {
-                let ret_val = f(self, guard.borrow_inner());
+                let ret_val = f(self, &mut RegisterOrOffset::Register(guard.borrow_inner()));
                 ret_val
             })
+            .expect("unable to allocate register")
+    }
+
+    /// Allocates a register, passing the corresponding register ticket to a closure.
+    #[allow(unused)]
+    pub fn allocate_general_purpose_register_with_guard_then<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut Self, RegisterOrOffset<register::RegisterAllocationGuard>) -> R,
+    {
+        self.general_purpose_reg_allocator
+            .allocate()
+            .map(|guard| f(self, RegisterOrOffset::Register(guard)))
             .expect("unable to allocate register")
     }
 

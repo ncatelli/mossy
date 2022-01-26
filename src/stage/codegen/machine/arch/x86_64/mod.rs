@@ -10,11 +10,33 @@ static BLOCK_ID: AtomicUsize = AtomicUsize::new(0);
 mod allocator;
 use allocator::{
     register::{
-        BasePointerRegister, GPRegisterAllocator, GeneralPurposeRegister, OperandWidth,
-        PointerRegister, ScalarRegister, WidthFormatted,
+        BasePointerRegister, GPRegisterAllocator, GeneralPurposeRegister, IntegerRegister,
+        OperandWidth, PointerRegister, WidthFormatted,
     },
-    SysVAllocator,
+    RegisterOrOffset, SysVAllocator,
 };
+
+/// Operand represents a type that can be used as a return value register.
+/// Typically this will be either a register or memory offset.
+trait Operand: WidthFormatted + Copy {}
+
+impl Operand for GeneralPurposeRegister {}
+impl Operand for &GeneralPurposeRegister {}
+impl Operand for IntegerRegister {}
+
+impl<GP> Operand for allocator::RegisterOrOffset<GP>
+where
+    GP: WidthFormatted,
+    Self: WidthFormatted + Copy,
+{
+}
+
+impl<GP> Operand for &allocator::RegisterOrOffset<GP>
+where
+    GP: WidthFormatted,
+    Self: WidthFormatted + Copy,
+{
+}
 
 /// X86_64 represents the x86_64 bit machine target.
 pub struct X86_64;
@@ -119,8 +141,8 @@ fn codegen_statement(
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     match input {
         ast::TypedStmtNode::Expression(expr) => {
-            allocator.allocate_gp_register_then(|allocator, ret_val| {
-                Ok(vec![codegen_expr(allocator, ret_val, expr)])
+            allocator.allocate_general_purpose_register_then(|allocator, ret| {
+                Ok(vec![codegen_expr(allocator, ret, expr)])
             })
         }
         ast::TypedStmtNode::LocalDeclaration(dec, slot_ids) => {
@@ -142,20 +164,19 @@ fn codegen_statement(
 
             Ok(vec![])
         }
-        ast::TypedStmtNode::Return(ty, id, arg) => {
-            allocator.allocate_gp_register_then(|allocator, ret_val| {
+        ast::TypedStmtNode::Return(ty, id, arg) => allocator
+            .allocate_general_purpose_register_then(|allocator, ret| {
                 let res: Vec<String> = if let Some(expr) = arg {
-                    codegen_expr(allocator, ret_val, expr)
+                    codegen_expr(allocator, ret, expr)
                 } else {
                     vec![]
                 }
                 .into_iter()
-                .chain(codegen_return(ty, ret_val, &id))
+                .chain(codegen_return(ty, ret, &id))
                 .collect();
 
                 Ok(vec![res])
-            })
-        }
+            }),
 
         // with else case
         ast::TypedStmtNode::If(cond, true_case, Some(false_case)) => {
@@ -183,29 +204,38 @@ fn codegen_if_statement_with_else(
     true_case: ast::TypedCompoundStmts,
     false_case: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
-    allocator.allocate_gp_register_then(|allocator, ret_val| {
-        let cond_ctx = codegen_expr(allocator, ret_val, cond);
-        let exit_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let true_case_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let tctx = codegen_statements(allocator, true_case)?;
-        let else_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let block_ctx = codegen_statements(allocator, false_case)?;
+    allocator.allocate_general_purpose_register_then(|allocator, ret| {
+        allocator.allocate_general_purpose_register_then(|allocator, cond_expr_ret| {
+            let cond_expr_ty = cond.r#type();
+            let cond_ctx = codegen_expr(allocator, cond_expr_ret, cond);
+            let exit_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let true_case_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let tctx = codegen_statements(allocator, true_case)?;
+            let else_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let block_ctx = codegen_statements(allocator, false_case)?;
 
-        Ok(flattenable_instructions!(
-            cond_ctx,
-            codegen_compare_and_jmp(
-                allocator,
-                ret_val,
-                LLabelPrefix(true_case_block_id),
-                LLabelPrefix(else_block_id)
-            ),
-            codegen_label(LLabelPrefix(true_case_block_id)),
-            tctx,
-            codegen_jump(LLabelPrefix(exit_block_id)),
-            codegen_label(LLabelPrefix(else_block_id)),
-            block_ctx,
-            codegen_label(LLabelPrefix(exit_block_id)),
-        ))
+            Ok(flattenable_instructions!(
+                cond_ctx,
+                vec![format!(
+                    "\tand{}\t$0, {}\n",
+                    operator_suffix(OperandWidth::QuadWord),
+                    ret.fmt_with_operand_width(OperandWidth::QuadWord)
+                )],
+                codegen_mov(cond_expr_ty, cond_expr_ret, ret),
+                codegen_compare_and_jmp(
+                    allocator,
+                    ret,
+                    LLabelPrefix(true_case_block_id),
+                    LLabelPrefix(else_block_id)
+                ),
+                codegen_label(LLabelPrefix(true_case_block_id)),
+                tctx,
+                codegen_jump(LLabelPrefix(exit_block_id)),
+                codegen_label(LLabelPrefix(else_block_id)),
+                block_ctx,
+                codegen_label(LLabelPrefix(exit_block_id)),
+            ))
+        })
     })
 }
 
@@ -214,24 +244,33 @@ fn codegen_if_statement_without_else(
     cond: ast::TypedExprNode,
     true_case: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
-    allocator.allocate_gp_register_then(|allocator, ret_val| {
-        let cond_ctx = codegen_expr(allocator, ret_val, cond);
-        let exit_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let true_case_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let tctx = codegen_statements(allocator, true_case)?;
+    allocator.allocate_general_purpose_register_then(|allocator, ret| {
+        allocator.allocate_general_purpose_register_then(|allocator, cond_expr_ret| {
+            let cond_expr_ty = cond.r#type();
+            let cond_ctx = codegen_expr(allocator, cond_expr_ret, cond);
+            let exit_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let true_case_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let tctx = codegen_statements(allocator, true_case)?;
 
-        Ok(flattenable_instructions!(
-            cond_ctx,
-            codegen_compare_and_jmp(
-                allocator,
-                ret_val,
-                LLabelPrefix(true_case_block_id),
-                LLabelPrefix(exit_block_id)
-            ),
-            codegen_label(LLabelPrefix(true_case_block_id)),
-            tctx,
-            codegen_label(LLabelPrefix(exit_block_id)),
-        ))
+            Ok(flattenable_instructions!(
+                cond_ctx,
+                vec![format!(
+                    "\tand{}\t$0, {}\n",
+                    operator_suffix(OperandWidth::QuadWord),
+                    ret.fmt_with_operand_width(OperandWidth::QuadWord)
+                )],
+                codegen_mov(cond_expr_ty, cond_expr_ret, ret),
+                codegen_compare_and_jmp(
+                    allocator,
+                    ret,
+                    LLabelPrefix(true_case_block_id),
+                    LLabelPrefix(exit_block_id)
+                ),
+                codegen_label(LLabelPrefix(true_case_block_id)),
+                tctx,
+                codegen_label(LLabelPrefix(exit_block_id)),
+            ))
+        })
     })
 }
 
@@ -240,27 +279,36 @@ fn codegen_while_statement(
     cond: ast::TypedExprNode,
     block: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
-    allocator.allocate_gp_register_then(|allocator, ret_val| {
-        let cond_ctx = codegen_expr(allocator, ret_val, cond);
-        let loop_cond_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let loop_start_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let loop_end_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let block_insts = codegen_statements(allocator, block)?;
+    allocator.allocate_general_purpose_register_then(|allocator, ret| {
+        allocator.allocate_general_purpose_register_then(|allocator, cond_expr_ret_val| {
+            let cond_expr_ty = cond.r#type();
+            let cond_ctx = codegen_expr(allocator, cond_expr_ret_val, cond);
+            let loop_cond_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let loop_start_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let loop_end_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let block_insts = codegen_statements(allocator, block)?;
 
-        Ok(flattenable_instructions!(
-            codegen_label(LLabelPrefix(loop_cond_block_id)),
-            cond_ctx,
-            codegen_compare_and_jmp(
-                allocator,
-                ret_val,
-                LLabelPrefix(loop_start_block_id),
-                LLabelPrefix(loop_end_block_id)
-            ),
-            codegen_label(LLabelPrefix(loop_start_block_id)),
-            block_insts,
-            codegen_jump(LLabelPrefix(loop_cond_block_id)),
-            codegen_label(LLabelPrefix(loop_end_block_id)),
-        ))
+            Ok(flattenable_instructions!(
+                codegen_label(LLabelPrefix(loop_cond_block_id)),
+                cond_ctx,
+                vec![format!(
+                    "\tand{}\t$0, {}\n",
+                    operator_suffix(OperandWidth::QuadWord),
+                    ret.fmt_with_operand_width(OperandWidth::QuadWord)
+                )],
+                codegen_mov(cond_expr_ty, cond_expr_ret_val, ret),
+                codegen_compare_and_jmp(
+                    allocator,
+                    ret,
+                    LLabelPrefix(loop_start_block_id),
+                    LLabelPrefix(loop_end_block_id)
+                ),
+                codegen_label(LLabelPrefix(loop_start_block_id)),
+                block_insts,
+                codegen_jump(LLabelPrefix(loop_cond_block_id)),
+                codegen_label(LLabelPrefix(loop_end_block_id)),
+            ))
+        })
     })
 }
 
@@ -271,43 +319,52 @@ fn codegen_for_statement(
     postop: ast::TypedStmtNode,
     block: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
-    allocator.allocate_gp_register_then(|allocator, ret_val| {
-        let preop_ctx = codegen_statement(allocator, preop)?;
-        let cond_ctx = codegen_expr(allocator, ret_val, cond);
-        let postop_ctx = codegen_statement(allocator, postop)?;
-        let loop_cond_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let loop_start_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let loop_end_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let block_insts = codegen_statements(allocator, block)?;
+    allocator.allocate_general_purpose_register_then(|allocator, ret| {
+        allocator.allocate_general_purpose_register_then(|allocator, cond_expr_ret_val| {
+            let preop_ctx = codegen_statement(allocator, preop)?;
+            let cond_expr_ty = cond.r#type();
+            let cond_ctx = codegen_expr(allocator, cond_expr_ret_val, cond);
+            let postop_ctx = codegen_statement(allocator, postop)?;
+            let loop_cond_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let loop_start_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let loop_end_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let block_insts = codegen_statements(allocator, block)?;
 
-        Ok(flattenable_instructions!(
-            preop_ctx,
-            codegen_label(LLabelPrefix(loop_cond_block_id)),
-            cond_ctx,
-            codegen_compare_and_jmp(
-                allocator,
-                ret_val,
-                LLabelPrefix(loop_start_block_id),
-                LLabelPrefix(loop_end_block_id)
-            ),
-            codegen_label(LLabelPrefix(loop_start_block_id)),
-            block_insts,
-            postop_ctx,
-            codegen_jump(LLabelPrefix(loop_cond_block_id)),
-            codegen_label(LLabelPrefix(loop_end_block_id)),
-        ))
+            Ok(flattenable_instructions!(
+                preop_ctx,
+                codegen_label(LLabelPrefix(loop_cond_block_id)),
+                cond_ctx,
+                vec![format!(
+                    "\tand{}\t$0, {}\n",
+                    operator_suffix(OperandWidth::QuadWord),
+                    ret.fmt_with_operand_width(OperandWidth::QuadWord)
+                )],
+                codegen_mov(cond_expr_ty, cond_expr_ret_val, ret),
+                codegen_compare_and_jmp(
+                    allocator,
+                    ret,
+                    LLabelPrefix(loop_start_block_id),
+                    LLabelPrefix(loop_end_block_id)
+                ),
+                codegen_label(LLabelPrefix(loop_start_block_id)),
+                block_insts,
+                postop_ctx,
+                codegen_jump(LLabelPrefix(loop_cond_block_id)),
+                codegen_label(LLabelPrefix(loop_end_block_id)),
+            ))
+        })
     })
 }
 
 pub fn codegen_function_preamble(identifier: &str, alignment: isize) -> Vec<String> {
     vec![format!(
         "\t.text
-    .globl  {name}
-    .type   {name}, @function
+\t.globl\t{name}
+\t.type\t{name}, @function
 {name}:
-    pushq   %rbp
-    movq	%rsp, %rbp
-    subq    ${alignment}, %rsp\n",
+\tpushq\t%rbp
+\tmovq\t%rsp, %rbp
+\tsubq\t${alignment}, %rsp\n",
         name = identifier,
         alignment = alignment
     )]
@@ -319,8 +376,8 @@ pub fn codegen_function_postamble(identifier: &str, alignment: isize) -> Vec<Str
         .chain(
             vec![format!(
                 "\taddq\t${}, %rsp
-    popq\t%rbp
-    ret\n\n",
+\tpopq\t%rbp
+\tret\n\n",
                 alignment
             )]
             .into_iter(),
@@ -339,12 +396,12 @@ fn codegen_global_symbol(ty: &ast::Type, identifier: &str, count: usize) -> Vec<
 
 fn codegen_store_global(
     ty: ast::Type,
-    ret: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     identifier: &str,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty);
     vec![format!(
-        "\tmov{}\t%{}, {}(%{})\n",
+        "\tmov{}\t{}, {}({})\n",
         operator_suffix(width),
         ret.fmt_with_operand_width(width),
         identifier,
@@ -364,10 +421,14 @@ fn codegen_global_str(identifier: &str, str_literal: &[u8]) -> Vec<String> {
     )
 }
 
-fn codegen_store_local(ty: ast::Type, ret: &GeneralPurposeRegister, offset: isize) -> Vec<String> {
+fn codegen_store_local(
+    ty: ast::Type,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
+    offset: isize,
+) -> Vec<String> {
     let width = operand_width_of_type(ty);
     vec![format!(
-        "\tmov{}\t%{}, {}(%{})\n",
+        "\tmov{}\t{}, {}({})\n",
         operator_suffix(width),
         ret.fmt_with_operand_width(width),
         offset,
@@ -377,31 +438,15 @@ fn codegen_store_local(ty: ast::Type, ret: &GeneralPurposeRegister, offset: isiz
 
 fn codegen_load_local(
     ty: ast::Type,
-    ret: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     offset: isize,
     scale: usize,
 ) -> Vec<String> {
-    let scale_by = ty.size() * scale;
-    let width = operand_width_of_type(ty);
+    let scale_by = -((ty.size() * scale) as isize);
+    let scaled_offset = offset + scale_by;
 
-    if scale == 0 {
-        vec![format!(
-            "\tmov{}\t{}(%{}), %{}\n",
-            operator_suffix(width),
-            offset,
-            BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
-            ret.fmt_with_operand_width(width)
-        )]
-    } else {
-        vec![format!(
-            "\tmov{}\t{}+{}(%{}), %{}\n",
-            operator_suffix(width),
-            offset,
-            scale_by,
-            BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
-            ret.fmt_with_operand_width(width)
-        )]
-    }
+    *ret = RegisterOrOffset::Offset(scaled_offset);
+    vec![]
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -414,7 +459,7 @@ enum IncDecExpression {
 
 fn codegen_inc_or_dec_expression_from_identifier(
     ty: ast::Type,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     identifier: &str,
     expr_op: IncDecExpression,
 ) -> Vec<String> {
@@ -422,13 +467,13 @@ fn codegen_inc_or_dec_expression_from_identifier(
 
     let op = match expr_op {
         IncDecExpression::PreIncrement | IncDecExpression::PostIncrement => format!(
-            "\tinc{}\t{}(%{})\n",
+            "\tinc{}\t{}({})\n",
             operator_suffix(width),
             identifier,
             PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
         ),
         IncDecExpression::PreDecrement | IncDecExpression::PostDecrement => format!(
-            "\tdec{}\t{}(%{})\n",
+            "\tdec{}\t{}({})\n",
             operator_suffix(width),
             identifier,
             PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
@@ -437,10 +482,10 @@ fn codegen_inc_or_dec_expression_from_identifier(
 
     match expr_op {
         IncDecExpression::PreIncrement | IncDecExpression::PreDecrement => {
-            flattenable_instructions!(vec![op], codegen_load_global(ty, ret_val, identifier, 0),)
+            flattenable_instructions!(vec![op], codegen_load_global(ty, ret, identifier, 0),)
         }
         IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => {
-            flattenable_instructions!(codegen_load_global(ty, ret_val, identifier, 0), vec![op],)
+            flattenable_instructions!(codegen_load_global(ty, ret, identifier, 0), vec![op],)
         }
     }
 }
@@ -448,20 +493,20 @@ fn codegen_inc_or_dec_expression_from_identifier(
 fn codegen_inc_or_dec_expression_from_pointer(
     ty: ast::Type,
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     expr_op: IncDecExpression,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_gp_register_then(|_, ptr_reg| {
+    allocator.allocate_general_purpose_register_then(|_, ptr_reg| {
         let op = match expr_op {
             IncDecExpression::PreIncrement | IncDecExpression::PostIncrement => format!(
-                "\tinc{}\t(%{})\n",
+                "\tinc{}\t({})\n",
                 operator_suffix(width),
                 ptr_reg.fmt_with_operand_width(OperandWidth::QuadWord),
             ),
             IncDecExpression::PreDecrement | IncDecExpression::PostDecrement => format!(
-                "\tdec{}\t(%{})\n",
+                "\tdec{}\t({})\n",
                 operator_suffix(width),
                 ptr_reg.fmt_with_operand_width(OperandWidth::QuadWord),
             ),
@@ -470,27 +515,15 @@ fn codegen_inc_or_dec_expression_from_pointer(
         match expr_op {
             IncDecExpression::PreIncrement | IncDecExpression::PreDecrement => {
                 flattenable_instructions!(
-                    vec![
-                        format!(
-                            "\tmov{}\t%{}, %{}\n",
-                            operator_suffix(OperandWidth::QuadWord),
-                            ret_val.fmt_with_operand_width(OperandWidth::QuadWord),
-                            ptr_reg.fmt_with_operand_width(OperandWidth::QuadWord)
-                        ),
-                        op,
-                    ],
-                    codegen_deref(ret_val, ty, 0),
+                    codegen_mov_with_explicit_width(OperandWidth::QuadWord, ret, ptr_reg),
+                    vec![op],
+                    codegen_deref(ty, ret, 0),
                 )
             }
             IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => {
                 flattenable_instructions!(
-                    vec![format!(
-                        "\tmov{}\t%{}, %{}\n",
-                        operator_suffix(OperandWidth::QuadWord),
-                        ret_val.fmt_with_operand_width(OperandWidth::QuadWord),
-                        ptr_reg.fmt_with_operand_width(OperandWidth::QuadWord)
-                    )],
-                    codegen_deref(ret_val, ty, 0),
+                    codegen_mov_with_explicit_width(OperandWidth::QuadWord, ret, ptr_reg),
+                    codegen_deref(ty, ret, 0),
                     vec![op],
                 )
             }
@@ -500,7 +533,7 @@ fn codegen_inc_or_dec_expression_from_pointer(
 
 fn codegen_load_global(
     ty: ast::Type,
-    ret: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     identifier: &str,
     scale: usize,
 ) -> Vec<String> {
@@ -509,7 +542,7 @@ fn codegen_load_global(
 
     if scale == 0 {
         vec![format!(
-            "\tmov{}\t{}(%{}), %{}\n",
+            "\tmov{}\t{}({}), {}\n",
             operator_suffix(width),
             identifier,
             PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
@@ -517,7 +550,7 @@ fn codegen_load_global(
         )]
     } else {
         vec![format!(
-            "\tmov{}\t{}+{}(%{}), %{}\n",
+            "\tmov{}\t{}+{}({}), {}\n",
             operator_suffix(width),
             identifier,
             scale_by,
@@ -575,7 +608,7 @@ where
 
 fn codegen_expr(
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     expr: ast::TypedExprNode,
 ) -> Vec<String> {
     use crate::stage::type_check::ast::{IntegerWidth, Primary, Signed, TypedExprNode};
@@ -585,13 +618,13 @@ fn codegen_expr(
             (_, IntegerWidth::One) => {
                 let boolean_literal = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
                     .expect("value exceeds unsigned 8-bit integer");
-                codegen_constant_u8(ret_val, boolean_literal)
+                codegen_constant_u8(ret, boolean_literal)
             }
 
             (Signed::Signed, IntegerWidth::Eight) => {
                 let signed_literal = u64::from_le_bytes(value);
                 if signed_literal.leading_zeros() >= 56 {
-                    codegen_constant_i8(ret_val, signed_literal as i8)
+                    codegen_constant_i8(ret, signed_literal as i8)
                 } else {
                     panic!("value exceeds signed 8-bit integer")
                 }
@@ -599,7 +632,7 @@ fn codegen_expr(
             (Signed::Signed, IntegerWidth::Sixteen) => {
                 let signed_literal = u64::from_le_bytes(value);
                 if signed_literal.leading_zeros() >= 48 {
-                    codegen_constant_i16(ret_val, signed_literal as i16)
+                    codegen_constant_i16(ret, signed_literal as i16)
                 } else {
                     panic!("value exceeds signed 16-bit integer")
                 }
@@ -607,141 +640,127 @@ fn codegen_expr(
             (Signed::Signed, IntegerWidth::ThirtyTwo) => {
                 let signed_literal = u64::from_le_bytes(value);
                 if signed_literal.leading_zeros() >= 32 {
-                    codegen_constant_i32(ret_val, signed_literal as i32)
+                    codegen_constant_i32(ret, signed_literal as i32)
                 } else {
                     panic!("value exceeds signed 32-bit integer")
                 }
             }
             (Signed::Signed, IntegerWidth::SixtyFour) => {
-                codegen_constant_i64(ret_val, i64::from_le_bytes(value))
+                codegen_constant_i64(ret, i64::from_le_bytes(value))
             }
             (Signed::Unsigned, IntegerWidth::Eight) => {
                 let unsigned_literal = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
                     .expect("value exceeds unsigned 8-bit integer");
-                codegen_constant_u8(ret_val, unsigned_literal)
+                codegen_constant_u8(ret, unsigned_literal)
             }
             (Signed::Unsigned, IntegerWidth::Sixteen) => {
                 let unsigned_literal = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
                     .expect("value exceeds unsigned 32-bit integer");
-                codegen_constant_u16(ret_val, unsigned_literal)
+                codegen_constant_u16(ret, unsigned_literal)
             }
             (Signed::Unsigned, IntegerWidth::ThirtyTwo) => {
                 let unsigned_literal = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
                     .expect("value exceeds unsigned 32-bit integer");
-                codegen_constant_u32(ret_val, unsigned_literal)
+                codegen_constant_u32(ret, unsigned_literal)
             }
             (Signed::Unsigned, IntegerWidth::SixtyFour) => {
-                codegen_constant_u64(ret_val, u64::from_le_bytes(value))
+                codegen_constant_u64(ret, u64::from_le_bytes(value))
             }
         },
 
         TypedExprNode::Primary(ty, Primary::Identifier(_, ast::IdentifierLocality::Global(id))) => {
-            codegen_load_global(ty, ret_val, &id, 0)
+            codegen_load_global(ty, ret, &id, 0)
         }
         TypedExprNode::Primary(
             ty,
             Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
         ) => allocator
             .get_slot_offset(slot)
-            .map(|offset_start| codegen_load_local(ty, ret_val, offset_start, 0))
+            .map(|offset_start| codegen_load_local(ty, ret, offset_start, 0))
             .expect("local stack slot is undeclared"),
         TypedExprNode::Primary(_, Primary::Str(lit)) => {
             let identifier = format!("V{}", BLOCK_ID.fetch_add(1, Ordering::SeqCst));
 
             flattenable_instructions!(
                 codegen_global_str(&identifier, &lit),
-                codegen_reference_from_identifier(ret_val, &identifier),
+                codegen_reference_from_identifier(ret, &identifier),
             )
         }
 
         TypedExprNode::FunctionCall(ty, func_name, optional_arg) => {
-            codegen_call(allocator, ty, ret_val, &func_name, optional_arg)
+            codegen_call(allocator, ty, ret, &func_name, optional_arg)
         }
 
         ast::TypedExprNode::IdentifierAssignment(
             ty,
             ast::IdentifierLocality::Global(identifier),
             expr,
-        ) => {
+        ) => allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
             flattenable_instructions!(
-                codegen_expr(allocator, ret_val, *expr),
-                codegen_store_global(ty, ret_val, &identifier),
+                codegen_expr(allocator, rhs_ret, *expr),
+                codegen_mov(ty.clone(), rhs_ret, ret),
+                codegen_store_global(ty, ret, &identifier),
             )
-        }
+        }),
         ast::TypedExprNode::IdentifierAssignment(
             ty,
             ast::IdentifierLocality::Local(slot),
             expr,
-        ) => {
+        ) => allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
             flattenable_instructions!(
-                codegen_expr(allocator, ret_val, *expr),
+                codegen_expr(allocator, rhs_ret, *expr),
+                codegen_mov(ty.clone(), rhs_ret, ret),
                 allocator
                     .get_slot_offset(slot)
-                    .map(|offset_start| { codegen_store_local(ty, ret_val, offset_start) })
+                    .map(|offset_start| { codegen_store_local(ty, ret, offset_start) })
                     .expect("local stack slot is undeclared"),
             )
-        }
-        TypedExprNode::DerefAssignment(ty, lhs, rhs) => {
-            allocator.allocate_gp_register_then(|allocator, rhs_ret_val| {
+        }),
+        TypedExprNode::DerefAssignment(ty, lhs, rhs) => allocator
+            .allocate_general_purpose_register_then(|allocator, rhs_ret| {
                 flattenable_instructions!(
-                    codegen_expr(allocator, rhs_ret_val, *rhs),
-                    codegen_expr(allocator, ret_val, *lhs),
-                    codegen_store_deref(ty, ret_val, rhs_ret_val),
+                    codegen_expr(allocator, rhs_ret, *rhs),
+                    codegen_expr(allocator, ret, *lhs),
+                    codegen_store_deref(ty, ret, rhs_ret),
                 )
-            })
-        }
+            }),
 
         TypedExprNode::LogOr(_, lhs, rhs) => {
             let ty = generate_type_specifier!(u64);
-            codegen_or(ty, allocator, ret_val, *lhs, *rhs)
+            codegen_or(ty, allocator, ret, *lhs, *rhs)
         }
         TypedExprNode::LogAnd(_, lhs, rhs) => {
             let ty = generate_type_specifier!(u64);
-            codegen_and(ty, allocator, ret_val, *lhs, *rhs)
+            codegen_and(ty, allocator, ret, *lhs, *rhs)
         }
 
-        TypedExprNode::BitOr(ty, lhs, rhs) => codegen_or(ty, allocator, ret_val, *lhs, *rhs),
-        TypedExprNode::BitXor(ty, lhs, rhs) => codegen_xor(ty, allocator, ret_val, *lhs, *rhs),
-        TypedExprNode::BitAnd(ty, lhs, rhs) => codegen_and(ty, allocator, ret_val, *lhs, *rhs),
+        TypedExprNode::BitOr(ty, lhs, rhs) => codegen_or(ty, allocator, ret, *lhs, *rhs),
+        TypedExprNode::BitXor(ty, lhs, rhs) => codegen_xor(ty, allocator, ret, *lhs, *rhs),
+        TypedExprNode::BitAnd(ty, lhs, rhs) => codegen_and(ty, allocator, ret, *lhs, *rhs),
 
         TypedExprNode::Equal(ty, lhs, rhs) => {
-            codegen_compare_and_set(allocator, ret_val, ComparisonOperation::Equal, ty, lhs, rhs)
+            codegen_compare_and_set(allocator, ret, ComparisonOperation::Equal, ty, lhs, rhs)
         }
-        TypedExprNode::NotEqual(ty, lhs, rhs) => codegen_compare_and_set(
-            allocator,
-            ret_val,
-            ComparisonOperation::NotEqual,
-            ty,
-            lhs,
-            rhs,
-        ),
-        TypedExprNode::LessThan(ty, lhs, rhs) => codegen_compare_and_set(
-            allocator,
-            ret_val,
-            ComparisonOperation::LessThan,
-            ty,
-            lhs,
-            rhs,
-        ),
+        TypedExprNode::NotEqual(ty, lhs, rhs) => {
+            codegen_compare_and_set(allocator, ret, ComparisonOperation::NotEqual, ty, lhs, rhs)
+        }
+        TypedExprNode::LessThan(ty, lhs, rhs) => {
+            codegen_compare_and_set(allocator, ret, ComparisonOperation::LessThan, ty, lhs, rhs)
+        }
         TypedExprNode::GreaterThan(ty, lhs, rhs) => codegen_compare_and_set(
             allocator,
-            ret_val,
+            ret,
             ComparisonOperation::GreaterThan,
             ty,
             lhs,
             rhs,
         ),
-        TypedExprNode::LessEqual(ty, lhs, rhs) => codegen_compare_and_set(
-            allocator,
-            ret_val,
-            ComparisonOperation::LessEqual,
-            ty,
-            lhs,
-            rhs,
-        ),
+        TypedExprNode::LessEqual(ty, lhs, rhs) => {
+            codegen_compare_and_set(allocator, ret, ComparisonOperation::LessEqual, ty, lhs, rhs)
+        }
         TypedExprNode::GreaterEqual(ty, lhs, rhs) => codegen_compare_and_set(
             allocator,
-            ret_val,
+            ret,
             ComparisonOperation::GreaterEqual,
             ty,
             lhs,
@@ -749,25 +768,25 @@ fn codegen_expr(
         ),
 
         TypedExprNode::BitShiftLeft(ty, lhs, rhs) => {
-            codegen_shift_left(ty, allocator, ret_val, *lhs, *rhs)
+            codegen_shift_left(ty, allocator, ret, *lhs, *rhs)
         }
         TypedExprNode::BitShiftRight(ty, lhs, rhs) => {
-            codegen_shift_right(ty, allocator, ret_val, *lhs, *rhs)
+            codegen_shift_right(ty, allocator, ret, *lhs, *rhs)
         }
 
         TypedExprNode::Addition(ast::Type::Pointer(ty), lhs, rhs) => {
-            codegen_addition(allocator, ret_val, ty.pointer_to(), lhs, rhs)
+            codegen_addition(allocator, ret, ty.pointer_to(), lhs, rhs)
         }
-        TypedExprNode::Addition(ty, lhs, rhs) => codegen_addition(allocator, ret_val, ty, lhs, rhs),
+        TypedExprNode::Addition(ty, lhs, rhs) => codegen_addition(allocator, ret, ty, lhs, rhs),
         TypedExprNode::Subtraction(ty, lhs, rhs) => {
-            codegen_subtraction(allocator, ret_val, ty, lhs, rhs)
+            codegen_subtraction(allocator, ret, ty, lhs, rhs)
         }
         TypedExprNode::Multiplication(ty, lhs, rhs) => {
-            codegen_multiplication(allocator, ret_val, ty, lhs, rhs)
+            codegen_multiplication(allocator, ret, ty, lhs, rhs)
         }
         TypedExprNode::Division(ty, lhs, rhs) => codegen_division(
             allocator,
-            ret_val,
+            ret,
             ty,
             lhs,
             rhs,
@@ -776,7 +795,7 @@ fn codegen_expr(
         ),
         TypedExprNode::Modulo(ty, lhs, rhs) => codegen_division(
             allocator,
-            ret_val,
+            ret,
             ty,
             lhs,
             rhs,
@@ -784,9 +803,9 @@ fn codegen_expr(
             DivisionVariant::Modulo,
         ),
 
-        TypedExprNode::LogicalNot(_, expr) => codegen_not(allocator, ret_val, *expr),
-        TypedExprNode::Negate(_, expr) => codegen_negate(allocator, ret_val, *expr),
-        TypedExprNode::Invert(_, expr) => codegen_invert(allocator, ret_val, *expr),
+        TypedExprNode::LogicalNot(_, expr) => codegen_not(allocator, ret, *expr),
+        TypedExprNode::Negate(_, expr) => codegen_negate(allocator, ret, *expr),
+        TypedExprNode::Invert(_, expr) => codegen_invert(allocator, ret, *expr),
 
         TypedExprNode::PreIncrement(_, expr) => match *expr {
             TypedExprNode::Primary(
@@ -794,17 +813,17 @@ fn codegen_expr(
                 Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
             ) => codegen_inc_or_dec_expression_from_identifier(
                 ty,
-                ret_val,
+                ret,
                 &identifier,
                 IncDecExpression::PreIncrement,
             ),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
-                    codegen_expr(allocator, ret_val, *expr),
+                    codegen_expr(allocator, ret, *expr),
                     codegen_inc_or_dec_expression_from_pointer(
                         ty,
                         allocator,
-                        ret_val,
+                        ret,
                         IncDecExpression::PreIncrement,
                     ),
                 )
@@ -817,17 +836,17 @@ fn codegen_expr(
                 Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
             ) => codegen_inc_or_dec_expression_from_identifier(
                 ty,
-                ret_val,
+                ret,
                 &identifier,
                 IncDecExpression::PreDecrement,
             ),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
-                    codegen_expr(allocator, ret_val, *expr),
+                    codegen_expr(allocator, ret, *expr),
                     codegen_inc_or_dec_expression_from_pointer(
                         ty,
                         allocator,
-                        ret_val,
+                        ret,
                         IncDecExpression::PreDecrement,
                     ),
                 )
@@ -840,17 +859,17 @@ fn codegen_expr(
                 Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
             ) => codegen_inc_or_dec_expression_from_identifier(
                 ty,
-                ret_val,
+                ret,
                 &identifier,
                 IncDecExpression::PostIncrement,
             ),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
-                    codegen_expr(allocator, ret_val, *expr),
+                    codegen_expr(allocator, ret, *expr),
                     codegen_inc_or_dec_expression_from_pointer(
                         ty,
                         allocator,
-                        ret_val,
+                        ret,
                         IncDecExpression::PostIncrement,
                     ),
                 )
@@ -863,17 +882,17 @@ fn codegen_expr(
                 Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
             ) => codegen_inc_or_dec_expression_from_identifier(
                 ty,
-                ret_val,
+                ret,
                 &identifier,
                 IncDecExpression::PostDecrement,
             ),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
-                    codegen_expr(allocator, ret_val, *expr),
+                    codegen_expr(allocator, ret, *expr),
                     codegen_inc_or_dec_expression_from_pointer(
                         ty,
                         allocator,
-                        ret_val,
+                        ret,
                         IncDecExpression::PostDecrement,
                     ),
                 )
@@ -882,162 +901,190 @@ fn codegen_expr(
         },
 
         TypedExprNode::Ref(_, ast::IdentifierLocality::Global(identifier)) => {
-            codegen_reference_from_identifier(ret_val, &identifier)
+            codegen_reference_from_identifier(ret, &identifier)
         }
         TypedExprNode::Ref(_, ast::IdentifierLocality::Local(slot)) => allocator
             .get_slot_offset(slot)
-            .map(|offset_start| codegen_reference_from_stack_offset(ret_val, offset_start))
+            .map(|offset_start| codegen_reference_from_stack_offset(ret, offset_start))
             .expect("local stack slot is undeclared"),
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(
-                codegen_expr(allocator, ret_val, *expr),
-                codegen_deref(ret_val, ty, 0),
+                codegen_expr(allocator, ret, *expr),
+                codegen_deref(ty, ret, 0),
             )
         }
         TypedExprNode::ScaleBy(ty, lhs) => {
             let scale_by_size = ty.size();
-            codegen_scaleby(allocator, ret_val, scale_by_size, lhs)
+            codegen_scaleby(allocator, ret, scale_by_size, lhs)
         }
-        TypedExprNode::Grouping(_, expr) => codegen_expr(allocator, ret_val, *expr),
+        TypedExprNode::Grouping(_, expr) => codegen_expr(allocator, ret, *expr),
     }
 }
 
-fn codegen_constant_i8(ret_val: &GeneralPurposeRegister, constant: i8) -> Vec<String> {
+fn codegen_constant_i8<OP: Operand>(ret: &mut OP, constant: i8) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
     vec![format!(
-        "\tmov{}\t${}, %{}\n",
+        "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret_val.fmt_with_operand_width(WIDTH)
+        ret.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_u8(ret_val: &GeneralPurposeRegister, constant: u8) -> Vec<String> {
+fn codegen_constant_u8<OP: Operand>(ret: &mut OP, constant: u8) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
     vec![format!(
-        "\tmov{}\t${}, %{}\n",
+        "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret_val.fmt_with_operand_width(WIDTH)
+        ret.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_i16(ret_val: &GeneralPurposeRegister, constant: i16) -> Vec<String> {
+fn codegen_constant_i16<OP: Operand>(ret: &mut OP, constant: i16) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
-        "\tmov{}\t${}, %{}\n",
+        "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret_val.fmt_with_operand_width(WIDTH)
+        ret.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_u16(ret_val: &GeneralPurposeRegister, constant: u16) -> Vec<String> {
+fn codegen_constant_u16<OP: Operand>(ret: &mut OP, constant: u16) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
-        "\tmov{}\t${}, %{}\n",
+        "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret_val.fmt_with_operand_width(WIDTH)
+        ret.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_i32(ret_val: &GeneralPurposeRegister, constant: i32) -> Vec<String> {
+fn codegen_constant_i32<OP: Operand>(ret: &mut OP, constant: i32) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
-        "\tmov{}\t${}, %{}\n",
+        "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret_val.fmt_with_operand_width(WIDTH)
+        ret.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_u32(ret_val: &GeneralPurposeRegister, constant: u32) -> Vec<String> {
+fn codegen_constant_u32<OP: Operand>(ret: &mut OP, constant: u32) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
-        "\tmov{}\t${}, %{}\n",
+        "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret_val.fmt_with_operand_width(WIDTH)
+        ret.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_i64(ret_val: &GeneralPurposeRegister, constant: i64) -> Vec<String> {
+fn codegen_constant_i64<OP: Operand>(ret: &mut OP, constant: i64) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
-        "\tmov{}\t${}, %{}\n",
+        "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret_val.fmt_with_operand_width(WIDTH)
+        ret.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_u64(ret_val: &GeneralPurposeRegister, constant: u64) -> Vec<String> {
+fn codegen_constant_u64<OP: Operand>(ret: &mut OP, constant: u64) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
-        "\tmov{}\t${}, %{}\n",
+        "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret_val.fmt_with_operand_width(WIDTH)
+        ret.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_reference_from_identifier(
-    ret: &GeneralPurposeRegister,
-    identifier: &str,
-) -> Vec<String> {
+fn codegen_mov<SRC, DST>(ty: ast::Type, src: &mut SRC, dst: &mut DST) -> Vec<String>
+where
+    SRC: Operand,
+    DST: Operand,
+{
+    let width = operand_width_of_type(ty);
+
+    codegen_mov_with_explicit_width(width, src, dst)
+}
+
+fn codegen_mov_with_explicit_width<SRC, DST>(
+    width: OperandWidth,
+    src: &mut SRC,
+    dst: &mut DST,
+) -> Vec<String>
+where
+    SRC: Operand,
+    DST: Operand,
+{
     vec![format!(
-        "\tleaq\t{}(%{}), %{}\n",
+        "\tmov{}\t{}, {}\n",
+        operator_suffix(width),
+        src.fmt_with_operand_width(width),
+        dst.fmt_with_operand_width(width)
+    )]
+}
+
+fn codegen_reference_from_identifier<OP: Operand>(ret: &mut OP, identifier: &str) -> Vec<String> {
+    vec![format!(
+        "\tleaq\t{}({}), {}\n",
         identifier,
         PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
         ret.fmt_with_operand_width(OperandWidth::QuadWord)
     )]
 }
 
-fn codegen_reference_from_stack_offset(ret: &GeneralPurposeRegister, offset: isize) -> Vec<String> {
+fn codegen_reference_from_stack_offset<OP: Operand>(ret: &mut OP, offset: isize) -> Vec<String> {
     vec![format!(
-        "\tleaq\t{}(%{}), %{}\n",
+        "\tleaq\t{}({}), {}\n",
         offset,
         BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
         ret.fmt_with_operand_width(OperandWidth::QuadWord)
     )]
 }
 
-fn codegen_store_deref(
-    ty: ast::Type,
-    dest: &GeneralPurposeRegister,
-    src: &GeneralPurposeRegister,
-) -> Vec<String> {
+fn codegen_store_deref<SRC, DST>(ty: ast::Type, dest: &mut DST, src: &mut SRC) -> Vec<String>
+where
+    SRC: Operand,
+    DST: Operand,
+{
     let width = operand_width_of_type(ty);
 
     vec![format!(
-        "\tmov{}\t%{}, (%{})\n",
+        "\tmov{}\t{}, ({})\n",
         operator_suffix(width),
         src.fmt_with_operand_width(width),
         dest.fmt_with_operand_width(OperandWidth::QuadWord)
     )]
 }
 
-fn codegen_deref(ret: &GeneralPurposeRegister, ty: ast::Type, scale: usize) -> Vec<String> {
+fn codegen_deref(
+    ty: ast::Type,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
+    scale: usize,
+) -> Vec<String> {
     let scale_by = ty.size() * scale;
     let width = operand_width_of_type(ty);
 
     if scale == 0 {
         vec![format!(
-            "\tmov{}\t(%{}), %{}\n",
+            "\tmov{}\t({}), {}\n",
             operator_suffix(width),
             ret.fmt_with_operand_width(OperandWidth::QuadWord),
             ret.fmt_with_operand_width(width)
         )]
     } else {
         vec![format!(
-            "\tmov{}\t{}(%{}), %{}\n",
+            "\tmov{}\t{}({}), {}\n",
             operator_suffix(width),
             scale_by,
             ret.fmt_with_operand_width(OperandWidth::QuadWord),
@@ -1048,7 +1095,7 @@ fn codegen_deref(ret: &GeneralPurposeRegister, ty: ast::Type, scale: usize) -> V
 
 fn codegen_scaleby(
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     size_of: usize,
     expr: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
@@ -1064,7 +1111,7 @@ fn codegen_scaleby(
 
         codegen_multiplication(
             allocator,
-            ret_val,
+            ret,
             ast::Type::Integer(sign, ast::IntegerWidth::SixtyFour),
             Box::new(scale_by_expr),
             expr,
@@ -1076,82 +1123,91 @@ fn codegen_scaleby(
 
 fn codegen_addition(
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_gp_register_then(|allocator, lhs_retval| {
-        let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
-        let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
+    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+            let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
+            let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
 
-        vec![
-            lhs_ctx,
-            rhs_ctx,
-            vec![format!(
-                "\tadd{}\t%{}, %{}\n",
-                operator_suffix(width),
-                lhs_retval.fmt_with_operand_width(width),
-                ret_val.fmt_with_operand_width(width)
-            )],
-        ]
-        .into_iter()
-        .flatten()
-        .collect()
+            vec![
+                lhs_ctx,
+                rhs_ctx,
+                codegen_mov(ty, rhs_ret, ret),
+                vec![format!(
+                    "\tadd{}\t{}, {}\n",
+                    operator_suffix(width),
+                    lhs_ret.fmt_with_operand_width(width),
+                    ret.fmt_with_operand_width(width)
+                )],
+            ]
+            .into_iter()
+            .flatten()
+            .collect()
+        })
     })
 }
 
 fn codegen_subtraction(
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_gp_register_then(|allocator, rhs_ret_val| {
-        let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
-        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, *rhs);
+    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+            let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
+            let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
 
-        flattenable_instructions!(
-            lhs_ctx,
-            rhs_ctx,
-            vec![format!(
-                "\tsub{}\t%{}, %{}\n",
-                operator_suffix(width),
-                rhs_ret_val.fmt_with_operand_width(width),
-                ret_val.fmt_with_operand_width(width)
-            )],
-        )
+            flattenable_instructions!(
+                lhs_ctx,
+                rhs_ctx,
+                codegen_mov(ty, lhs_ret, ret),
+                vec![format!(
+                    "\tsub{}\t{}, {}\n",
+                    operator_suffix(width),
+                    rhs_ret.fmt_with_operand_width(width),
+                    ret.fmt_with_operand_width(width)
+                )],
+            )
+        })
     })
 }
 
 fn codegen_multiplication(
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_gp_register_then(|allocator, lhs_retval| {
-        let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
-        let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
+    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+            let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
+            let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
 
-        flattenable_instructions!(
-            lhs_ctx,
-            rhs_ctx,
-            vec![format!(
-                "\timul{}\t%{}, %{}\n",
-                operator_suffix(width),
-                lhs_retval.fmt_with_operand_width(width),
-                ret_val.fmt_with_operand_width(width)
-            )],
-        )
+            flattenable_instructions!(
+                lhs_ctx,
+                rhs_ctx,
+                codegen_mov(ty, rhs_ret, ret),
+                vec![format!(
+                    "\timul{}\t{}, {}\n",
+                    operator_suffix(width),
+                    lhs_ret.fmt_with_operand_width(width),
+                    ret.fmt_with_operand_width(width)
+                )],
+            )
+        })
     })
 }
 
@@ -1163,7 +1219,7 @@ enum DivisionVariant {
 
 fn codegen_division(
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
@@ -1174,56 +1230,58 @@ fn codegen_division(
 
     let width = operand_width_of_type(ty);
 
-    allocator.allocate_gp_register_then(|allocator, rhs_retval| {
-        let lhs_ctx = codegen_expr(allocator, ret_val, *lhs);
-        let rhs_ctx = codegen_expr(allocator, rhs_retval, *rhs);
-        let operand_suffix = operator_suffix(width);
+    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+            let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
+            let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
+            let operand_suffix = operator_suffix(width);
 
-        flattenable_instructions!(
-            lhs_ctx,
-            rhs_ctx,
-            vec![
-                format!(
-                    "\tmov{}\t%{}, %{}\n",
-                    operand_suffix,
-                    ret_val.fmt_with_operand_width(width),
-                    ScalarRegister::A.fmt_with_operand_width(width)
-                ),
-                match sign {
-                    Signed::Signed => format!(
-                        "\tcqo\n\tidiv{}\t%{}\n",
+            flattenable_instructions!(
+                lhs_ctx,
+                rhs_ctx,
+                vec![
+                    format!(
+                        "\tmov{}\t{}, {}\n",
                         operand_suffix,
-                        rhs_retval.fmt_with_operand_width(width)
+                        lhs_ret.fmt_with_operand_width(width),
+                        IntegerRegister::A.fmt_with_operand_width(width)
                     ),
-                    Signed::Unsigned => {
-                        let d_reg =
-                            ScalarRegister::D.fmt_with_operand_width(OperandWidth::QuadWord);
-
-                        format!(
-                            "\txorq\t%{}, %{}\n\tdiv{}\t%{}\n",
-                            d_reg,
-                            d_reg,
+                    match sign {
+                        Signed::Signed => format!(
+                            "\tcqo\n\tidiv{}\t{}\n",
                             operand_suffix,
-                            rhs_retval.fmt_with_operand_width(width)
-                        )
+                            rhs_ret.fmt_with_operand_width(width)
+                        ),
+                        Signed::Unsigned => {
+                            let d_reg =
+                                IntegerRegister::D.fmt_with_operand_width(OperandWidth::QuadWord);
+
+                            format!(
+                                "\txorq\t{}, {}\n\tdiv{}\t{}\n",
+                                d_reg,
+                                d_reg,
+                                operand_suffix,
+                                rhs_ret.fmt_with_operand_width(width)
+                            )
+                        }
+                    },
+                    match division_variant {
+                        DivisionVariant::Division => format!(
+                            "\tmov{}\t{}, {}\n",
+                            operand_suffix,
+                            IntegerRegister::A.fmt_with_operand_width(width),
+                            ret.fmt_with_operand_width(width)
+                        ),
+                        DivisionVariant::Modulo => format!(
+                            "\tmov{}\t{}, {}\n",
+                            operand_suffix,
+                            IntegerRegister::D.fmt_with_operand_width(width),
+                            ret.fmt_with_operand_width(width)
+                        ),
                     }
-                },
-                match division_variant {
-                    DivisionVariant::Division => format!(
-                        "\tmov{}\t%{}, %{}\n",
-                        operand_suffix,
-                        ScalarRegister::A.fmt_with_operand_width(width),
-                        ret_val.fmt_with_operand_width(width)
-                    ),
-                    DivisionVariant::Modulo => format!(
-                        "\tmov{}\t%{}, %{}\n",
-                        operand_suffix,
-                        ScalarRegister::D.fmt_with_operand_width(width),
-                        ret_val.fmt_with_operand_width(width)
-                    ),
-                }
-            ],
-        )
+                ],
+            )
+        })
     })
 }
 
@@ -1232,162 +1290,182 @@ fn codegen_division(
 fn codegen_or(
     ty: ast::Type,
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_gp_register_then(|allocator, rhs_ret_val| {
-        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
-        let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
+    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+            let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
+            let lhs_ctx = codegen_expr(allocator, lhs_ret, lhs);
 
-        flattenable_instructions!(
-            rhs_ctx,
-            lhs_ctx,
-            vec![format!(
-                "\tor{}\t%{}, %{}\n",
-                operator_suffix(width),
-                rhs_ret_val.fmt_with_operand_width(width),
-                ret_val.fmt_with_operand_width(width)
-            )],
-        )
+            flattenable_instructions!(
+                rhs_ctx,
+                lhs_ctx,
+                codegen_mov(ty, lhs_ret, ret),
+                vec![format!(
+                    "\tor{}\t{}, {}\n",
+                    operator_suffix(width),
+                    rhs_ret.fmt_with_operand_width(width),
+                    ret.fmt_with_operand_width(width)
+                )],
+            )
+        })
     })
 }
 
 fn codegen_xor(
     ty: ast::Type,
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_gp_register_then(|allocator, rhs_ret_val| {
-        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
-        let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
+    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+            let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
+            let lhs_ctx = codegen_expr(allocator, lhs_ret, lhs);
 
-        flattenable_instructions!(
-            rhs_ctx,
-            lhs_ctx,
-            vec![format!(
-                "\txor{}\t%{}, %{}\n",
-                operator_suffix(width),
-                rhs_ret_val.fmt_with_operand_width(width),
-                ret_val.fmt_with_operand_width(width)
-            )],
-        )
+            flattenable_instructions!(
+                rhs_ctx,
+                lhs_ctx,
+                codegen_mov(ty, lhs_ret, ret),
+                vec![format!(
+                    "\txor{}\t{}, {}\n",
+                    operator_suffix(width),
+                    rhs_ret.fmt_with_operand_width(width),
+                    ret.fmt_with_operand_width(width)
+                )],
+            )
+        })
     })
 }
 
 fn codegen_and(
     ty: ast::Type,
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_gp_register_then(|allocator, rhs_ret_val| {
-        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
-        let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
+    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+            let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
+            let lhs_ctx = codegen_expr(allocator, lhs_ret, lhs);
 
-        flattenable_instructions!(
-            rhs_ctx,
-            lhs_ctx,
-            vec![format!(
-                "\tand{}\t%{}, %{}\n",
-                operator_suffix(width),
-                rhs_ret_val.fmt_with_operand_width(width),
-                ret_val.fmt_with_operand_width(width)
-            )],
-        )
+            flattenable_instructions!(
+                rhs_ctx,
+                lhs_ctx,
+                codegen_mov(ty, lhs_ret, ret),
+                vec![format!(
+                    "\tand{}\t{}, {}\n",
+                    operator_suffix(width),
+                    rhs_ret.fmt_with_operand_width(width),
+                    ret.fmt_with_operand_width(width)
+                )],
+            )
+        })
     })
 }
 
 fn codegen_shift_left(
     ty: ast::Type,
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_gp_register_then(|allocator, rhs_ret_val| {
-        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
-        let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
+    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+            let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
+            let lhs_ctx = codegen_expr(allocator, lhs_ret, lhs);
 
-        flattenable_instructions!(
-            rhs_ctx,
-            lhs_ctx,
-            vec![
-                format!(
-                    "\tmov{}\t%{}, %cl\n",
-                    operator_suffix(OperandWidth::Byte),
-                    rhs_ret_val.fmt_with_operand_width(OperandWidth::Byte),
-                ),
-                format!(
-                    "\tshl{}\t%cl, %{}\n",
-                    operator_suffix(width),
-                    ret_val.fmt_with_operand_width(width)
-                )
-            ],
-        )
+            flattenable_instructions!(
+                rhs_ctx,
+                lhs_ctx,
+                codegen_mov(ty, lhs_ret, ret),
+                vec![
+                    format!(
+                        "\tmov{}\t{}, %cl\n",
+                        operator_suffix(OperandWidth::Byte),
+                        rhs_ret.fmt_with_operand_width(OperandWidth::Byte),
+                    ),
+                    format!(
+                        "\tshl{}\t%cl, {}\n",
+                        operator_suffix(width),
+                        ret.fmt_with_operand_width(width)
+                    )
+                ],
+            )
+        })
     })
 }
 
 fn codegen_shift_right(
     ty: ast::Type,
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_gp_register_then(|allocator, rhs_ret_val| {
-        let rhs_ctx = codegen_expr(allocator, rhs_ret_val, rhs);
-        let lhs_ctx = codegen_expr(allocator, ret_val, lhs);
+    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+            let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
+            let lhs_ctx = codegen_expr(allocator, lhs_ret, lhs);
 
-        flattenable_instructions!(
-            rhs_ctx,
-            lhs_ctx,
-            vec![
-                format!(
-                    "\tmov{}\t%{}, %cl\n",
-                    operator_suffix(OperandWidth::Byte),
-                    rhs_ret_val.fmt_with_operand_width(OperandWidth::Byte),
-                ),
-                format!(
-                    "\tshr{}\t%cl, %{}\n",
-                    operator_suffix(width),
-                    ret_val.fmt_with_operand_width(width)
-                )
-            ],
-        )
+            flattenable_instructions!(
+                rhs_ctx,
+                lhs_ctx,
+                codegen_mov(ty, lhs_ret, ret),
+                vec![
+                    format!(
+                        "\tmov{}\t{}, %cl\n",
+                        operator_suffix(OperandWidth::Byte),
+                        rhs_ret.fmt_with_operand_width(OperandWidth::Byte),
+                    ),
+                    format!(
+                        "\tshr{}\t%cl, {}\n",
+                        operator_suffix(width),
+                        ret.fmt_with_operand_width(width)
+                    )
+                ],
+            )
+        })
     })
 }
 
 /// Invert a register's value.
 fn codegen_invert(
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     expr: ast::TypedExprNode,
 ) -> Vec<String> {
     let width = operand_width_of_type(expr.r#type());
-    let expr_ctx = codegen_expr(allocator, ret_val, expr);
 
-    flattenable_instructions!(
-        expr_ctx,
-        vec![format!(
-            "\tnot{}\t%{}\n",
-            operator_suffix(width),
-            ret_val.fmt_with_operand_width(width)
-        )],
-    )
+    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        let ty = expr.r#type();
+        let expr_ctx = codegen_expr(allocator, lhs_ret, expr);
+
+        flattenable_instructions!(
+            expr_ctx,
+            codegen_mov(ty, lhs_ret, ret),
+            vec![format!(
+                "\tnot{}\t{}\n",
+                operator_suffix(width),
+                ret.fmt_with_operand_width(width)
+            )],
+        )
+    })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1402,56 +1480,59 @@ enum ComparisonOperation {
 
 fn codegen_compare_and_set(
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     comparison_op: ComparisonOperation,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_gp_register_then(|allocator, lhs_retval| {
-        let lhs_ctx = codegen_expr(allocator, lhs_retval, *lhs);
-        let rhs_ctx = codegen_expr(allocator, ret_val, *rhs);
+    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+            let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
+            let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
 
-        let set_operator = match comparison_op {
-            ComparisonOperation::LessThan => "setl",
-            ComparisonOperation::LessEqual => "setle",
-            ComparisonOperation::GreaterThan => "setg",
-            ComparisonOperation::GreaterEqual => "setge",
-            ComparisonOperation::Equal => "sete",
-            ComparisonOperation::NotEqual => "setne",
-        };
+            let set_operator = match comparison_op {
+                ComparisonOperation::LessThan => "setl",
+                ComparisonOperation::LessEqual => "setle",
+                ComparisonOperation::GreaterThan => "setg",
+                ComparisonOperation::GreaterEqual => "setge",
+                ComparisonOperation::Equal => "sete",
+                ComparisonOperation::NotEqual => "setne",
+            };
 
-        let operand_suffix = operator_suffix(width);
+            let operand_suffix = operator_suffix(width);
 
-        flattenable_instructions!(
-            lhs_ctx,
-            rhs_ctx,
-            vec![
-                format!(
-                    "\tcmp{}\t%{}, %{}\n",
-                    operand_suffix,
-                    ret_val.fmt_with_operand_width(width),
-                    lhs_retval.fmt_with_operand_width(width)
-                ),
-                format!(
-                    "\t{}\t%{}\n",
-                    set_operator,
-                    ret_val.fmt_with_operand_width(OperandWidth::Byte)
-                ),
-                format!(
-                    "\tandq\t$255, %{}\n",
-                    ret_val.fmt_with_operand_width(OperandWidth::QuadWord)
-                ),
-            ],
-        )
+            flattenable_instructions!(
+                lhs_ctx,
+                rhs_ctx,
+                codegen_mov(ty, rhs_ret, ret),
+                vec![
+                    format!(
+                        "\tcmp{}\t{}, {}\n",
+                        operand_suffix,
+                        ret.fmt_with_operand_width(width),
+                        lhs_ret.fmt_with_operand_width(width)
+                    ),
+                    format!(
+                        "\t{}\t{}\n",
+                        set_operator,
+                        ret.fmt_with_operand_width(OperandWidth::Byte)
+                    ),
+                    format!(
+                        "\tandq\t$255, {}\n",
+                        ret.fmt_with_operand_width(OperandWidth::QuadWord)
+                    ),
+                ],
+            )
+        })
     })
 }
 
 fn codegen_compare_and_jmp<L>(
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     cond_true_id: L,
     cond_false_id: L,
 ) -> Vec<String>
@@ -1460,23 +1541,24 @@ where
 {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
     let operand_suffix = operator_suffix(WIDTH);
-    allocator.allocate_gp_register_then(|_, zero_val| {
+
+    allocator.allocate_general_purpose_register_then(|_, zero_val| {
         vec![
-            format!("\tandq\t$0, %{}\n", zero_val.fmt_with_operand_width(WIDTH)),
+            format!("\tandq\t$0, {}\n", zero_val.fmt_with_operand_width(WIDTH)),
             format!(
-                "\tcmp{}\t%{}, %{}\n",
+                "\tcmp{}\t{}, {}\n",
                 operand_suffix,
-                ret_val.fmt_with_operand_width(WIDTH),
+                ret.fmt_with_operand_width(WIDTH),
                 zero_val.fmt_with_operand_width(WIDTH)
             ),
             format!(
-                "\t{}\t%{}\n",
+                "\t{}\t{}\n",
                 "sete",
-                ret_val.fmt_with_operand_width(OperandWidth::Byte)
+                ret.fmt_with_operand_width(OperandWidth::Byte)
             ),
             format!(
-                "\tandq\t$255, %{}\n",
-                ret_val.fmt_with_operand_width(OperandWidth::QuadWord)
+                "\tandq\t$255, {}\n",
+                ret.fmt_with_operand_width(OperandWidth::QuadWord)
             ),
             format!("\t{}\t{}\n", "je", cond_true_id),
         ]
@@ -1491,105 +1573,91 @@ where
 /// Negate a register's value.
 fn codegen_negate(
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     expr: ast::TypedExprNode,
 ) -> Vec<String> {
     let width = operand_width_of_type(expr.r#type());
-    let expr_ctx = codegen_expr(allocator, ret_val, expr);
 
-    flattenable_instructions!(
-        expr_ctx,
-        vec![format!(
-            "\tneg{}\t%{}\n",
-            operator_suffix(width),
-            ret_val.fmt_with_operand_width(width)
-        )],
-    )
+    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        let ty = expr.r#type();
+        let expr_ctx = codegen_expr(allocator, lhs_ret, expr);
+
+        flattenable_instructions!(
+            expr_ctx,
+            codegen_mov(ty, lhs_ret, ret),
+            vec![format!(
+                "\tneg{}\t{}\n",
+                operator_suffix(width),
+                ret.fmt_with_operand_width(width)
+            )],
+        )
+    })
 }
 
 /// Logically negate a register's value.
 fn codegen_not(
     allocator: &mut SysVAllocator,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     expr: ast::TypedExprNode,
 ) -> Vec<String> {
-    let expr_ctx = codegen_expr(allocator, ret_val, expr);
-    let byte_ret_val_reg = ret_val.fmt_with_operand_width(OperandWidth::Byte);
-    let quadword_ret_val_reg = ret_val.fmt_with_operand_width(OperandWidth::QuadWord);
+    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        let ty = expr.r#type();
+        let expr_ctx = codegen_expr(allocator, lhs_ret, expr);
+        let byte_ret_reg = ret.fmt_with_operand_width(OperandWidth::Byte);
+        let quadword_ret_reg = ret.fmt_with_operand_width(OperandWidth::QuadWord);
 
-    flattenable_instructions!(
-        expr_ctx,
-        vec![
-            format!(
-                "\ttestq\t%{width_adj_reg}, %{width_adj_reg}\n",
-                width_adj_reg = quadword_ret_val_reg
-            ),
-            format!("\tsete\t%{}\n", byte_ret_val_reg),
-            format!(
-                "\tmovzbq\t%{}, %{}\n",
-                byte_ret_val_reg, quadword_ret_val_reg
-            )
-        ],
-    )
+        flattenable_instructions!(
+            expr_ctx,
+            codegen_mov(ty, lhs_ret, ret),
+            vec![
+                format!(
+                    "\ttestq\t{width_adj_reg}, {width_adj_reg}\n",
+                    width_adj_reg = quadword_ret_reg
+                ),
+                format!("\tsete\t{}\n", byte_ret_reg),
+                format!("\tmovzbq\t{}, {}\n", byte_ret_reg, quadword_ret_reg)
+            ],
+        )
+    })
 }
 
 fn codegen_call(
     allocator: &mut SysVAllocator,
     ty: ast::Type,
-    ret_val: &GeneralPurposeRegister,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     func_name: &str,
     arg: Option<Box<ast::TypedExprNode>>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
     if let Some(arg_expr) = arg {
-        let width = operand_width_of_type(arg_expr.r#type());
+        let arg_expr_ty = arg_expr.r#type();
 
-        allocator.allocate_gp_register_then(|allocator, arg_retval| {
-            let arg_ctx = codegen_expr(allocator, arg_retval, *arg_expr);
+        allocator.allocate_general_purpose_register_then(|allocator, arg_ret| {
+            let arg_ctx = codegen_expr(allocator, arg_ret, *arg_expr);
 
             flattenable_instructions!(
                 arg_ctx,
-                vec![
-                    format!(
-                        "\tmov{}\t%{}, %{}\n",
-                        operator_suffix(width),
-                        arg_retval.fmt_with_operand_width(width),
-                        ScalarRegister::D.fmt_with_operand_width(width)
-                    ),
-                    format!("\tcall\t{}\n", func_name),
-                    format!(
-                        "\tmov{}\t%{}, {}\n",
-                        operator_suffix(width),
-                        ScalarRegister::A.fmt_with_operand_width(width),
-                        ret_val.fmt_with_operand_width(width),
-                    ),
-                ],
+                codegen_mov(arg_expr_ty.clone(), arg_ret, &mut IntegerRegister::D),
+                vec![format!("\tcall\t{}\n", func_name)],
+                codegen_mov(ty, &mut IntegerRegister::A, ret),
             )
         })
     } else {
-        vec![
-            format!("\tcall\t{}\n", func_name),
-            format!(
-                "\tmov{}\t%{}, %{}\n",
-                operator_suffix(width),
-                ScalarRegister::A.fmt_with_operand_width(width),
-                ret_val.fmt_with_operand_width(width),
-            ),
-        ]
+        flattenable_instructions!(
+            vec![format!("\tcall\t{}\n", func_name)],
+            codegen_mov(ty, &mut IntegerRegister::A, ret),
+        )
     }
 }
 
-fn codegen_return(ty: ast::Type, ret_val: &GeneralPurposeRegister, func_name: &str) -> Vec<String> {
-    let width = operand_width_of_type(ty);
-    vec![format!(
-        "\tmov{}\t%{}, %{}\n",
-        operator_suffix(width),
-        ret_val.fmt_with_operand_width(width),
-        ScalarRegister::A.fmt_with_operand_width(width)
-    )]
-    .into_iter()
-    .chain(codegen_jump(format!("func_{}_ret", func_name)).into_iter())
-    .collect()
+fn codegen_return(
+    ty: ast::Type,
+    value_to_return: &mut RegisterOrOffset<&GeneralPurposeRegister>,
+    func_name: &str,
+) -> Vec<String> {
+    flattenable_instructions!(
+        codegen_mov(ty, value_to_return, &mut IntegerRegister::A),
+        codegen_jump(format!("func_{}_ret", func_name)),
+    )
 }
 
 const fn operator_suffix(width: OperandWidth) -> &'static str {
@@ -1683,20 +1751,20 @@ mod tests {
 
         assert_eq!(
             Ok(vec![
-                "\tmovq\t$10, %r15
-\tmovq\t$3, %r14
-\tmovb\t%r15b, %al
+                "\tmovq\t$10, %r14
+\tmovq\t$3, %r13
+\tmovb\t%r14b, %al
 \txorq\t%rdx, %rdx
-\tdivb\t%r14b
+\tdivb\t%r13b
 \tmovb\t%dl, %r15b
 "
                 .to_string(),
-                "\tmovq\t$10, %r13
-\tmovq\t$3, %r12
-\tmovb\t%r13b, %al
+                "\tmovq\t$10, %r11
+\tmovq\t$3, %r10
+\tmovb\t%r11b, %al
 \txorq\t%rdx, %rdx
-\tdivb\t%r12b
-\tmovb\t%al, %r13b
+\tdivb\t%r10b
+\tmovb\t%al, %r12b
 "
                 .to_string()
             ]),
@@ -1737,11 +1805,13 @@ mod tests {
         ));
 
         assert_eq!(
-            Ok(vec!["\tleaq\tx(%rip), %r14
-\tmovq\t$1, %r13
-\tmovq\t$1, %r15
-\timulq\t%r13, %r15
-\taddq\t%r14, %r15
+            Ok(vec!["\tleaq\tx(%rip), %r13
+\tmovq\t$1, %r11
+\tmovq\t$1, %r12
+\tmovq\t%r12, %r14
+\timulq\t%r11, %r14
+\tmovq\t%r14, %r15
+\taddq\t%r13, %r15
 \tmovb\t(%r15), %r15b
 "
             .to_string()]),
