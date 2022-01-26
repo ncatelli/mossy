@@ -280,26 +280,35 @@ fn codegen_while_statement(
     block: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     allocator.allocate_general_purpose_register_then(|allocator, ret| {
-        let cond_ctx = codegen_expr(allocator, ret, cond);
-        let loop_cond_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let loop_start_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let loop_end_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let block_insts = codegen_statements(allocator, block)?;
+        allocator.allocate_general_purpose_register_then(|allocator, cond_expr_ret_val| {
+            let cond_expr_ty = cond.r#type();
+            let cond_ctx = codegen_expr(allocator, cond_expr_ret_val, cond);
+            let loop_cond_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let loop_start_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let loop_end_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let block_insts = codegen_statements(allocator, block)?;
 
-        Ok(flattenable_instructions!(
-            codegen_label(LLabelPrefix(loop_cond_block_id)),
-            cond_ctx,
-            codegen_compare_and_jmp(
-                allocator,
-                ret,
-                LLabelPrefix(loop_start_block_id),
-                LLabelPrefix(loop_end_block_id)
-            ),
-            codegen_label(LLabelPrefix(loop_start_block_id)),
-            block_insts,
-            codegen_jump(LLabelPrefix(loop_cond_block_id)),
-            codegen_label(LLabelPrefix(loop_end_block_id)),
-        ))
+            Ok(flattenable_instructions!(
+                codegen_label(LLabelPrefix(loop_cond_block_id)),
+                cond_ctx,
+                vec![format!(
+                    "\tand{}\t$0, {}\n",
+                    operator_suffix(OperandWidth::QuadWord),
+                    ret.fmt_with_operand_width(OperandWidth::QuadWord)
+                )],
+                codegen_mov(cond_expr_ty, cond_expr_ret_val, ret),
+                codegen_compare_and_jmp(
+                    allocator,
+                    ret,
+                    LLabelPrefix(loop_start_block_id),
+                    LLabelPrefix(loop_end_block_id)
+                ),
+                codegen_label(LLabelPrefix(loop_start_block_id)),
+                block_insts,
+                codegen_jump(LLabelPrefix(loop_cond_block_id)),
+                codegen_label(LLabelPrefix(loop_end_block_id)),
+            ))
+        })
     })
 }
 
@@ -311,42 +320,51 @@ fn codegen_for_statement(
     block: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     allocator.allocate_general_purpose_register_then(|allocator, ret| {
-        let preop_ctx = codegen_statement(allocator, preop)?;
-        let cond_ctx = codegen_expr(allocator, ret, cond);
-        let postop_ctx = codegen_statement(allocator, postop)?;
-        let loop_cond_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let loop_start_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let loop_end_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let block_insts = codegen_statements(allocator, block)?;
+        allocator.allocate_general_purpose_register_then(|allocator, cond_expr_ret_val| {
+            let preop_ctx = codegen_statement(allocator, preop)?;
+            let cond_expr_ty = cond.r#type();
+            let cond_ctx = codegen_expr(allocator, cond_expr_ret_val, cond);
+            let postop_ctx = codegen_statement(allocator, postop)?;
+            let loop_cond_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let loop_start_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let loop_end_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let block_insts = codegen_statements(allocator, block)?;
 
-        Ok(flattenable_instructions!(
-            preop_ctx,
-            codegen_label(LLabelPrefix(loop_cond_block_id)),
-            cond_ctx,
-            codegen_compare_and_jmp(
-                allocator,
-                ret,
-                LLabelPrefix(loop_start_block_id),
-                LLabelPrefix(loop_end_block_id)
-            ),
-            codegen_label(LLabelPrefix(loop_start_block_id)),
-            block_insts,
-            postop_ctx,
-            codegen_jump(LLabelPrefix(loop_cond_block_id)),
-            codegen_label(LLabelPrefix(loop_end_block_id)),
-        ))
+            Ok(flattenable_instructions!(
+                preop_ctx,
+                codegen_label(LLabelPrefix(loop_cond_block_id)),
+                cond_ctx,
+                vec![format!(
+                    "\tand{}\t$0, {}\n",
+                    operator_suffix(OperandWidth::QuadWord),
+                    ret.fmt_with_operand_width(OperandWidth::QuadWord)
+                )],
+                codegen_mov(cond_expr_ty, cond_expr_ret_val, ret),
+                codegen_compare_and_jmp(
+                    allocator,
+                    ret,
+                    LLabelPrefix(loop_start_block_id),
+                    LLabelPrefix(loop_end_block_id)
+                ),
+                codegen_label(LLabelPrefix(loop_start_block_id)),
+                block_insts,
+                postop_ctx,
+                codegen_jump(LLabelPrefix(loop_cond_block_id)),
+                codegen_label(LLabelPrefix(loop_end_block_id)),
+            ))
+        })
     })
 }
 
 pub fn codegen_function_preamble(identifier: &str, alignment: isize) -> Vec<String> {
     vec![format!(
         "\t.text
-    .globl  {name}
-    .type   {name}, @function
+\t.globl\t{name}
+\t.type\t{name}, @function
 {name}:
-    pushq   %rbp
-    movq	%rsp, %rbp
-    subq    ${alignment}, %rsp\n",
+\tpushq\t%rbp
+\tmovq\t%rsp, %rbp
+\tsubq\t${alignment}, %rsp\n",
         name = identifier,
         alignment = alignment
     )]
@@ -358,8 +376,8 @@ pub fn codegen_function_postamble(identifier: &str, alignment: isize) -> Vec<Str
         .chain(
             vec![format!(
                 "\taddq\t${}, %rsp
-    popq\t%rbp
-    ret\n\n",
+\tpopq\t%rbp
+\tret\n\n",
                 alignment
             )]
             .into_iter(),
@@ -497,26 +515,14 @@ fn codegen_inc_or_dec_expression_from_pointer(
         match expr_op {
             IncDecExpression::PreIncrement | IncDecExpression::PreDecrement => {
                 flattenable_instructions!(
-                    vec![
-                        format!(
-                            "\tmov{}\t{}, {}\n",
-                            operator_suffix(OperandWidth::QuadWord),
-                            ret.fmt_with_operand_width(OperandWidth::QuadWord),
-                            ptr_reg.fmt_with_operand_width(OperandWidth::QuadWord)
-                        ),
-                        op,
-                    ],
+                    codegen_mov_with_explicit_width(OperandWidth::QuadWord, ret, ptr_reg),
+                    vec![op],
                     codegen_deref(ty, ret, 0),
                 )
             }
             IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => {
                 flattenable_instructions!(
-                    vec![format!(
-                        "\tmov{}\t{}, {}\n",
-                        operator_suffix(OperandWidth::QuadWord),
-                        ret.fmt_with_operand_width(OperandWidth::QuadWord),
-                        ptr_reg.fmt_with_operand_width(OperandWidth::QuadWord)
-                    )],
+                    codegen_mov_with_explicit_width(OperandWidth::QuadWord, ret, ptr_reg),
                     codegen_deref(ty, ret, 0),
                     vec![op],
                 )
