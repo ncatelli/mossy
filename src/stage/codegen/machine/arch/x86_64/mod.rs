@@ -216,6 +216,11 @@ fn codegen_if_statement_with_else(
 
             Ok(flattenable_instructions!(
                 cond_ctx,
+                vec![format!(
+                    "\tand{}\t$0, {}\n",
+                    operator_suffix(OperandWidth::QuadWord),
+                    ret.fmt_with_operand_width(OperandWidth::QuadWord)
+                )],
                 codegen_mov(cond_expr_ty, cond_expr_ret, ret),
                 codegen_compare_and_jmp(
                     allocator,
@@ -240,23 +245,32 @@ fn codegen_if_statement_without_else(
     true_case: ast::TypedCompoundStmts,
 ) -> Result<Vec<String>, codegen::CodeGenerationErr> {
     allocator.allocate_general_purpose_register_then(|allocator, ret| {
-        let cond_ctx = codegen_expr(allocator, ret, cond);
-        let exit_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let true_case_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
-        let tctx = codegen_statements(allocator, true_case)?;
+        allocator.allocate_general_purpose_register_then(|allocator, cond_expr_ret| {
+            let cond_expr_ty = cond.r#type();
+            let cond_ctx = codegen_expr(allocator, cond_expr_ret, cond);
+            let exit_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let true_case_block_id = BLOCK_ID.fetch_add(1, Ordering::SeqCst);
+            let tctx = codegen_statements(allocator, true_case)?;
 
-        Ok(flattenable_instructions!(
-            cond_ctx,
-            codegen_compare_and_jmp(
-                allocator,
-                ret,
-                LLabelPrefix(true_case_block_id),
-                LLabelPrefix(exit_block_id)
-            ),
-            codegen_label(LLabelPrefix(true_case_block_id)),
-            tctx,
-            codegen_label(LLabelPrefix(exit_block_id)),
-        ))
+            Ok(flattenable_instructions!(
+                cond_ctx,
+                vec![format!(
+                    "\tand{}\t$0, {}\n",
+                    operator_suffix(OperandWidth::QuadWord),
+                    ret.fmt_with_operand_width(OperandWidth::QuadWord)
+                )],
+                codegen_mov(cond_expr_ty, cond_expr_ret, ret),
+                codegen_compare_and_jmp(
+                    allocator,
+                    ret,
+                    LLabelPrefix(true_case_block_id),
+                    LLabelPrefix(exit_block_id)
+                ),
+                codegen_label(LLabelPrefix(true_case_block_id)),
+                tctx,
+                codegen_label(LLabelPrefix(exit_block_id)),
+            ))
+        })
     })
 }
 
@@ -994,6 +1008,18 @@ where
 {
     let width = operand_width_of_type(ty);
 
+    codegen_mov_with_explicit_width(width, src, dst)
+}
+
+fn codegen_mov_with_explicit_width<SRC, DST>(
+    width: OperandWidth,
+    src: &mut SRC,
+    dst: &mut DST,
+) -> Vec<String>
+where
+    SRC: Operand,
+    DST: Operand,
+{
     vec![format!(
         "\tmov{}\t{}, {}\n",
         operator_suffix(width),
@@ -1619,11 +1645,11 @@ fn codegen_call(
 
 fn codegen_return(
     ty: ast::Type,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
+    value_to_return: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     func_name: &str,
 ) -> Vec<String> {
     flattenable_instructions!(
-        codegen_mov(ty, ret, &mut IntegerRegister::A),
+        codegen_mov(ty, value_to_return, &mut IntegerRegister::A),
         codegen_jump(format!("func_{}_ret", func_name)),
     )
 }
