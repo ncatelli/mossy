@@ -101,7 +101,7 @@ addition: multiplication ( ( '-' | '+' ) multiplication )*
 multiplication: call ( ( '/' | '%' | '*' ) call )* 
         ;
 
-call: identifier '(' expression? ')'
+call: identifier type_declarator identifier '(' ((expression,)* expression) | expression? ')' 
         | prefix_expression
         ;
 

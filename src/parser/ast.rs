@@ -102,7 +102,7 @@ pub enum StmtNode {
 #[derive(PartialEq, Debug, Clone)]
 pub enum ExprNode {
     Primary(Primary),
-    FunctionCall(String, Option<Box<ExprNode>>),
+    FunctionCall(String, Vec<ExprNode>),
 
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.

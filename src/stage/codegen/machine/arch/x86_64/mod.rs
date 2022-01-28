@@ -22,6 +22,9 @@ trait Operand: WidthFormatted + Copy {}
 
 impl Operand for GeneralPurposeRegister {}
 impl Operand for &GeneralPurposeRegister {}
+impl Operand for allocator::register::FunctionPassingRegisters {}
+impl Operand for &allocator::register::FunctionPassingRegisters {}
+
 impl Operand for IntegerRegister {}
 
 impl<GP> Operand for allocator::RegisterOrOffset<GP>
@@ -762,8 +765,8 @@ fn codegen_expr(
             )
         }
 
-        TypedExprNode::FunctionCall(ty, func_name, optional_arg) => {
-            codegen_call(allocator, ty, ret, &func_name, optional_arg)
+        TypedExprNode::FunctionCall(ty, func_name, args) => {
+            codegen_call(allocator, ty, ret, &func_name, args)
         }
 
         ast::TypedExprNode::IdentifierAssignment(
@@ -1839,7 +1842,36 @@ fn codegen_call(
     ty: ast::Type,
     ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     func_name: &str,
-    arg: Option<Box<ast::TypedExprNode>>,
+    args: Vec<ast::TypedExprNode>,
+) -> Vec<String> {
+    let mut arg_exprs = vec![];
+    for (slot, arg_expr) in args.into_iter().enumerate() {
+        let arg_expr_ty = arg_expr.r#type();
+        allocator.allocate_general_purpose_register_then(|allocator, arg_ret| {
+            let arg_ctx = codegen_expr(allocator, arg_ret, arg_expr);
+            let mut param_reg = allocator.parameter_passing_register_for_slot(slot);
+
+            arg_exprs.push(flattenable_instructions!(
+                arg_ctx,
+                codegen_mov(arg_expr_ty.clone(), arg_ret, &mut param_reg),
+            ))
+        })
+    }
+
+    flattenable_instructions!(
+        arg_exprs,
+        vec![format!("\tcall\t{}\n", func_name)],
+        codegen_mov(ty, &mut IntegerRegister::A, ret),
+    )
+}
+
+/*
+fn codegen_call(
+    allocator: &mut SysVAllocator,
+    ty: ast::Type,
+    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
+    func_name: &str,
+    arg: Vec<ast::TypedExprNode>,
 ) -> Vec<String> {
     if let Some(arg_expr) = arg {
         let arg_expr_ty = arg_expr.r#type();
@@ -1861,6 +1893,7 @@ fn codegen_call(
         )
     }
 }
+*/
 
 fn codegen_return(
     ty: ast::Type,

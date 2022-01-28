@@ -463,12 +463,32 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
 fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         identifier(),
-        parcel::left(parcel::join(
-            whitespace_wrapped(expect_character('(')).and_then(|_| expression().optional()),
-            whitespace_wrapped(expect_character(')')),
-        )),
+        whitespace_wrapped(expect_character('(')).and_then(|_| {
+            parcel::left(parcel::join(
+                parcel::join(
+                    parcel::zero_or_more(parcel::left(parcel::join(
+                        expression(),
+                        whitespace_wrapped(expect_character(',')),
+                    ))),
+                    expression(),
+                )
+                .map(|(mut head, tail)| {
+                    head.push(tail);
+                    head
+                })
+                .or(|| {
+                    expression()
+                        .optional()
+                        .map(|optional_expr| match optional_expr {
+                            Some(expr) => vec![expr],
+                            None => vec![],
+                        })
+                }),
+                whitespace_wrapped(expect_character(')')),
+            ))
+        }),
     )
-    .map(|(id, expr)| ExprNode::FunctionCall(id, expr.map(Box::new)))
+    .map(|(id, exprs)| ExprNode::FunctionCall(id, exprs))
     .or(prefix_expression)
 }
 

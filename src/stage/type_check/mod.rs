@@ -531,22 +531,57 @@ impl TypeAnalysis {
                 .map(|(ty, expr)| ast::TypedExprNode::Grouping(ty, Box::new(expr))),
 
             ExprNode::FunctionCall(identifier, args) => {
-                let args = args.map(|arg| self.analyze_expression(*arg).unwrap());
+                let args = args
+                    .into_iter()
+                    .map(|arg| self.analyze_expression(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                let args_type_sig: Vec<ast::Type> = args.iter().map(|arg| arg.r#type()).collect();
 
                 self.scopes
                     .lookup(&identifier)
                     .ok_or_else(|| format!("undefined_function: {}", &identifier))
-                    .and_then(|dm| match dm.r#type {
+                    .and_then(|dm| match dm.r#type.clone() {
                         ast::Type::Func(FuncProto {
                             return_type,
-                            parameters: func_args,
-                        }) if args.is_none() && func_args.is_empty() => {
-                            Ok(ast::TypedExprNode::FunctionCall(
-                                *return_type,
-                                identifier,
-                                args.map(Box::new),
-                            ))
+                            parameters: params,
+                        }) => {
+                            let params_type_sig = params.iter().map(|arg| arg.r#type.clone());
+
+                            if params_type_sig.len() == args_type_sig.len() {
+                                let adjusted_arg_types = params_type_sig
+                                    .zip(args_type_sig.iter())
+                                    .map(|(param_ty, arg_ty)| {
+                                        match LeftFlowing.type_compatible(&param_ty, arg_ty) {
+                                            CompatibilityResult::Equivalent => Ok(param_ty.clone()),
+                                            CompatibilityResult::WidenTo(ty) => Ok(ty),
+                                            CompatibilityResult::Scale(_)
+                                            | CompatibilityResult::Incompatible => Err(format!(
+                                                "incompatible parameter type for {} function call {:?} <- {:?}",
+                                                &identifier, &param_ty, &arg_ty
+                                            )),
+                                        }
+                                    })
+                                    .collect::<Result<Vec<_>, _>>()
+                                    .map_err(|e| e)?;
+
+                                let adjusted_args = adjusted_arg_types.into_iter().zip(args.into_iter()).map(|(expr_ty, expr)| {
+                                    ast::TypedExprNode::Grouping(expr_ty, Box::new(expr))
+                                }).collect();
+
+                                Ok(ast::TypedExprNode::FunctionCall(
+                                    *return_type,
+                                    identifier,
+                                    adjusted_args,
+                                ))
+                            } else {
+                                Err(format!(
+                                    "type mismatch, cannot call non-function type: {:?} with: {:?}",
+                                    &dm.r#type, args_type_sig
+                                ))
+                            }
                         }
+
                         _ => Err(format!(
                             "type mismatch, cannot call non-function type: {:?}",
                             &dm.r#type
@@ -586,6 +621,18 @@ impl TypeAnalysis {
                             CompatibilityResult::Scale(t) => Ok(t),
                         }
                         .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, ast::IdentifierLocality::Local(offset), Box::new(rhs)))
+                    }
+                    TypedExprNode::Primary(lhs_ty, Primary::Identifier(ty, ast::IdentifierLocality::Parameter(offset))) => {
+                        let type_compat = LeftFlowing.type_compatible(&ty, &rhs.r#type());
+                         match type_compat {
+                            CompatibilityResult::Equivalent => Ok(lhs_ty),
+                            CompatibilityResult::WidenTo(ty) => Ok(ty),
+                            CompatibilityResult::Incompatible => {
+                                Err(format!("invalid type in identifier:\n\texpected: lhs({:?})\n\tgot: rhs({:?})", lhs_ty, &rhs.r#type()))
+                            }
+                            CompatibilityResult::Scale(t) => Ok(t),
+                        }
+                        .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, ast::IdentifierLocality::Parameter(offset), Box::new(rhs)))
                     }
                     TypedExprNode::Deref(ty, expr) => match LeftFlowing.type_compatible(&ty, &rhs.r#type())
                     {

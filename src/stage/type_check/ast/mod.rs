@@ -181,7 +181,7 @@ pub enum IdentifierLocality {
 #[derive(PartialEq, Debug, Clone)]
 pub enum TypedExprNode {
     Primary(Type, Primary),
-    FunctionCall(Type, String, Option<Box<TypedExprNode>>),
+    FunctionCall(Type, String, Vec<TypedExprNode>),
 
     IdentifierAssignment(Type, IdentifierLocality, Box<TypedExprNode>),
     DerefAssignment(Type, Box<TypedExprNode>, Box<TypedExprNode>),

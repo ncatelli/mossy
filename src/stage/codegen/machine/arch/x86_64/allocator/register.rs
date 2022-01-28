@@ -210,6 +210,14 @@ impl WidthFormatted for FunctionPassingRegisters {
     }
 }
 
+impl WidthFormatted for &FunctionPassingRegisters {
+    type Output = &'static str;
+
+    fn fmt_with_operand_width(&self, width: OperandWidth) -> Self::Output {
+        (**self).fmt_with_operand_width(width)
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct RegisterAllocationGuard {
     free_channel: std::sync::mpsc::Sender<GeneralPurposeRegister>,
