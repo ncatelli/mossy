@@ -109,7 +109,6 @@ impl CompilationStage<ast::TypedCompoundStmts, Vec<String>, CodeGenerationErr> f
     }
 }
 
-// slotted
 fn codegen_statements(
     allocator: &mut SysVAllocator,
     input: ast::TypedCompoundStmts,
