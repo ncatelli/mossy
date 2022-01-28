@@ -87,7 +87,7 @@ impl Parameter {
 pub struct TypedFunctionDeclaration {
     pub id: String,
     pub block: TypedCompoundStmts,
-    parameters: Vec<Parameter>,
+    parameters: Vec<Type>,
     local_vars: Vec<(Type, usize)>,
 }
 
@@ -95,7 +95,7 @@ impl TypedFunctionDeclaration {
     pub fn new(
         id: String,
         block: TypedCompoundStmts,
-        parameters: Vec<Parameter>,
+        parameters: Vec<Type>,
         local_vars: Vec<(Type, usize)>,
     ) -> Self {
         Self {

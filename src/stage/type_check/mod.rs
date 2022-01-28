@@ -302,6 +302,12 @@ impl TypeAnalysis {
         let stmts = Vec::from(block);
         let mut typed_stmts = vec![];
 
+        // Declare global parameters prior to statement analysis
+        for param in func_proto.parameters.iter() {
+            self.scopes
+                .declare_parameter_mut(&param.id, param.r#type.clone(), scopes::Kind::Basic);
+        }
+
         for stmt in stmts {
             let typed_stmt = self.analyze_statement(stmt)?;
             typed_stmts.push(typed_stmt)
@@ -316,17 +322,24 @@ impl TypeAnalysis {
             })
             .ok_or_else(|| "invalid return type".to_string())?;
 
+        let params = self
+            .scopes
+            .local_scope()
+            .map(|s| s.ordered_parameter_declarations())
+            // safe to unwrap due to guarantee of local scope
+            .unwrap();
+
         let local_vars = self
             .scopes
             .local_scope()
             .map(|s| s.ordered_local_declarations())
-            .ok_or_else(|| "cannot obtain local declarations on global scope".to_string())?;
+            // safe to unwrap due to guarantee of local scope
+            .unwrap();
 
         // reset scope
         self.scopes.pop_scope_mut();
         self.in_func = old_body;
 
-        let params = func_proto.parameters;
         let block = ast::TypedCompoundStmts::new(typed_stmts);
 
         Ok(ast::TypedFunctionDeclaration::new(
@@ -497,6 +510,8 @@ impl TypeAnalysis {
                         dm.r#type.clone(),
                         ast::Primary::Identifier(dm.r#type, ast::IdentifierLocality::Local(offset)),
                     ),
+                    (true, scopes::Locality::Parameter(_)) => todo!(),
+                    (false, scopes::Locality::Parameter(_)) => todo!(),
                 }),
             ExprNode::Primary(Primary::Str(elems)) => Ok(ast::TypedExprNode::Primary(
                 generate_type_specifier!(ptr => generate_type_specifier!(char)),
@@ -759,6 +774,7 @@ impl TypeAnalysis {
                         dm.r#type.pointer_to(),
                         ast::IdentifierLocality::Local(slot),
                     ),
+                    scopes::Locality::Parameter(_) => todo!(),
                 })
                 .ok_or_else(|| "invalid type".to_string()),
             ExprNode::Deref(expr) => self
@@ -836,6 +852,8 @@ impl TypeAnalysis {
                                     ),
                                 ))
                             }
+                            (true, scopes::Locality::Parameter(_)) => todo!(),
+                            (false, scopes::Locality::Parameter(_)) => todo!(),
                         };
 
                         ast::TypedExprNode::Addition(ref_ty, l_value_access, Box::new(scale))
