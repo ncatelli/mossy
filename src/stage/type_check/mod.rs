@@ -298,7 +298,6 @@ impl TypeAnalysis {
     ) -> Result<ast::TypedFunctionDeclaration, String> {
         let old_body = self.in_func.replace((id.clone(), func_proto.clone()));
         self.scopes.push_new_scope_mut();
-
         let stmts = Vec::from(block);
         let mut typed_stmts = vec![];
 
@@ -503,15 +502,23 @@ impl TypeAnalysis {
                             ast::IdentifierLocality::Global(identifier),
                         ),
                     ),
-                    (true, scopes::Locality::Local(offset)) => {
-                        ast::TypedExprNode::Ref(dm.r#type, ast::IdentifierLocality::Local(offset))
+                    (true, scopes::Locality::Local(slot)) => {
+                        ast::TypedExprNode::Ref(dm.r#type, ast::IdentifierLocality::Local(slot))
                     }
-                    (false, scopes::Locality::Local(offset)) => ast::TypedExprNode::Primary(
+                    (false, scopes::Locality::Local(slot)) => ast::TypedExprNode::Primary(
                         dm.r#type.clone(),
-                        ast::Primary::Identifier(dm.r#type, ast::IdentifierLocality::Local(offset)),
+                        ast::Primary::Identifier(dm.r#type, ast::IdentifierLocality::Local(slot)),
                     ),
-                    (true, scopes::Locality::Parameter(_)) => todo!(),
-                    (false, scopes::Locality::Parameter(_)) => todo!(),
+                    (true, scopes::Locality::Parameter(slot)) => {
+                        ast::TypedExprNode::Ref(dm.r#type, ast::IdentifierLocality::Parameter(slot))
+                    }
+                    (false, scopes::Locality::Parameter(slot)) => ast::TypedExprNode::Primary(
+                        dm.r#type.clone(),
+                        ast::Primary::Identifier(
+                            dm.r#type,
+                            ast::IdentifierLocality::Parameter(slot),
+                        ),
+                    ),
                 }),
             ExprNode::Primary(Primary::Str(elems)) => Ok(ast::TypedExprNode::Primary(
                 generate_type_specifier!(ptr => generate_type_specifier!(char)),

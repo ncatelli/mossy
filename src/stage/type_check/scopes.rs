@@ -85,7 +85,7 @@ impl Scope {
     }
 
     pub fn ordered_parameter_declarations(&self) -> Vec<Type> {
-        self.local_slots
+        self.parameter_slots
             .iter()
             .map(|id| self.symbols.get(id.as_str()).map(|dm| (dm.r#type.clone())))
             .flatten()

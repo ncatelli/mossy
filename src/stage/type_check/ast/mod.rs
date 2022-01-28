@@ -87,7 +87,7 @@ impl Parameter {
 pub struct TypedFunctionDeclaration {
     pub id: String,
     pub block: TypedCompoundStmts,
-    parameters: Vec<Type>,
+    pub parameters: Vec<Type>,
     local_vars: Vec<(Type, usize)>,
 }
 
@@ -174,6 +174,7 @@ pub enum TypedStmtNode {
 pub enum IdentifierLocality {
     Global(String),
     Local(usize),
+    Parameter(usize),
 }
 
 /// Represents a single expression in the ast.
@@ -370,11 +371,17 @@ pub enum Type {
 
 impl ByteSized for Type {
     fn size(&self) -> usize {
+        (&self).size()
+    }
+}
+
+impl ByteSized for &Type {
+    fn size(&self) -> usize {
         match self {
-            Self::Integer(_, iw) => iw.size(),
-            Self::Void => 0,
-            Self::Func { .. } => POINTER_BYTE_WIDTH,
-            Self::Pointer(_) => POINTER_BYTE_WIDTH,
+            Type::Integer(_, iw) => iw.size(),
+            Type::Void => 0,
+            Type::Func { .. } => POINTER_BYTE_WIDTH,
+            Type::Pointer(_) => POINTER_BYTE_WIDTH,
         }
     }
 }

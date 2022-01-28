@@ -80,14 +80,15 @@ impl CompilationStage<ast::TypedFunctionDeclaration, Vec<String>, CodeGeneration
         let mut allocator = SysVAllocator::new(GPRegisterAllocator::default());
         allocator.allocate_new_local_stack_scope(|allocator| {
             let (id, block) = (input.id, input.block);
+            let parameters = input.parameters;
+
+            for (slot, param) in parameters.iter().enumerate() {
+                allocator.calculate_and_insert_parameter_offset(slot, param);
+            }
 
             codegen_statements(allocator, block)
                 .map(|block| {
-                    let last = allocator
-                        .local_stack_offsets
-                        .last()
-                        .map(|local_declarations| local_declarations.start)
-                        .unwrap_or(0);
+                    let last = allocator.top_of_local_stack();
 
                     let alignment = allocator.align_stack_pointer(last);
                     vec![
@@ -713,9 +714,16 @@ fn codegen_expr(
             ty,
             Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
         ) => allocator
-            .get_slot_offset(slot)
+            .get_local_slot_offset(slot)
             .map(|offset_start| codegen_load_local(ty, ret, offset_start, 0))
             .expect("local stack slot is undeclared"),
+        TypedExprNode::Primary(
+            ty,
+            Primary::Identifier(_, ast::IdentifierLocality::Parameter(slot)),
+        ) => allocator
+            .get_parameter_slot_offset(slot)
+            .map(|offset_start| codegen_load_local(ty, ret, offset_start, 0))
+            .expect("local parameter stack slot is undeclared"),
         TypedExprNode::Primary(_, Primary::Str(lit)) => {
             let identifier = format!("V{}", BLOCK_ID.fetch_add(1, Ordering::SeqCst));
 
@@ -749,9 +757,23 @@ fn codegen_expr(
                 codegen_expr(allocator, rhs_ret, *expr),
                 codegen_mov(ty.clone(), rhs_ret, ret),
                 allocator
-                    .get_slot_offset(slot)
+                    .get_local_slot_offset(slot)
                     .map(|offset_start| { codegen_store_local(ty, ret, offset_start) })
                     .expect("local stack slot is undeclared"),
+            )
+        }),
+        ast::TypedExprNode::IdentifierAssignment(
+            ty,
+            ast::IdentifierLocality::Parameter(slot),
+            expr,
+        ) => allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+            flattenable_instructions!(
+                codegen_expr(allocator, rhs_ret, *expr),
+                codegen_mov(ty.clone(), rhs_ret, ret),
+                allocator
+                    .get_parameter_slot_offset(slot)
+                    .map(|offset_start| { codegen_store_local(ty, ret, offset_start) })
+                    .expect("local parameter stack slot is undeclared"),
             )
         }),
         TypedExprNode::DerefAssignment(ty, lhs, rhs) => allocator
@@ -859,7 +881,7 @@ fn codegen_expr(
                 ty,
                 Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
             ) => allocator
-                .get_slot_offset(slot)
+                .get_local_slot_offset(slot)
                 .map(|offset_start| {
                     codegen_inc_or_dec_expression_from_local_offset(
                         ty,
@@ -870,6 +892,21 @@ fn codegen_expr(
                     )
                 })
                 .expect("local stack slot is undeclared"),
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Parameter(slot)),
+            ) => allocator
+                .get_parameter_slot_offset(slot)
+                .map(|offset_start| {
+                    codegen_inc_or_dec_expression_from_local_offset(
+                        ty,
+                        allocator,
+                        ret,
+                        offset_start,
+                        IncDecExpression::PreIncrement,
+                    )
+                })
+                .expect("local parameter stack slot is undeclared"),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret, *expr),
@@ -897,7 +934,22 @@ fn codegen_expr(
                 ty,
                 Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
             ) => allocator
-                .get_slot_offset(slot)
+                .get_local_slot_offset(slot)
+                .map(|offset_start| {
+                    codegen_inc_or_dec_expression_from_local_offset(
+                        ty,
+                        allocator,
+                        ret,
+                        offset_start,
+                        IncDecExpression::PreDecrement,
+                    )
+                })
+                .expect("local stack slot is undeclared"),
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Parameter(slot)),
+            ) => allocator
+                .get_parameter_slot_offset(slot)
                 .map(|offset_start| {
                     codegen_inc_or_dec_expression_from_local_offset(
                         ty,
@@ -935,7 +987,7 @@ fn codegen_expr(
                 ty,
                 Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
             ) => allocator
-                .get_slot_offset(slot)
+                .get_local_slot_offset(slot)
                 .map(|offset_start| {
                     codegen_inc_or_dec_expression_from_local_offset(
                         ty,
@@ -946,6 +998,21 @@ fn codegen_expr(
                     )
                 })
                 .expect("local stack slot is undeclared"),
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Parameter(slot)),
+            ) => allocator
+                .get_parameter_slot_offset(slot)
+                .map(|offset_start| {
+                    codegen_inc_or_dec_expression_from_local_offset(
+                        ty,
+                        allocator,
+                        ret,
+                        offset_start,
+                        IncDecExpression::PostIncrement,
+                    )
+                })
+                .expect("local parameter stack slot is undeclared"),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret, *expr),
@@ -973,7 +1040,7 @@ fn codegen_expr(
                 ty,
                 Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
             ) => allocator
-                .get_slot_offset(slot)
+                .get_local_slot_offset(slot)
                 .map(|offset_start| {
                     codegen_inc_or_dec_expression_from_local_offset(
                         ty,
@@ -984,6 +1051,21 @@ fn codegen_expr(
                     )
                 })
                 .expect("local stack slot is undeclared"),
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Parameter(slot)),
+            ) => allocator
+                .get_parameter_slot_offset(slot)
+                .map(|offset_start| {
+                    codegen_inc_or_dec_expression_from_local_offset(
+                        ty,
+                        allocator,
+                        ret,
+                        offset_start,
+                        IncDecExpression::PostDecrement,
+                    )
+                })
+                .expect("local paramater stack slot is undeclared"),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret, *expr),
@@ -1002,9 +1084,13 @@ fn codegen_expr(
             codegen_reference_from_identifier(ret, &identifier)
         }
         TypedExprNode::Ref(_, ast::IdentifierLocality::Local(slot)) => allocator
-            .get_slot_offset(slot)
+            .get_local_slot_offset(slot)
             .map(|offset_start| codegen_reference_from_stack_offset(ret, offset_start))
             .expect("local stack slot is undeclared"),
+        TypedExprNode::Ref(_, ast::IdentifierLocality::Parameter(slot)) => allocator
+            .get_parameter_slot_offset(slot)
+            .map(|offset_start| codegen_reference_from_stack_offset(ret, offset_start))
+            .expect("local parameter stack slot is undeclared"),
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(
                 codegen_expr(allocator, ret, *expr),

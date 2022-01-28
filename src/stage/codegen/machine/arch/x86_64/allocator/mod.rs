@@ -53,6 +53,7 @@ where
 #[derive(Debug)]
 pub(crate) struct SysVAllocator {
     pub(crate) general_purpose_reg_allocator: register::GPRegisterAllocator,
+    pub(crate) parameter_stack_offsets: Vec<Range<isize>>,
     pub(crate) local_stack_offsets: Vec<Range<isize>>,
 }
 
@@ -60,6 +61,7 @@ impl SysVAllocator {
     pub fn new(general_purpose_reg_allocator: register::GPRegisterAllocator) -> Self {
         Self {
             general_purpose_reg_allocator,
+            parameter_stack_offsets: vec![],
             local_stack_offsets: vec![],
         }
     }
@@ -95,10 +97,70 @@ impl SysVAllocator {
         ret_val
     }
 
-    pub fn get_slot_offset(&self, slot: usize) -> Option<isize> {
+    pub fn get_parameter_slot_offset(&self, slot: usize) -> Option<isize> {
+        self.parameter_stack_offsets
+            .get(slot)
+            .map(|slot_offsets| slot_offsets.start)
+    }
+
+    pub fn get_local_slot_offset(&self, slot: usize) -> Option<isize> {
         self.local_stack_offsets
             .get(slot)
             .map(|slot_offsets| slot_offsets.start)
+    }
+
+    fn insert_parameter_slot_offset(&mut self, slot: usize, offset: Range<isize>) -> Range<isize> {
+        self.parameter_stack_offsets.insert(slot, offset.clone());
+        offset
+    }
+
+    pub fn calculate_and_insert_parameter_offset<S>(
+        &mut self,
+        slot: usize,
+        sized: S,
+    ) -> Option<Range<isize>>
+    where
+        S: ByteSized,
+    {
+        self.calculate_and_insert_parameter_offset_with_cnt(slot, sized, 1)
+    }
+
+    pub fn calculate_and_insert_parameter_offset_with_cnt<S>(
+        &mut self,
+        slot: usize,
+        sized: S,
+        cnt: usize,
+    ) -> Option<Range<isize>>
+    where
+        S: ByteSized,
+    {
+        let parameter_stack_offset = self.calculate_parameter_offset_for_slot(slot, sized, cnt)?;
+        self.insert_parameter_slot_offset(slot, parameter_stack_offset.clone());
+        Some(parameter_stack_offset)
+    }
+
+    pub fn calculate_parameter_offset_for_slot<S>(
+        &self,
+        slot: usize,
+        sized: S,
+        cnt: usize,
+    ) -> Option<Range<isize>>
+    where
+        S: ByteSized,
+    {
+        let rounded_size = round_sized_type_for_local_offset(sized.size() * cnt);
+        let slot_end_offset = if slot == 0 {
+            None
+        } else {
+            self.parameter_stack_offsets
+                .get(slot - 1)
+                .map(|slot_offsets| slot_offsets.start)
+        }
+        .unwrap_or(0);
+
+        let slot_start_offset = slot_end_offset - (rounded_size as isize);
+
+        Some(slot_start_offset..slot_end_offset)
     }
 
     /// Calculates an exclusive range of offsets for a given slot and type,
@@ -114,12 +176,18 @@ impl SysVAllocator {
     {
         let rounded_size = round_sized_type_for_local_offset(sized.size() * cnt);
 
-        let slot_end_offset = if slot == 0 {
-            None
-        } else {
-            self.local_stack_offsets
+        let slot_end_offset = match (slot == 0, !self.parameter_stack_offsets.is_empty()) {
+            (true, false) => None,
+            // start from the last stack slot of the parameters local stack.
+            (true, true) => self
+                .parameter_stack_offsets
+                .last()
+                .map(|slot_offsets| slot_offsets.start),
+            // reference the last offset
+            (false, _) => self
+                .local_stack_offsets
                 .get(slot - 1)
-                .map(|slot_offsets| slot_offsets.start)
+                .map(|slot_offsets| slot_offsets.start),
         }
         .unwrap_or(0);
 
@@ -128,7 +196,7 @@ impl SysVAllocator {
         Some(slot_start_offset..slot_end_offset)
     }
 
-    pub fn insert_slot_offset(&mut self, slot: usize, offset: Range<isize>) -> Range<isize> {
+    fn insert_local_slot_offset(&mut self, slot: usize, offset: Range<isize>) -> Range<isize> {
         self.local_stack_offsets.insert(slot, offset.clone());
         offset
     }
@@ -156,8 +224,16 @@ impl SysVAllocator {
         S: ByteSized,
     {
         let local_offset = self.calculate_local_offset_for_slot(slot, sized, cnt)?;
-        self.insert_slot_offset(slot, local_offset.clone());
+        self.insert_local_slot_offset(slot, local_offset.clone());
         Some(local_offset)
+    }
+
+    pub fn top_of_local_stack(&self) -> isize {
+        self.local_stack_offsets
+            .last()
+            .map(|local_declarations| local_declarations.start)
+            .or_else(|| self.parameter_stack_offsets.last().map(|param| param.start))
+            .unwrap_or(0)
     }
 
     pub fn align_stack_pointer(&self, stack_end: isize) -> isize {
