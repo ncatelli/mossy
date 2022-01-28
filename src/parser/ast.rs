@@ -27,16 +27,36 @@ pub enum GlobalDecls {
 
 /// A new fuction declaration wrapping a string and block.
 #[derive(PartialEq, Debug, Clone)]
+pub struct Parameter {
+    pub id: String,
+    pub r#type: ast::Type,
+}
+
+impl Parameter {
+    pub fn new(id: String, r#type: ast::Type) -> Self {
+        Self { id, r#type }
+    }
+}
+
+/// A new fuction declaration wrapping a string and block.
+#[derive(PartialEq, Debug, Clone)]
 pub struct FunctionDeclaration {
     pub id: String,
     pub return_type: ast::Type,
+    pub params: Vec<Parameter>,
     pub block: CompoundStmts,
 }
 
 impl FunctionDeclaration {
-    pub fn new(id: String, return_type: ast::Type, block: CompoundStmts) -> Self {
+    pub fn new(
+        id: String,
+        return_type: ast::Type,
+        params: Vec<Parameter>,
+        block: CompoundStmts,
+    ) -> Self {
         Self {
             id,
+            params,
             return_type,
             block,
         }

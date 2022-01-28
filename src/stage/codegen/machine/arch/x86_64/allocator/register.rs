@@ -147,8 +147,6 @@ impl WidthFormatted for IntegerRegister {
 impl From<GeneralPurposeRegister> for IntegerRegister {
     fn from(gpr: GeneralPurposeRegister) -> Self {
         match gpr {
-            GeneralPurposeRegister::R8 => Self::R8,
-            GeneralPurposeRegister::R9 => Self::R9,
             GeneralPurposeRegister::R10 => Self::R10,
             GeneralPurposeRegister::R11 => Self::R11,
             GeneralPurposeRegister::R12 => Self::R12,
@@ -161,8 +159,6 @@ impl From<GeneralPurposeRegister> for IntegerRegister {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GeneralPurposeRegister {
-    R8,
-    R9,
     R10,
     R11,
     R12,
@@ -184,6 +180,33 @@ impl WidthFormatted for &GeneralPurposeRegister {
 
     fn fmt_with_operand_width(&self, width: OperandWidth) -> Self::Output {
         IntegerRegister::from(**self).fmt_with_operand_width(width)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(unused)]
+pub enum FunctionPassingRegisters {
+    DI,
+    SI,
+    D,
+    C,
+    R8,
+    R9,
+}
+
+impl WidthFormatted for FunctionPassingRegisters {
+    type Output = &'static str;
+
+    fn fmt_with_operand_width(&self, width: OperandWidth) -> Self::Output {
+        match self {
+            FunctionPassingRegisters::DI => IntegerRegister::DI,
+            FunctionPassingRegisters::SI => IntegerRegister::SI,
+            FunctionPassingRegisters::D => IntegerRegister::D,
+            FunctionPassingRegisters::C => IntegerRegister::C,
+            FunctionPassingRegisters::R8 => IntegerRegister::R8,
+            FunctionPassingRegisters::R9 => IntegerRegister::R9,
+        }
+        .fmt_with_operand_width(width)
     }
 }
 
@@ -259,8 +282,6 @@ impl Default for GPRegisterAllocator {
             GeneralPurposeRegister::R12,
             GeneralPurposeRegister::R11,
             GeneralPurposeRegister::R10,
-            GeneralPurposeRegister::R9,
-            GeneralPurposeRegister::R8,
         ])
     }
 }

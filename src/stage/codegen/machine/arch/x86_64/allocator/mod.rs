@@ -82,18 +82,6 @@ impl SysVAllocator {
             .expect("unable to allocate register")
     }
 
-    /// Allocates a register, passing the corresponding register ticket to a closure.
-    #[allow(unused)]
-    pub fn allocate_general_purpose_register_with_guard_then<F, R>(&mut self, f: F) -> R
-    where
-        F: FnOnce(&mut Self, RegisterOrOffset<register::RegisterAllocationGuard>) -> R,
-    {
-        self.general_purpose_reg_allocator
-            .allocate()
-            .map(|guard| f(self, RegisterOrOffset::Register(guard)))
-            .expect("unable to allocate register")
-    }
-
     pub fn allocate_new_local_stack_scope<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce(&mut Self) -> R,

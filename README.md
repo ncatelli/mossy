@@ -30,7 +30,7 @@ external_declaration: function_declaration
         | var_declaration
         ;
 
-function_declaration: type_declarator identifier '(' ')' compound_statement
+function_declaration: type_declarator identifier '(' ((type_declarator identifier,)* type_declarator identifier) | (type_declarator identifier) ')' compound_statement
         ;
 
 compound_statement: '{' '}'
