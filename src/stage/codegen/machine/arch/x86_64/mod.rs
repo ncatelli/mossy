@@ -92,7 +92,7 @@ impl CompilationStage<ast::TypedFunctionDeclaration, Vec<String>, CodeGeneration
 
                     let alignment = allocator.align_stack_pointer(last);
                     vec![
-                        codegen_function_preamble(&id, alignment),
+                        codegen_function_preamble(allocator, &id, &parameters, alignment),
                         block,
                         codegen_function_postamble(&id, alignment),
                     ]
@@ -356,21 +356,50 @@ fn codegen_for_statement(
     })
 }
 
-pub fn codegen_function_preamble(identifier: &str, alignment: isize) -> Vec<String> {
-    vec![format!(
-        "\t.text
+fn codegen_function_preamble(
+    allocator: &mut SysVAllocator,
+    identifier: &str,
+    parameters: &[Type],
+    alignment: isize,
+) -> Vec<String> {
+    let param_cnt = allocator.parameter_stack_offsets.len();
+    let src_to_dst_param_mapping = (0..param_cnt)
+        .into_iter()
+        .flat_map(|slot| {
+            let src_reg = allocator.parameter_passing_register_for_slot(slot);
+            allocator
+                .get_parameter_slot_offset(slot)
+                .map(|dst_offset| (src_reg, dst_offset, parameters[slot].clone()))
+        })
+        .flat_map(|(src, dst_offset, ty)| {
+            let width = operand_width_of_type(ty);
+            vec![format!(
+                "\tmov{}\t{}, {}({})\n",
+                operator_suffix(width),
+                src.fmt_with_operand_width(width),
+                dst_offset,
+                BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+            )]
+        })
+        .collect();
+
+    flattenable_instructions!(
+        vec![format!(
+            "\t.text
 \t.globl\t{name}
 \t.type\t{name}, @function
 {name}:
 \tpushq\t%rbp
 \tmovq\t%rsp, %rbp
 \tsubq\t${alignment}, %rsp\n",
-        name = identifier,
-        alignment = alignment
-    )]
+            name = identifier,
+            alignment = alignment
+        )],
+        src_to_dst_param_mapping,
+    )
 }
 
-pub fn codegen_function_postamble(identifier: &str, alignment: isize) -> Vec<String> {
+fn codegen_function_postamble(identifier: &str, alignment: isize) -> Vec<String> {
     codegen_label(format!("func_{}_ret", identifier))
         .into_iter()
         .chain(

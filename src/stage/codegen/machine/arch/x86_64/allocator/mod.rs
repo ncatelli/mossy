@@ -109,6 +109,21 @@ impl SysVAllocator {
             .map(|slot_offsets| slot_offsets.start)
     }
 
+    pub fn parameter_passing_register_for_slot(
+        &self,
+        slot: usize,
+    ) -> register::FunctionPassingRegisters {
+        match slot {
+            0 => register::FunctionPassingRegisters::DI,
+            1 => register::FunctionPassingRegisters::SI,
+            2 => register::FunctionPassingRegisters::D,
+            3 => register::FunctionPassingRegisters::C,
+            4 => register::FunctionPassingRegisters::R8,
+            5 => register::FunctionPassingRegisters::R9,
+            _ => unimplemented!(),
+        }
+    }
+
     fn insert_parameter_slot_offset(&mut self, slot: usize, offset: Range<isize>) -> Range<isize> {
         self.parameter_stack_offsets.insert(slot, offset.clone());
         offset
