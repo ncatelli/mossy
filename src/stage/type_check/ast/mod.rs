@@ -70,19 +70,38 @@ impl TypedProgram {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Parameter {
+    pub id: String,
+    pub r#type: Type,
+}
+
+impl Parameter {
+    pub fn new(id: String, r#type: Type) -> Self {
+        Self { id, r#type }
+    }
+}
+
 /// A typed function declaration
 #[derive(PartialEq, Debug, Clone)]
 pub struct TypedFunctionDeclaration {
     pub id: String,
     pub block: TypedCompoundStmts,
+    parameters: Vec<Parameter>,
     local_vars: Vec<(Type, usize)>,
 }
 
 impl TypedFunctionDeclaration {
-    pub fn new(id: String, block: TypedCompoundStmts, local_vars: Vec<(Type, usize)>) -> Self {
+    pub fn new(
+        id: String,
+        block: TypedCompoundStmts,
+        parameters: Vec<Parameter>,
+        local_vars: Vec<(Type, usize)>,
+    ) -> Self {
         Self {
             id,
             block,
+            parameters,
             local_vars,
         }
     }
@@ -325,12 +344,15 @@ impl ByteSized for IntegerWidth {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FuncProto {
     pub return_type: Box<Type>,
-    pub args: Vec<Type>,
+    pub parameters: Vec<Parameter>,
 }
 
 impl FuncProto {
-    pub fn new(return_type: Box<Type>, args: Vec<Type>) -> Self {
-        Self { return_type, args }
+    pub fn new(return_type: Box<Type>, parameters: Vec<Parameter>) -> Self {
+        Self {
+            return_type,
+            parameters,
+        }
     }
 }
 

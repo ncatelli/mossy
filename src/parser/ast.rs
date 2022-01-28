@@ -25,7 +25,6 @@ pub enum GlobalDecls {
     Var(Declaration),
 }
 
-/// A new fuction declaration wrapping a string and block.
 #[derive(PartialEq, Debug, Clone)]
 pub struct Parameter {
     pub id: String,
