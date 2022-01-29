@@ -609,7 +609,7 @@ fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary>
 
 fn character_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
     character_wrapped('\'', '\'', ascii().map(|c| c as u8)).map(|num| Primary::Integer {
-        sign: Signed::Unsigned,
+        sign: Signed::Signed,
         width: IntegerWidth::Eight,
         value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
     })
@@ -1067,7 +1067,7 @@ mod tests {
             .map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
-            primary_expr!(u8 97),
+            primary_expr!(i8 97),
         )]));
 
         assert_eq!(&expected_result, &res);
