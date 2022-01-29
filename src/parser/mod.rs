@@ -1067,7 +1067,7 @@ mod tests {
             .map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
-            primary_expr!(u8 97),
+            primary_expr!(i8 97),
         )]));
 
         assert_eq!(&expected_result, &res);
