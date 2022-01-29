@@ -211,7 +211,14 @@ impl SysVAllocator {
             // start from the last stack slot of the parameters local stack.
             (true, true) => self
                 .parameter_stack_offsets
+                .iter()
+                // strip of any parameters that are pushed above rbp
+                .filter(|r| r.start.is_negative())
                 .last()
+                .map(|slot_offsets| {
+                    println!("slot offsets: {:?}", &slot_offsets);
+                    slot_offsets
+                })
                 .map(|slot_offsets| slot_offsets.start),
             // reference the last offset
             (false, _) => self
