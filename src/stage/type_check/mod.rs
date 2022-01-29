@@ -5,7 +5,7 @@ use super::CompilationStage;
 
 #[macro_use]
 pub mod ast;
-use ast::{FuncProto, Typed, Type};
+use ast::{FuncProto, Type, Typed};
 
 mod scopes;
 use scopes::ScopeStack;
@@ -137,7 +137,6 @@ impl TypeCompatibility for SmallestEncompassing {
     type Rhs = Type;
 
     fn type_compatible(&self, lhs: &Self::Lhs, rhs: &Self::Rhs) -> Self::Output {
-
         match (lhs, rhs) {
             (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,
             (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width)) => {
@@ -165,7 +164,6 @@ impl TypeCompatibility for LeftFlowing {
     type Rhs = Type;
 
     fn type_compatible(&self, lhs: &Self::Lhs, rhs: &Self::Rhs) -> Self::Output {
-
         match (lhs, rhs) {
             (lhs, rhs) if lhs == rhs => CompatibilityResult::Equivalent,
             (Type::Integer(l_sign, l_width), Type::Integer(r_sign, r_width)) => {
@@ -276,17 +274,18 @@ impl
         &mut self,
         input: crate::parser::ast::FunctionDeclaration,
     ) -> Result<ast::TypedFunctionDeclaration, String> {
-        let (id, block) = (input.id, input.block);
+        let (id, return_ty, block) = (input.id, input.return_type, input.block);
+        let params = input
+            .params
+            .into_iter()
+            .map(|p| ast::Parameter::new(p.id, p.r#type))
+            .collect();
 
-        let proto = FuncProto::new(Box::new(input.return_type), vec![]);
+        let proto = FuncProto::new(Box::new(return_ty), params);
         self.scopes
             .declare_global_mut(&id, ast::Type::Func(proto.clone()), scopes::Kind::Basic);
 
-        self.analyze_function_body(id.clone(), proto, block).map(
-            |(typed_block, local_vars)| {
-                ast::TypedFunctionDeclaration::new(id.clone(), typed_block, local_vars)
-            },
-        )
+        self.analyze_function_body(id.clone(), proto, block)
     }
 }
 
@@ -296,12 +295,17 @@ impl TypeAnalysis {
         id: String,
         func_proto: FuncProto,
         block: crate::parser::ast::CompoundStmts,
-    ) -> Result<(ast::TypedCompoundStmts, Vec<(ast::Type, usize)>), String> {
-        let old_body = self.in_func.replace((id, func_proto.clone()));
+    ) -> Result<ast::TypedFunctionDeclaration, String> {
+        let old_body = self.in_func.replace((id.clone(), func_proto.clone()));
         self.scopes.push_new_scope_mut();
-
         let stmts = Vec::from(block);
         let mut typed_stmts = vec![];
+
+        // Declare global parameters prior to statement analysis
+        for param in func_proto.parameters.iter() {
+            self.scopes
+                .declare_parameter_mut(&param.id, param.r#type.clone(), scopes::Kind::Basic);
+        }
 
         for stmt in stmts {
             let typed_stmt = self.analyze_statement(stmt)?;
@@ -317,15 +321,28 @@ impl TypeAnalysis {
             })
             .ok_or_else(|| "invalid return type".to_string())?;
 
-        let local_vars = self.scopes.local_scope().map(|s| s.ordered_local_declarations()).ok_or_else(|| "cannot obtain local declarations on global scope".to_string())?;
+        let params = self
+            .scopes
+            .local_scope()
+            .map(|s| s.ordered_parameter_declarations())
+            // safe to unwrap due to guarantee of local scope
+            .unwrap();
+
+        let local_vars = self
+            .scopes
+            .local_scope()
+            .map(|s| s.ordered_local_declarations())
+            // safe to unwrap due to guarantee of local scope
+            .unwrap();
 
         // reset scope
         self.scopes.pop_scope_mut();
         self.in_func = old_body;
 
-        Ok((
-            ast::TypedCompoundStmts::new(typed_stmts),
-            local_vars,
+        let block = ast::TypedCompoundStmts::new(typed_stmts);
+
+        Ok(ast::TypedFunctionDeclaration::new(
+            id, block, params, local_vars,
         ))
     }
 
@@ -485,12 +502,22 @@ impl TypeAnalysis {
                             ast::IdentifierLocality::Global(identifier),
                         ),
                     ),
-                    (true, scopes::Locality::Local(offset)) => {
-                        ast::TypedExprNode::Ref(dm.r#type, ast::IdentifierLocality::Local(offset))
+                    (true, scopes::Locality::Local(slot)) => {
+                        ast::TypedExprNode::Ref(dm.r#type, ast::IdentifierLocality::Local(slot))
                     }
-                    (false, scopes::Locality::Local(offset)) => ast::TypedExprNode::Primary(
+                    (false, scopes::Locality::Local(slot)) => ast::TypedExprNode::Primary(
                         dm.r#type.clone(),
-                        ast::Primary::Identifier(dm.r#type, ast::IdentifierLocality::Local(offset)),
+                        ast::Primary::Identifier(dm.r#type, ast::IdentifierLocality::Local(slot)),
+                    ),
+                    (true, scopes::Locality::Parameter(slot)) => {
+                        ast::TypedExprNode::Ref(dm.r#type, ast::IdentifierLocality::Parameter(slot))
+                    }
+                    (false, scopes::Locality::Parameter(slot)) => ast::TypedExprNode::Primary(
+                        dm.r#type.clone(),
+                        ast::Primary::Identifier(
+                            dm.r#type,
+                            ast::IdentifierLocality::Parameter(slot),
+                        ),
                     ),
                 }),
             ExprNode::Primary(Primary::Str(elems)) => Ok(ast::TypedExprNode::Primary(
@@ -504,22 +531,57 @@ impl TypeAnalysis {
                 .map(|(ty, expr)| ast::TypedExprNode::Grouping(ty, Box::new(expr))),
 
             ExprNode::FunctionCall(identifier, args) => {
-                let args = args.map(|arg| self.analyze_expression(*arg).unwrap());
+                let args = args
+                    .into_iter()
+                    .map(|arg| self.analyze_expression(arg))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                let args_type_sig: Vec<ast::Type> = args.iter().map(|arg| arg.r#type()).collect();
 
                 self.scopes
                     .lookup(&identifier)
                     .ok_or_else(|| format!("undefined_function: {}", &identifier))
-                    .and_then(|dm| match dm.r#type {
+                    .and_then(|dm| match dm.r#type.clone() {
                         ast::Type::Func(FuncProto {
                             return_type,
-                            args: func_args,
-                        }) if args.is_none() && func_args.is_empty() => {
-                            Ok(ast::TypedExprNode::FunctionCall(
-                                *return_type,
-                                identifier,
-                                args.map(Box::new),
-                            ))
+                            parameters: params,
+                        }) => {
+                            let params_type_sig = params.iter().map(|arg| arg.r#type.clone());
+
+                            if params_type_sig.len() == args_type_sig.len() {
+                                let adjusted_arg_types = params_type_sig
+                                    .zip(args_type_sig.iter())
+                                    .map(|(param_ty, arg_ty)| {
+                                        match LeftFlowing.type_compatible(&param_ty, arg_ty) {
+                                            CompatibilityResult::Equivalent => Ok(param_ty.clone()),
+                                            CompatibilityResult::WidenTo(ty) => Ok(ty),
+                                            CompatibilityResult::Scale(_)
+                                            | CompatibilityResult::Incompatible => Err(format!(
+                                                "incompatible parameter type for {} function call {:?} <- {:?}",
+                                                &identifier, &param_ty, &arg_ty
+                                            )),
+                                        }
+                                    })
+                                    .collect::<Result<Vec<_>, _>>()
+                                    .map_err(|e| e)?;
+
+                                let adjusted_args = adjusted_arg_types.into_iter().zip(args.into_iter()).map(|(expr_ty, expr)| {
+                                    ast::TypedExprNode::Grouping(expr_ty, Box::new(expr))
+                                }).collect();
+
+                                Ok(ast::TypedExprNode::FunctionCall(
+                                    *return_type,
+                                    identifier,
+                                    adjusted_args,
+                                ))
+                            } else {
+                                Err(format!(
+                                    "type mismatch, cannot call non-function type: {:?} with: {:?}",
+                                    &dm.r#type, args_type_sig
+                                ))
+                            }
                         }
+
                         _ => Err(format!(
                             "type mismatch, cannot call non-function type: {:?}",
                             &dm.r#type
@@ -548,7 +610,7 @@ impl TypeAnalysis {
                             CompatibilityResult::Scale(t) => Ok(t),
                         })
                         .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, ast::IdentifierLocality::Global(id), Box::new(rhs))),
-                    TypedExprNode::Primary(lhs_ty, Primary::Identifier(ty, ast::IdentifierLocality::Local(offset))) =>{ 
+                    TypedExprNode::Primary(lhs_ty, Primary::Identifier(ty, ast::IdentifierLocality::Local(offset))) => {
                         let type_compat = LeftFlowing.type_compatible(&ty, &rhs.r#type());
                          match type_compat {
                             CompatibilityResult::Equivalent => Ok(lhs_ty),
@@ -559,6 +621,18 @@ impl TypeAnalysis {
                             CompatibilityResult::Scale(t) => Ok(t),
                         }
                         .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, ast::IdentifierLocality::Local(offset), Box::new(rhs)))
+                    }
+                    TypedExprNode::Primary(lhs_ty, Primary::Identifier(ty, ast::IdentifierLocality::Parameter(offset))) => {
+                        let type_compat = LeftFlowing.type_compatible(&ty, &rhs.r#type());
+                         match type_compat {
+                            CompatibilityResult::Equivalent => Ok(lhs_ty),
+                            CompatibilityResult::WidenTo(ty) => Ok(ty),
+                            CompatibilityResult::Incompatible => {
+                                Err(format!("invalid type in identifier:\n\texpected: lhs({:?})\n\tgot: rhs({:?})", lhs_ty, &rhs.r#type()))
+                            }
+                            CompatibilityResult::Scale(t) => Ok(t),
+                        }
+                        .map(|ty| ast::TypedExprNode::IdentifierAssignment(ty, ast::IdentifierLocality::Parameter(offset), Box::new(rhs)))
                     }
                     TypedExprNode::Deref(ty, expr) => match LeftFlowing.type_compatible(&ty, &rhs.r#type())
                     {
@@ -592,21 +666,15 @@ impl TypeAnalysis {
 
             ExprNode::BitOr(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
-                .map(|(ty, lhs, rhs)| {
-                    ast::TypedExprNode::BitOr(ty, Box::new(lhs), Box::new(rhs))
-                })
+                .map(|(ty, lhs, rhs)| ast::TypedExprNode::BitOr(ty, Box::new(lhs), Box::new(rhs)))
                 .ok_or_else(|| "incompatible types for bitwise or operation".to_string()),
             ExprNode::BitXor(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
-                .map(|(ty, lhs, rhs)| {
-                    ast::TypedExprNode::BitXor(ty, Box::new(lhs), Box::new(rhs))
-                })
+                .map(|(ty, lhs, rhs)| ast::TypedExprNode::BitXor(ty, Box::new(lhs), Box::new(rhs)))
                 .ok_or_else(|| "incompatible types for bitwise xor operation".to_string()),
             ExprNode::BitAnd(lhs, rhs) => self
                 .analyze_binary_expr(*lhs, *rhs)
-                .map(|(ty, lhs, rhs)| {
-                    ast::TypedExprNode::BitAnd(ty, Box::new(lhs), Box::new(rhs))
-                })
+                .map(|(ty, lhs, rhs)| ast::TypedExprNode::BitAnd(ty, Box::new(lhs), Box::new(rhs)))
                 .ok_or_else(|| "incompatible types for bitwise and operation".to_string()),
 
             ExprNode::Equal(lhs, rhs) => self
@@ -760,6 +828,10 @@ impl TypeAnalysis {
                         dm.r#type.pointer_to(),
                         ast::IdentifierLocality::Local(slot),
                     ),
+                    scopes::Locality::Parameter(slot) => ast::TypedExprNode::Ref(
+                        dm.r#type.pointer_to(),
+                        ast::IdentifierLocality::Parameter(slot),
+                    ),
                 })
                 .ok_or_else(|| "invalid type".to_string()),
             ExprNode::Deref(expr) => self
@@ -813,24 +885,32 @@ impl TypeAnalysis {
                                 ref_ty.clone(),
                                 ast::IdentifierLocality::Global(identifier.clone()),
                             )),
-                            (false, scopes::Locality::Global) => Box::new(ast::TypedExprNode::Primary(
-                                ref_ty.clone(),
-                                ast::Primary::Identifier(
+                            (false, scopes::Locality::Global) => {
+                                Box::new(ast::TypedExprNode::Primary(
                                     ref_ty.clone(),
-                                    ast::IdentifierLocality::Global(identifier.clone()),
-                                ),
-                            )),
-                            (true, scopes::Locality::Local(offset)) => Box::new(ast::TypedExprNode::Ref(
-                                ref_ty.clone(),
-                                ast::IdentifierLocality::Local(offset ),
-                            )),
-                            (false, scopes::Locality::Local(offset)) => Box::new(ast::TypedExprNode::Primary(
-                                ref_ty.clone(),
-                                ast::Primary::Identifier(
+                                    ast::Primary::Identifier(
+                                        ref_ty.clone(),
+                                        ast::IdentifierLocality::Global(identifier.clone()),
+                                    ),
+                                ))
+                            }
+                            (true, scopes::Locality::Local(offset)) => {
+                                Box::new(ast::TypedExprNode::Ref(
                                     ref_ty.clone(),
                                     ast::IdentifierLocality::Local(offset),
-                                ),
-                            )),
+                                ))
+                            }
+                            (false, scopes::Locality::Local(offset)) => {
+                                Box::new(ast::TypedExprNode::Primary(
+                                    ref_ty.clone(),
+                                    ast::Primary::Identifier(
+                                        ref_ty.clone(),
+                                        ast::IdentifierLocality::Local(offset),
+                                    ),
+                                ))
+                            }
+                            (true, scopes::Locality::Parameter(_)) => todo!(),
+                            (false, scopes::Locality::Parameter(_)) => todo!(),
                         };
 
                         ast::TypedExprNode::Addition(ref_ty, l_value_access, Box::new(scale))
@@ -844,7 +924,12 @@ impl TypeAnalysis {
                     .map(|(ref_points_to_ty, reference)| {
                         ast::TypedExprNode::Deref(ref_points_to_ty, Box::new(reference))
                     })
-                    .ok_or_else(|| format!("invalid type for identifier({}) in scale operation", &identifier))
+                    .ok_or_else(|| {
+                        format!(
+                            "invalid type for identifier({}) in scale operation",
+                            &identifier
+                        )
+                    })
             }
         }
     }
@@ -924,9 +1009,8 @@ enum IncDecExpr {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::ast;
     use super::ast::{IdentifierLocality, IntegerWidth, Signed, Type, TypedExprNode};
-    
+    use crate::parser::ast;
 
     macro_rules! pad_to_le_64bit_array {
         ($val:literal) => {

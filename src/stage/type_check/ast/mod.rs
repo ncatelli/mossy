@@ -70,19 +70,38 @@ impl TypedProgram {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Parameter {
+    pub id: String,
+    pub r#type: Type,
+}
+
+impl Parameter {
+    pub fn new(id: String, r#type: Type) -> Self {
+        Self { id, r#type }
+    }
+}
+
 /// A typed function declaration
 #[derive(PartialEq, Debug, Clone)]
 pub struct TypedFunctionDeclaration {
     pub id: String,
     pub block: TypedCompoundStmts,
+    pub parameters: Vec<Type>,
     local_vars: Vec<(Type, usize)>,
 }
 
 impl TypedFunctionDeclaration {
-    pub fn new(id: String, block: TypedCompoundStmts, local_vars: Vec<(Type, usize)>) -> Self {
+    pub fn new(
+        id: String,
+        block: TypedCompoundStmts,
+        parameters: Vec<Type>,
+        local_vars: Vec<(Type, usize)>,
+    ) -> Self {
         Self {
             id,
             block,
+            parameters,
             local_vars,
         }
     }
@@ -155,13 +174,14 @@ pub enum TypedStmtNode {
 pub enum IdentifierLocality {
     Global(String),
     Local(usize),
+    Parameter(usize),
 }
 
 /// Represents a single expression in the ast.
 #[derive(PartialEq, Debug, Clone)]
 pub enum TypedExprNode {
     Primary(Type, Primary),
-    FunctionCall(Type, String, Option<Box<TypedExprNode>>),
+    FunctionCall(Type, String, Vec<TypedExprNode>),
 
     IdentifierAssignment(Type, IdentifierLocality, Box<TypedExprNode>),
     DerefAssignment(Type, Box<TypedExprNode>, Box<TypedExprNode>),
@@ -325,12 +345,15 @@ impl ByteSized for IntegerWidth {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FuncProto {
     pub return_type: Box<Type>,
-    pub args: Vec<Type>,
+    pub parameters: Vec<Parameter>,
 }
 
 impl FuncProto {
-    pub fn new(return_type: Box<Type>, args: Vec<Type>) -> Self {
-        Self { return_type, args }
+    pub fn new(return_type: Box<Type>, parameters: Vec<Parameter>) -> Self {
+        Self {
+            return_type,
+            parameters,
+        }
     }
 }
 
@@ -348,11 +371,17 @@ pub enum Type {
 
 impl ByteSized for Type {
     fn size(&self) -> usize {
+        (&self).size()
+    }
+}
+
+impl ByteSized for &Type {
+    fn size(&self) -> usize {
         match self {
-            Self::Integer(_, iw) => iw.size(),
-            Self::Void => 0,
-            Self::Func { .. } => POINTER_BYTE_WIDTH,
-            Self::Pointer(_) => POINTER_BYTE_WIDTH,
+            Type::Integer(_, iw) => iw.size(),
+            Type::Void => 0,
+            Type::Func { .. } => POINTER_BYTE_WIDTH,
+            Type::Pointer(_) => POINTER_BYTE_WIDTH,
         }
     }
 }

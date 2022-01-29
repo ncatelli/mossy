@@ -47,12 +47,40 @@ pub fn parse(input: &[(usize, char)]) -> Result<CompilationUnit, ParseErr> {
 fn function_declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionDeclaration> {
     parcel::join(
         parcel::join(type_declarator(), whitespace_wrapped(identifier())),
-        parcel::right(parcel::join(
-            expect_character('(').and_then(|_| whitespace_wrapped(expect_character(')'))),
+        parcel::join(
+            expect_character('(').and_then(|_| {
+                parcel::left(parcel::join(
+                    parcel::join(
+                        parcel::zero_or_more(
+                            parcel::join(
+                                whitespace_wrapped(type_declarator()),
+                                parcel::left(parcel::join(
+                                    identifier(),
+                                    whitespace_wrapped(expect_character(',')),
+                                )),
+                            )
+                            .map(|(ty, id)| ast::Parameter::new(id, ty)),
+                        ),
+                        parcel::join(whitespace_wrapped(type_declarator()), identifier())
+                            .map(|(ty, id)| ast::Parameter::new(id, ty)),
+                    )
+                    .map(|(mut head, tail)| {
+                        head.push(tail);
+                        head
+                    })
+                    .or(|| {
+                        parcel::zero_or_more(
+                            parcel::join(whitespace_wrapped(type_declarator()), identifier())
+                                .map(|(ty, id)| ast::Parameter::new(id, ty)),
+                        )
+                    }),
+                    whitespace_wrapped(expect_character(')')),
+                ))
+            }),
             compound_statements(),
-        )),
+        ),
     )
-    .map(|((ty, id), block)| FunctionDeclaration::new(id, ty, block))
+    .map(|((ty, id), (params, block))| FunctionDeclaration::new(id, ty, params, block))
 }
 
 fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], CompoundStmts> {
@@ -435,12 +463,32 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
 fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         identifier(),
-        parcel::left(parcel::join(
-            whitespace_wrapped(expect_character('(')).and_then(|_| expression().optional()),
-            whitespace_wrapped(expect_character(')')),
-        )),
+        whitespace_wrapped(expect_character('(')).and_then(|_| {
+            parcel::left(parcel::join(
+                parcel::join(
+                    parcel::zero_or_more(parcel::left(parcel::join(
+                        expression(),
+                        whitespace_wrapped(expect_character(',')),
+                    ))),
+                    expression(),
+                )
+                .map(|(mut head, tail)| {
+                    head.push(tail);
+                    head
+                })
+                .or(|| {
+                    expression()
+                        .optional()
+                        .map(|optional_expr| match optional_expr {
+                            Some(expr) => vec![expr],
+                            None => vec![],
+                        })
+                }),
+                whitespace_wrapped(expect_character(')')),
+            ))
+        }),
     )
-    .map(|(id, expr)| ExprNode::FunctionCall(id, expr.map(Box::new)))
+    .map(|(id, exprs)| ExprNode::FunctionCall(id, exprs))
     .or(prefix_expression)
 }
 

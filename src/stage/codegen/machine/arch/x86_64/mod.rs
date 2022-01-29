@@ -22,6 +22,9 @@ trait Operand: WidthFormatted + Copy {}
 
 impl Operand for GeneralPurposeRegister {}
 impl Operand for &GeneralPurposeRegister {}
+impl Operand for allocator::register::FunctionPassingRegisters {}
+impl Operand for &allocator::register::FunctionPassingRegisters {}
+
 impl Operand for IntegerRegister {}
 
 impl<GP> Operand for allocator::RegisterOrOffset<GP>
@@ -80,18 +83,19 @@ impl CompilationStage<ast::TypedFunctionDeclaration, Vec<String>, CodeGeneration
         let mut allocator = SysVAllocator::new(GPRegisterAllocator::default());
         allocator.allocate_new_local_stack_scope(|allocator| {
             let (id, block) = (input.id, input.block);
+            let parameters = input.parameters;
+
+            for (slot, param) in parameters.iter().enumerate() {
+                allocator.calculate_and_insert_parameter_offset(slot, param);
+            }
 
             codegen_statements(allocator, block)
                 .map(|block| {
-                    let last = allocator
-                        .local_stack_offsets
-                        .last()
-                        .map(|local_declarations| local_declarations.start)
-                        .unwrap_or(0);
+                    let last = allocator.top_of_local_stack();
 
                     let alignment = allocator.align_stack_pointer(last);
                     vec![
-                        codegen_function_preamble(&id, alignment),
+                        codegen_function_preamble(allocator, &id, &parameters, alignment),
                         block,
                         codegen_function_postamble(&id, alignment),
                     ]
@@ -109,7 +113,6 @@ impl CompilationStage<ast::TypedCompoundStmts, Vec<String>, CodeGenerationErr> f
     }
 }
 
-// slotted
 fn codegen_statements(
     allocator: &mut SysVAllocator,
     input: ast::TypedCompoundStmts,
@@ -356,21 +359,57 @@ fn codegen_for_statement(
     })
 }
 
-pub fn codegen_function_preamble(identifier: &str, alignment: isize) -> Vec<String> {
-    vec![format!(
-        "\t.text
+fn codegen_function_preamble(
+    allocator: &mut SysVAllocator,
+    identifier: &str,
+    parameters: &[Type],
+    alignment: isize,
+) -> Vec<String> {
+    let param_cnt = allocator.parameter_stack_offsets.len();
+    let src_to_dst_param_mapping = (0..param_cnt)
+        .into_iter()
+        .flat_map(|slot| {
+            let src_reg = allocator.parameter_passing_target_for_slot(slot);
+            allocator
+                .get_parameter_slot_offset(slot)
+                .map(|dst_offset| (src_reg, dst_offset, parameters[slot].clone()))
+        })
+        .flat_map(|(src_target, dst_offset, ty)| {
+            let width = operand_width_of_type(ty);
+            match src_target {
+                // only callee saved registers need to be passed
+                Some(src) => {
+                    vec![format!(
+                        "\tmov{}\t{}, {}({})\n",
+                        operator_suffix(width),
+                        src.fmt_with_operand_width(width),
+                        dst_offset,
+                        BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+                    )]
+                }
+                // offsets don't need to be persisted
+                None => vec![],
+            }
+        })
+        .collect();
+
+    flattenable_instructions!(
+        vec![format!(
+            "\t.text
 \t.globl\t{name}
 \t.type\t{name}, @function
 {name}:
 \tpushq\t%rbp
 \tmovq\t%rsp, %rbp
 \tsubq\t${alignment}, %rsp\n",
-        name = identifier,
-        alignment = alignment
-    )]
+            name = identifier,
+            alignment = alignment
+        )],
+        src_to_dst_param_mapping,
+    )
 }
 
-pub fn codegen_function_postamble(identifier: &str, alignment: isize) -> Vec<String> {
+fn codegen_function_postamble(identifier: &str, alignment: isize) -> Vec<String> {
     codegen_label(format!("func_{}_ret", identifier))
         .into_iter()
         .chain(
@@ -714,9 +753,16 @@ fn codegen_expr(
             ty,
             Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
         ) => allocator
-            .get_slot_offset(slot)
+            .get_local_slot_offset(slot)
             .map(|offset_start| codegen_load_local(ty, ret, offset_start, 0))
             .expect("local stack slot is undeclared"),
+        TypedExprNode::Primary(
+            ty,
+            Primary::Identifier(_, ast::IdentifierLocality::Parameter(slot)),
+        ) => allocator
+            .get_parameter_slot_offset(slot)
+            .map(|offset_start| codegen_load_local(ty, ret, offset_start, 0))
+            .expect("local parameter stack slot is undeclared"),
         TypedExprNode::Primary(_, Primary::Str(lit)) => {
             let identifier = format!("V{}", BLOCK_ID.fetch_add(1, Ordering::SeqCst));
 
@@ -726,8 +772,8 @@ fn codegen_expr(
             )
         }
 
-        TypedExprNode::FunctionCall(ty, func_name, optional_arg) => {
-            codegen_call(allocator, ty, ret, &func_name, optional_arg)
+        TypedExprNode::FunctionCall(ty, func_name, args) => {
+            codegen_call(allocator, ty, ret, &func_name, args)
         }
 
         ast::TypedExprNode::IdentifierAssignment(
@@ -750,9 +796,23 @@ fn codegen_expr(
                 codegen_expr(allocator, rhs_ret, *expr),
                 codegen_mov(ty.clone(), rhs_ret, ret),
                 allocator
-                    .get_slot_offset(slot)
+                    .get_local_slot_offset(slot)
                     .map(|offset_start| { codegen_store_local(ty, ret, offset_start) })
                     .expect("local stack slot is undeclared"),
+            )
+        }),
+        ast::TypedExprNode::IdentifierAssignment(
+            ty,
+            ast::IdentifierLocality::Parameter(slot),
+            expr,
+        ) => allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+            flattenable_instructions!(
+                codegen_expr(allocator, rhs_ret, *expr),
+                codegen_mov(ty.clone(), rhs_ret, ret),
+                allocator
+                    .get_parameter_slot_offset(slot)
+                    .map(|offset_start| { codegen_store_local(ty, ret, offset_start) })
+                    .expect("local parameter stack slot is undeclared"),
             )
         }),
         TypedExprNode::DerefAssignment(ty, lhs, rhs) => allocator
@@ -860,7 +920,7 @@ fn codegen_expr(
                 ty,
                 Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
             ) => allocator
-                .get_slot_offset(slot)
+                .get_local_slot_offset(slot)
                 .map(|offset_start| {
                     codegen_inc_or_dec_expression_from_local_offset(
                         ty,
@@ -871,6 +931,21 @@ fn codegen_expr(
                     )
                 })
                 .expect("local stack slot is undeclared"),
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Parameter(slot)),
+            ) => allocator
+                .get_parameter_slot_offset(slot)
+                .map(|offset_start| {
+                    codegen_inc_or_dec_expression_from_local_offset(
+                        ty,
+                        allocator,
+                        ret,
+                        offset_start,
+                        IncDecExpression::PreIncrement,
+                    )
+                })
+                .expect("local parameter stack slot is undeclared"),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret, *expr),
@@ -898,7 +973,22 @@ fn codegen_expr(
                 ty,
                 Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
             ) => allocator
-                .get_slot_offset(slot)
+                .get_local_slot_offset(slot)
+                .map(|offset_start| {
+                    codegen_inc_or_dec_expression_from_local_offset(
+                        ty,
+                        allocator,
+                        ret,
+                        offset_start,
+                        IncDecExpression::PreDecrement,
+                    )
+                })
+                .expect("local stack slot is undeclared"),
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Parameter(slot)),
+            ) => allocator
+                .get_parameter_slot_offset(slot)
                 .map(|offset_start| {
                     codegen_inc_or_dec_expression_from_local_offset(
                         ty,
@@ -936,7 +1026,7 @@ fn codegen_expr(
                 ty,
                 Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
             ) => allocator
-                .get_slot_offset(slot)
+                .get_local_slot_offset(slot)
                 .map(|offset_start| {
                     codegen_inc_or_dec_expression_from_local_offset(
                         ty,
@@ -947,6 +1037,21 @@ fn codegen_expr(
                     )
                 })
                 .expect("local stack slot is undeclared"),
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Parameter(slot)),
+            ) => allocator
+                .get_parameter_slot_offset(slot)
+                .map(|offset_start| {
+                    codegen_inc_or_dec_expression_from_local_offset(
+                        ty,
+                        allocator,
+                        ret,
+                        offset_start,
+                        IncDecExpression::PostIncrement,
+                    )
+                })
+                .expect("local parameter stack slot is undeclared"),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret, *expr),
@@ -974,7 +1079,7 @@ fn codegen_expr(
                 ty,
                 Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
             ) => allocator
-                .get_slot_offset(slot)
+                .get_local_slot_offset(slot)
                 .map(|offset_start| {
                     codegen_inc_or_dec_expression_from_local_offset(
                         ty,
@@ -985,6 +1090,21 @@ fn codegen_expr(
                     )
                 })
                 .expect("local stack slot is undeclared"),
+            TypedExprNode::Primary(
+                ty,
+                Primary::Identifier(_, ast::IdentifierLocality::Parameter(slot)),
+            ) => allocator
+                .get_parameter_slot_offset(slot)
+                .map(|offset_start| {
+                    codegen_inc_or_dec_expression_from_local_offset(
+                        ty,
+                        allocator,
+                        ret,
+                        offset_start,
+                        IncDecExpression::PostDecrement,
+                    )
+                })
+                .expect("local paramater stack slot is undeclared"),
             TypedExprNode::Deref(ty, expr) => {
                 flattenable_instructions!(
                     codegen_expr(allocator, ret, *expr),
@@ -1003,9 +1123,13 @@ fn codegen_expr(
             codegen_reference_from_identifier(ret, &identifier)
         }
         TypedExprNode::Ref(_, ast::IdentifierLocality::Local(slot)) => allocator
-            .get_slot_offset(slot)
+            .get_local_slot_offset(slot)
             .map(|offset_start| codegen_reference_from_stack_offset(ret, offset_start))
             .expect("local stack slot is undeclared"),
+        TypedExprNode::Ref(_, ast::IdentifierLocality::Parameter(slot)) => allocator
+            .get_parameter_slot_offset(slot)
+            .map(|offset_start| codegen_reference_from_stack_offset(ret, offset_start))
+            .expect("local parameter stack slot is undeclared"),
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(
                 codegen_expr(allocator, ret, *expr),
@@ -1229,26 +1353,24 @@ fn codegen_addition(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-        allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-            let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
-            let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
+    let rhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
+        flattenable_instructions!(rhs_ctx, codegen_mov(ty, rhs_ret, ret),)
+    });
 
-            vec![
-                lhs_ctx,
-                rhs_ctx,
-                codegen_mov(ty, rhs_ret, ret),
-                vec![format!(
-                    "\tadd{}\t{}, {}\n",
-                    operator_suffix(width),
-                    lhs_ret.fmt_with_operand_width(width),
-                    ret.fmt_with_operand_width(width)
-                )],
-            ]
-            .into_iter()
-            .flatten()
-            .collect()
-        })
+    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
+
+        flattenable_instructions!(
+            lhs_ctx,
+            rhs_ctx,
+            vec![format!(
+                "\tadd{}\t{}, {}\n",
+                operator_suffix(width),
+                lhs_ret.fmt_with_operand_width(width),
+                ret.fmt_with_operand_width(width)
+            )],
+        )
     })
 }
 
@@ -1725,27 +1847,53 @@ fn codegen_call(
     ty: ast::Type,
     ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     func_name: &str,
-    arg: Option<Box<ast::TypedExprNode>>,
+    args: Vec<ast::TypedExprNode>,
 ) -> Vec<String> {
-    if let Some(arg_expr) = arg {
+    let arg_cnt = args.len();
+    let mut arg_exprs = vec![];
+    for (slot, arg_expr) in args.into_iter().enumerate().rev() {
         let arg_expr_ty = arg_expr.r#type();
+        let arg_expr = allocator.allocate_general_purpose_register_then(|allocator, arg_ret| {
+            let arg_ctx = codegen_expr(allocator, arg_ret, arg_expr);
+            let param_target = allocator.parameter_passing_target_for_slot(slot);
 
-        allocator.allocate_general_purpose_register_then(|allocator, arg_ret| {
-            let arg_ctx = codegen_expr(allocator, arg_ret, *arg_expr);
-
-            flattenable_instructions!(
-                arg_ctx,
-                codegen_mov(arg_expr_ty.clone(), arg_ret, &mut IntegerRegister::D),
-                vec![format!("\tcall\t{}\n", func_name)],
-                codegen_mov(ty, &mut IntegerRegister::A, ret),
-            )
-        })
-    } else {
-        flattenable_instructions!(
-            vec![format!("\tcall\t{}\n", func_name)],
-            codegen_mov(ty, &mut IntegerRegister::A, ret),
-        )
+            match param_target {
+                Some(mut reg) => {
+                    flattenable_instructions!(arg_ctx, codegen_mov(arg_expr_ty, arg_ret, &mut reg),)
+                }
+                // is offset
+                None => {
+                    let width = OperandWidth::QuadWord;
+                    flattenable_instructions!(
+                        arg_ctx,
+                        vec![format!(
+                            "\tpush{}\t{}\n",
+                            operator_suffix(width),
+                            arg_ret.fmt_with_operand_width(width)
+                        )],
+                    )
+                }
+            }
+        });
+        arg_exprs.push(arg_expr);
     }
+    let post_call_alignment =
+        allocator
+            .align_post_call_stack(arg_cnt)
+            .map_or(vec![], |alignment| {
+                vec![format!(
+                    "\tadd{}\t${}, {}\n",
+                    operator_suffix(OperandWidth::QuadWord),
+                    alignment,
+                    IntegerRegister::SP.fmt_with_operand_width(OperandWidth::QuadWord)
+                )]
+            });
+    flattenable_instructions!(
+        arg_exprs,
+        vec![format!("\tcall\t{}\n", func_name)],
+        post_call_alignment,
+        codegen_mov(ty, &mut IntegerRegister::A, ret),
+    )
 }
 
 fn codegen_return(
@@ -1904,13 +2052,13 @@ mod tests {
         ));
 
         assert_eq!(
-            Ok(vec!["\tleaq\tx(%rip), %r13
-\tmovq\t$1, %r11
+            Ok(vec!["\tleaq\tx(%rip), %r11
 \tmovq\t$1, %r12
-\tmovq\t%r12, %r14
-\timulq\t%r11, %r14
+\tmovq\t$1, %r13
+\tmovq\t%r13, %r14
+\timulq\t%r12, %r14
 \tmovq\t%r14, %r15
-\taddq\t%r13, %r15
+\taddq\t%r11, %r15
 \tmovb\t(%r15), %r15b
 "
             .to_string()]),

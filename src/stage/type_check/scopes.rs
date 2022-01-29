@@ -19,10 +19,14 @@ impl Kind {
     }
 }
 
+/// Defines the locality of a variable in a given scope.
 #[derive(Debug, Clone, Copy)]
 pub enum Locality {
     Global,
+    // Locally defined variable containing a local variable slot id.
     Local(usize),
+    // Function parameter parameter slot id.
+    Parameter(usize),
 }
 
 /// DeclarationMetadata contains information about a given declared variable.
@@ -63,6 +67,7 @@ impl DeclarationMetadata {
 #[derive(Debug, Default)]
 pub(crate) struct Scope {
     local_slots: Vec<String>,
+    parameter_slots: Vec<String>,
     symbols: std::collections::HashMap<String, DeclarationMetadata>,
 }
 
@@ -75,6 +80,14 @@ impl Scope {
                     .get(id.as_str())
                     .map(|dm| (dm.r#type.clone(), dm.elems.unwrap_or(1)))
             })
+            .flatten()
+            .collect()
+    }
+
+    pub fn ordered_parameter_declarations(&self) -> Vec<Type> {
+        self.parameter_slots
+            .iter()
+            .map(|id| self.symbols.get(id.as_str()).map(|dm| (dm.r#type.clone())))
             .flatten()
             .collect()
     }
@@ -109,6 +122,23 @@ impl ScopeStack {
                 DeclarationMetadata::new(ty, kind, Locality::Global),
             )
         });
+    }
+
+    pub fn declare_parameter_mut(&mut self, id: &str, ty: Type, kind: Kind) -> usize {
+        self.scopes
+            .last_mut()
+            .map(|scope| {
+                let slot_id = scope.parameter_slots.len();
+
+                scope.parameter_slots.push(id.to_string());
+                scope.symbols.insert(
+                    id.to_string(),
+                    DeclarationMetadata::new(ty, kind, Locality::Parameter(slot_id)),
+                );
+
+                slot_id
+            })
+            .expect("attempted to allocate local variable on non-local scope")
     }
 
     pub fn declare_local_mut(&mut self, id: &str, ty: Type, kind: Kind) -> usize {

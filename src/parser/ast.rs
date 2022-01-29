@@ -25,18 +25,37 @@ pub enum GlobalDecls {
     Var(Declaration),
 }
 
+#[derive(PartialEq, Debug, Clone)]
+pub struct Parameter {
+    pub id: String,
+    pub r#type: ast::Type,
+}
+
+impl Parameter {
+    pub fn new(id: String, r#type: ast::Type) -> Self {
+        Self { id, r#type }
+    }
+}
+
 /// A new fuction declaration wrapping a string and block.
 #[derive(PartialEq, Debug, Clone)]
 pub struct FunctionDeclaration {
     pub id: String,
     pub return_type: ast::Type,
+    pub params: Vec<Parameter>,
     pub block: CompoundStmts,
 }
 
 impl FunctionDeclaration {
-    pub fn new(id: String, return_type: ast::Type, block: CompoundStmts) -> Self {
+    pub fn new(
+        id: String,
+        return_type: ast::Type,
+        params: Vec<Parameter>,
+        block: CompoundStmts,
+    ) -> Self {
         Self {
             id,
+            params,
             return_type,
             block,
         }
@@ -83,7 +102,7 @@ pub enum StmtNode {
 #[derive(PartialEq, Debug, Clone)]
 pub enum ExprNode {
     Primary(Primary),
-    FunctionCall(String, Option<Box<ExprNode>>),
+    FunctionCall(String, Vec<ExprNode>),
 
     /// Assignment represents an assignment statement of an expressions value
     /// to a given pre-declared assignment.
