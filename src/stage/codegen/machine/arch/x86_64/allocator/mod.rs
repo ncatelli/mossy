@@ -158,13 +158,19 @@ impl SysVAllocator {
     pub fn calculate_parameter_offset_for_slot<S>(
         &self,
         slot: usize,
-        _sized: S,
+        sized: S,
         cnt: usize,
     ) -> Option<Range<isize>>
     where
         S: ByteSized,
     {
-        let rounded_size = 8 * cnt;
+        let rounded_size = if slot < 6 {
+            // round for stack allocation
+            round_sized_type_for_local_offset(sized.size() * cnt)
+        } else {
+            // already on the stack
+            8 * cnt
+        };
         match slot {
             0 => Some(-(rounded_size as isize)..0),
             1..=5 => self
@@ -254,9 +260,11 @@ impl SysVAllocator {
 
     pub fn top_of_local_stack(&self) -> isize {
         self.local_stack_offsets
-            .last()
-            .map(|local_declarations| local_declarations.start)
-            .or_else(|| self.parameter_stack_offsets.last().map(|param| param.start))
+            .iter()
+            .chain(self.parameter_stack_offsets.iter())
+            .map(|offset| offset.start)
+            .filter(|&start| start.is_negative())
+            .min()
             .unwrap_or(0)
     }
 
