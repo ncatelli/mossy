@@ -828,7 +828,10 @@ impl TypeAnalysis {
                         dm.r#type.pointer_to(),
                         ast::IdentifierLocality::Local(slot),
                     ),
-                    scopes::Locality::Parameter(_) => todo!(),
+                    scopes::Locality::Parameter(slot) => ast::TypedExprNode::Ref(
+                        dm.r#type.pointer_to(),
+                        ast::IdentifierLocality::Parameter(slot),
+                    ),
                 })
                 .ok_or_else(|| "invalid type".to_string()),
             ExprNode::Deref(expr) => self

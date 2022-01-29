@@ -109,18 +109,19 @@ impl SysVAllocator {
             .map(|slot_offsets| slot_offsets.start)
     }
 
-    pub fn parameter_passing_register_for_slot(
+    pub fn parameter_passing_target_for_slot(
         &self,
         slot: usize,
-    ) -> register::FunctionPassingRegisters {
+    ) -> Option<register::FunctionPassingRegisters> {
+        use register::FunctionPassingRegisters::*;
         match slot {
-            0 => register::FunctionPassingRegisters::DI,
-            1 => register::FunctionPassingRegisters::SI,
-            2 => register::FunctionPassingRegisters::D,
-            3 => register::FunctionPassingRegisters::C,
-            4 => register::FunctionPassingRegisters::R8,
-            5 => register::FunctionPassingRegisters::R9,
-            _ => unimplemented!(),
+            0 => Some(DI),
+            1 => Some(SI),
+            2 => Some(D),
+            3 => Some(C),
+            4 => Some(R8),
+            5 => Some(R9),
+            _ => None,
         }
     }
 
@@ -157,25 +158,33 @@ impl SysVAllocator {
     pub fn calculate_parameter_offset_for_slot<S>(
         &self,
         slot: usize,
-        sized: S,
+        _sized: S,
         cnt: usize,
     ) -> Option<Range<isize>>
     where
         S: ByteSized,
     {
-        let rounded_size = round_sized_type_for_local_offset(sized.size() * cnt);
-        let slot_end_offset = if slot == 0 {
-            None
-        } else {
-            self.parameter_stack_offsets
+        let rounded_size = 8 * cnt;
+        match slot {
+            0 => Some(-(rounded_size as isize)..0),
+            1..=5 => self
+                .parameter_stack_offsets
                 .get(slot - 1)
                 .map(|slot_offsets| slot_offsets.start)
+                .map(|slot_end_offset| {
+                    let slot_start_offset = slot_end_offset - (rounded_size as isize);
+                    slot_start_offset..slot_end_offset
+                }),
+            6 => Some(16..(rounded_size as isize)),
+            non_base_stack_slot => self
+                .parameter_stack_offsets
+                .get(non_base_stack_slot - 1)
+                .map(|slot_offsets| slot_offsets.end)
+                .map(|slot_start_offset| {
+                    let slot_end_offset = slot_start_offset + (rounded_size as isize);
+                    slot_start_offset..slot_end_offset
+                }),
         }
-        .unwrap_or(0);
-
-        let slot_start_offset = slot_end_offset - (rounded_size as isize);
-
-        Some(slot_start_offset..slot_end_offset)
     }
 
     /// Calculates an exclusive range of offsets for a given slot and type,
@@ -253,6 +262,14 @@ impl SysVAllocator {
 
     pub fn align_stack_pointer(&self, stack_end: isize) -> isize {
         (stack_end.abs() + 15) & !15
+    }
+
+    pub fn align_post_call_stack(&self, arg_cnt: usize) -> Option<usize> {
+        if arg_cnt > 6 {
+            Some((arg_cnt - 6) * 8)
+        } else {
+            None
+        }
     }
 }
 

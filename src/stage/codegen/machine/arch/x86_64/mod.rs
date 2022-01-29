@@ -369,20 +369,27 @@ fn codegen_function_preamble(
     let src_to_dst_param_mapping = (0..param_cnt)
         .into_iter()
         .flat_map(|slot| {
-            let src_reg = allocator.parameter_passing_register_for_slot(slot);
+            let src_reg = allocator.parameter_passing_target_for_slot(slot);
             allocator
                 .get_parameter_slot_offset(slot)
                 .map(|dst_offset| (src_reg, dst_offset, parameters[slot].clone()))
         })
-        .flat_map(|(src, dst_offset, ty)| {
+        .flat_map(|(src_target, dst_offset, ty)| {
             let width = operand_width_of_type(ty);
-            vec![format!(
-                "\tmov{}\t{}, {}({})\n",
-                operator_suffix(width),
-                src.fmt_with_operand_width(width),
-                dst_offset,
-                BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
-            )]
+            match src_target {
+                // only callee saved registers need to be passed
+                Some(src) => {
+                    vec![format!(
+                        "\tmov{}\t{}, {}({})\n",
+                        operator_suffix(width),
+                        src.fmt_with_operand_width(width),
+                        dst_offset,
+                        BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
+                    )]
+                }
+                // offsets don't need to be persisted
+                None => vec![],
+            }
         })
         .collect();
 
@@ -1346,26 +1353,24 @@ fn codegen_addition(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-        allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-            let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
-            let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
+    let rhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
+        flattenable_instructions!(rhs_ctx, codegen_mov(ty, rhs_ret, ret),)
+    });
 
-            vec![
-                lhs_ctx,
-                rhs_ctx,
-                codegen_mov(ty, rhs_ret, ret),
-                vec![format!(
-                    "\tadd{}\t{}, {}\n",
-                    operator_suffix(width),
-                    lhs_ret.fmt_with_operand_width(width),
-                    ret.fmt_with_operand_width(width)
-                )],
-            ]
-            .into_iter()
-            .flatten()
-            .collect()
-        })
+    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
+
+        flattenable_instructions!(
+            lhs_ctx,
+            rhs_ctx,
+            vec![format!(
+                "\tadd{}\t{}, {}\n",
+                operator_suffix(width),
+                lhs_ret.fmt_with_operand_width(width),
+                ret.fmt_with_operand_width(width)
+            )],
+        )
     })
 }
 
@@ -1844,56 +1849,52 @@ fn codegen_call(
     func_name: &str,
     args: Vec<ast::TypedExprNode>,
 ) -> Vec<String> {
+    let arg_cnt = args.len();
     let mut arg_exprs = vec![];
-    for (slot, arg_expr) in args.into_iter().enumerate() {
+    for (slot, arg_expr) in args.into_iter().enumerate().rev() {
         let arg_expr_ty = arg_expr.r#type();
-        allocator.allocate_general_purpose_register_then(|allocator, arg_ret| {
+        let arg_expr = allocator.allocate_general_purpose_register_then(|allocator, arg_ret| {
             let arg_ctx = codegen_expr(allocator, arg_ret, arg_expr);
-            let mut param_reg = allocator.parameter_passing_register_for_slot(slot);
+            let param_target = allocator.parameter_passing_target_for_slot(slot);
 
-            arg_exprs.push(flattenable_instructions!(
-                arg_ctx,
-                codegen_mov(arg_expr_ty.clone(), arg_ret, &mut param_reg),
-            ))
-        })
+            match param_target {
+                Some(mut reg) => {
+                    flattenable_instructions!(arg_ctx, codegen_mov(arg_expr_ty, arg_ret, &mut reg),)
+                }
+                // is offset
+                None => {
+                    let width = OperandWidth::QuadWord;
+                    flattenable_instructions!(
+                        arg_ctx,
+                        vec![format!(
+                            "\tpush{}\t{}\n",
+                            operator_suffix(width),
+                            arg_ret.fmt_with_operand_width(width)
+                        )],
+                    )
+                }
+            }
+        });
+        arg_exprs.push(arg_expr);
     }
-
+    let post_call_alignment =
+        allocator
+            .align_post_call_stack(arg_cnt)
+            .map_or(vec![], |alignment| {
+                vec![format!(
+                    "\tadd{}\t${}, {}\n",
+                    operator_suffix(OperandWidth::QuadWord),
+                    alignment,
+                    IntegerRegister::SP.fmt_with_operand_width(OperandWidth::QuadWord)
+                )]
+            });
     flattenable_instructions!(
         arg_exprs,
         vec![format!("\tcall\t{}\n", func_name)],
+        post_call_alignment,
         codegen_mov(ty, &mut IntegerRegister::A, ret),
     )
 }
-
-/*
-fn codegen_call(
-    allocator: &mut SysVAllocator,
-    ty: ast::Type,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
-    func_name: &str,
-    arg: Vec<ast::TypedExprNode>,
-) -> Vec<String> {
-    if let Some(arg_expr) = arg {
-        let arg_expr_ty = arg_expr.r#type();
-
-        allocator.allocate_general_purpose_register_then(|allocator, arg_ret| {
-            let arg_ctx = codegen_expr(allocator, arg_ret, *arg_expr);
-
-            flattenable_instructions!(
-                arg_ctx,
-                codegen_mov(arg_expr_ty.clone(), arg_ret, &mut IntegerRegister::D),
-                vec![format!("\tcall\t{}\n", func_name)],
-                codegen_mov(ty, &mut IntegerRegister::A, ret),
-            )
-        })
-    } else {
-        flattenable_instructions!(
-            vec![format!("\tcall\t{}\n", func_name)],
-            codegen_mov(ty, &mut IntegerRegister::A, ret),
-        )
-    }
-}
-*/
 
 fn codegen_return(
     ty: ast::Type,
