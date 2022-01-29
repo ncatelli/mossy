@@ -185,9 +185,9 @@ impl SysVAllocator {
             non_base_stack_slot => self
                 .parameter_stack_offsets
                 .get(non_base_stack_slot - 1)
-                .map(|slot_offsets| slot_offsets.end)
-                .map(|slot_start_offset| {
-                    let slot_end_offset = slot_start_offset + (rounded_size as isize);
+                .map(|slot_offsets| slot_offsets.start)
+                .map(|slot_end_offset| {
+                    let slot_start_offset = slot_end_offset + (rounded_size as isize);
                     slot_start_offset..slot_end_offset
                 }),
         }
@@ -206,19 +206,15 @@ impl SysVAllocator {
     {
         let rounded_size = round_sized_type_for_local_offset(sized.size() * cnt);
 
-        let slot_end_offset = match (slot == 0, !self.parameter_stack_offsets.is_empty()) {
-            (true, false) => None,
+        let slot_end_offset = match (slot == 0, self.parameter_stack_offsets.is_empty()) {
+            (true, true) => None,
             // start from the last stack slot of the parameters local stack.
-            (true, true) => self
+            (true, false) => self
                 .parameter_stack_offsets
                 .iter()
                 // strip of any parameters that are pushed above rbp
                 .filter(|r| r.start.is_negative())
                 .last()
-                .map(|slot_offsets| {
-                    println!("slot offsets: {:?}", &slot_offsets);
-                    slot_offsets
-                })
                 .map(|slot_offsets| slot_offsets.start),
             // reference the last offset
             (false, _) => self
