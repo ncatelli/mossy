@@ -2052,13 +2052,13 @@ mod tests {
         ));
 
         assert_eq!(
-            Ok(vec!["\tleaq\tx(%rip), %r13
-\tmovq\t$1, %r11
+            Ok(vec!["\tleaq\tx(%rip), %r11
 \tmovq\t$1, %r12
-\tmovq\t%r12, %r14
-\timulq\t%r11, %r14
+\tmovq\t$1, %r13
+\tmovq\t%r13, %r14
+\timulq\t%r12, %r14
 \tmovq\t%r14, %r15
-\taddq\t%r13, %r15
+\taddq\t%r11, %r15
 \tmovb\t(%r15), %r15b
 "
             .to_string()]),
