@@ -1354,15 +1354,15 @@ fn codegen_addition(
     let width = operand_width_of_type(ty.clone());
 
     let rhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-        let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
-        flattenable_instructions!(rhs_ctx, codegen_mov(ty, rhs_ret, ret),)
+        flattenable_instructions!(
+            codegen_expr(allocator, rhs_ret, *rhs),
+            codegen_mov(ty, rhs_ret, ret),
+        )
     });
 
     allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-        let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
-
         flattenable_instructions!(
-            lhs_ctx,
+            codegen_expr(allocator, lhs_ret, *lhs),
             rhs_ctx,
             vec![format!(
                 "\tadd{}\t{}, {}\n",
@@ -1383,23 +1383,24 @@ fn codegen_subtraction(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-        allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-            let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
-            let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
+    let lhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        flattenable_instructions!(
+            codegen_expr(allocator, lhs_ret, *lhs),
+            codegen_mov(ty, lhs_ret, ret),
+        )
+    });
 
-            flattenable_instructions!(
-                lhs_ctx,
-                rhs_ctx,
-                codegen_mov(ty, lhs_ret, ret),
-                vec![format!(
-                    "\tsub{}\t{}, {}\n",
-                    operator_suffix(width),
-                    rhs_ret.fmt_with_operand_width(width),
-                    ret.fmt_with_operand_width(width)
-                )],
-            )
-        })
+    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        flattenable_instructions!(
+            lhs_ctx,
+            codegen_expr(allocator, rhs_ret, *rhs),
+            vec![format!(
+                "\tsub{}\t{}, {}\n",
+                operator_suffix(width),
+                rhs_ret.fmt_with_operand_width(width),
+                ret.fmt_with_operand_width(width)
+            )],
+        )
     })
 }
 
@@ -1412,23 +1413,24 @@ fn codegen_multiplication(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-        allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-            let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
-            let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
+    let rhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        flattenable_instructions!(
+            codegen_expr(allocator, rhs_ret, *rhs),
+            codegen_mov(ty, rhs_ret, ret),
+        )
+    });
 
-            flattenable_instructions!(
-                lhs_ctx,
-                rhs_ctx,
-                codegen_mov(ty, rhs_ret, ret),
-                vec![format!(
-                    "\timul{}\t{}, {}\n",
-                    operator_suffix(width),
-                    lhs_ret.fmt_with_operand_width(width),
-                    ret.fmt_with_operand_width(width)
-                )],
-            )
-        })
+    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        flattenable_instructions!(
+            codegen_expr(allocator, lhs_ret, *lhs),
+            rhs_ctx,
+            vec![format!(
+                "\timul{}\t{}, {}\n",
+                operator_suffix(width),
+                lhs_ret.fmt_with_operand_width(width),
+                ret.fmt_with_operand_width(width)
+            )],
+        )
     })
 }
 
@@ -1449,60 +1451,58 @@ fn codegen_division(
 ) -> Vec<String> {
     use crate::stage::type_check::ast::Signed;
 
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-        allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-            let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
-            let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
-            let operand_suffix = operator_suffix(width);
+    let lhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        flattenable_instructions!(
+            codegen_expr(allocator, lhs_ret, *lhs),
+            codegen_mov(ty.clone(), lhs_ret, &mut IntegerRegister::A),
+        )
+    });
 
-            flattenable_instructions!(
-                lhs_ctx,
-                rhs_ctx,
-                vec![
-                    format!(
-                        "\tmov{}\t{}, {}\n",
+    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
+        let operand_suffix = operator_suffix(width);
+
+        flattenable_instructions!(
+            lhs_ctx,
+            rhs_ctx,
+            vec![
+                match sign {
+                    Signed::Signed => format!(
+                        "\tcqo\n\tidiv{}\t{}\n",
                         operand_suffix,
-                        lhs_ret.fmt_with_operand_width(width),
-                        IntegerRegister::A.fmt_with_operand_width(width)
+                        rhs_ret.fmt_with_operand_width(width)
                     ),
-                    match sign {
-                        Signed::Signed => format!(
-                            "\tcqo\n\tidiv{}\t{}\n",
+                    Signed::Unsigned => {
+                        let d_reg =
+                            IntegerRegister::D.fmt_with_operand_width(OperandWidth::QuadWord);
+
+                        format!(
+                            "\txorq\t{}, {}\n\tdiv{}\t{}\n",
+                            d_reg,
+                            d_reg,
                             operand_suffix,
                             rhs_ret.fmt_with_operand_width(width)
-                        ),
-                        Signed::Unsigned => {
-                            let d_reg =
-                                IntegerRegister::D.fmt_with_operand_width(OperandWidth::QuadWord);
-
-                            format!(
-                                "\txorq\t{}, {}\n\tdiv{}\t{}\n",
-                                d_reg,
-                                d_reg,
-                                operand_suffix,
-                                rhs_ret.fmt_with_operand_width(width)
-                            )
-                        }
-                    },
-                    match division_variant {
-                        DivisionVariant::Division => format!(
-                            "\tmov{}\t{}, {}\n",
-                            operand_suffix,
-                            IntegerRegister::A.fmt_with_operand_width(width),
-                            ret.fmt_with_operand_width(width)
-                        ),
-                        DivisionVariant::Modulo => format!(
-                            "\tmov{}\t{}, {}\n",
-                            operand_suffix,
-                            IntegerRegister::D.fmt_with_operand_width(width),
-                            ret.fmt_with_operand_width(width)
-                        ),
+                        )
                     }
-                ],
-            )
-        })
+                },
+                match division_variant {
+                    DivisionVariant::Division => format!(
+                        "\tmov{}\t{}, {}\n",
+                        operand_suffix,
+                        IntegerRegister::A.fmt_with_operand_width(width),
+                        ret.fmt_with_operand_width(width)
+                    ),
+                    DivisionVariant::Modulo => format!(
+                        "\tmov{}\t{}, {}\n",
+                        operand_suffix,
+                        IntegerRegister::D.fmt_with_operand_width(width),
+                        ret.fmt_with_operand_width(width)
+                    ),
+                }
+            ],
+        )
     })
 }
 
@@ -1517,23 +1517,26 @@ fn codegen_or(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-        allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-            let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
-            let lhs_ctx = codegen_expr(allocator, lhs_ret, lhs);
+    let lhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        flattenable_instructions!(
+            codegen_expr(allocator, lhs_ret, lhs),
+            codegen_mov(ty, lhs_ret, ret),
+        )
+    });
 
-            flattenable_instructions!(
-                rhs_ctx,
-                lhs_ctx,
-                codegen_mov(ty, lhs_ret, ret),
-                vec![format!(
-                    "\tor{}\t{}, {}\n",
-                    operator_suffix(width),
-                    rhs_ret.fmt_with_operand_width(width),
-                    ret.fmt_with_operand_width(width)
-                )],
-            )
-        })
+    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
+
+        flattenable_instructions!(
+            rhs_ctx,
+            lhs_ctx,
+            vec![format!(
+                "\tor{}\t{}, {}\n",
+                operator_suffix(width),
+                rhs_ret.fmt_with_operand_width(width),
+                ret.fmt_with_operand_width(width)
+            )],
+        )
     })
 }
 
@@ -1546,23 +1549,26 @@ fn codegen_xor(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-        allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-            let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
-            let lhs_ctx = codegen_expr(allocator, lhs_ret, lhs);
+    let lhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        flattenable_instructions!(
+            codegen_expr(allocator, lhs_ret, lhs),
+            codegen_mov(ty, lhs_ret, ret),
+        )
+    });
 
-            flattenable_instructions!(
-                rhs_ctx,
-                lhs_ctx,
-                codegen_mov(ty, lhs_ret, ret),
-                vec![format!(
-                    "\txor{}\t{}, {}\n",
-                    operator_suffix(width),
-                    rhs_ret.fmt_with_operand_width(width),
-                    ret.fmt_with_operand_width(width)
-                )],
-            )
-        })
+    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
+
+        flattenable_instructions!(
+            rhs_ctx,
+            lhs_ctx,
+            vec![format!(
+                "\txor{}\t{}, {}\n",
+                operator_suffix(width),
+                rhs_ret.fmt_with_operand_width(width),
+                ret.fmt_with_operand_width(width)
+            )],
+        )
     })
 }
 
@@ -1575,23 +1581,26 @@ fn codegen_and(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-        allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-            let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
-            let lhs_ctx = codegen_expr(allocator, lhs_ret, lhs);
+    let lhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        flattenable_instructions!(
+            codegen_expr(allocator, lhs_ret, lhs),
+            codegen_mov(ty, lhs_ret, ret),
+        )
+    });
 
-            flattenable_instructions!(
-                rhs_ctx,
-                lhs_ctx,
-                codegen_mov(ty, lhs_ret, ret),
-                vec![format!(
-                    "\tand{}\t{}, {}\n",
-                    operator_suffix(width),
-                    rhs_ret.fmt_with_operand_width(width),
-                    ret.fmt_with_operand_width(width)
-                )],
-            )
-        })
+    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
+
+        flattenable_instructions!(
+            rhs_ctx,
+            lhs_ctx,
+            vec![format!(
+                "\tand{}\t{}, {}\n",
+                operator_suffix(width),
+                rhs_ret.fmt_with_operand_width(width),
+                ret.fmt_with_operand_width(width)
+            )],
+        )
     })
 }
 
@@ -1604,29 +1613,32 @@ fn codegen_shift_left(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-        allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-            let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
-            let lhs_ctx = codegen_expr(allocator, lhs_ret, lhs);
+    let lhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        flattenable_instructions!(
+            codegen_expr(allocator, lhs_ret, lhs),
+            codegen_mov(ty, lhs_ret, ret),
+        )
+    });
 
-            flattenable_instructions!(
-                rhs_ctx,
-                lhs_ctx,
-                codegen_mov(ty, lhs_ret, ret),
-                vec![
-                    format!(
-                        "\tmov{}\t{}, %cl\n",
-                        operator_suffix(OperandWidth::Byte),
-                        rhs_ret.fmt_with_operand_width(OperandWidth::Byte),
-                    ),
-                    format!(
-                        "\tshl{}\t%cl, {}\n",
-                        operator_suffix(width),
-                        ret.fmt_with_operand_width(width)
-                    )
-                ],
-            )
-        })
+    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
+
+        flattenable_instructions!(
+            rhs_ctx,
+            lhs_ctx,
+            vec![
+                format!(
+                    "\tmov{}\t{}, %cl\n",
+                    operator_suffix(OperandWidth::Byte),
+                    rhs_ret.fmt_with_operand_width(OperandWidth::Byte),
+                ),
+                format!(
+                    "\tshl{}\t%cl, {}\n",
+                    operator_suffix(width),
+                    ret.fmt_with_operand_width(width)
+                )
+            ],
+        )
     })
 }
 
@@ -1639,29 +1651,32 @@ fn codegen_shift_right(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-        allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-            let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
-            let lhs_ctx = codegen_expr(allocator, lhs_ret, lhs);
+    let lhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
+        flattenable_instructions!(
+            codegen_expr(allocator, lhs_ret, lhs),
+            codegen_mov(ty, lhs_ret, ret),
+        )
+    });
 
-            flattenable_instructions!(
-                rhs_ctx,
-                lhs_ctx,
-                codegen_mov(ty, lhs_ret, ret),
-                vec![
-                    format!(
-                        "\tmov{}\t{}, %cl\n",
-                        operator_suffix(OperandWidth::Byte),
-                        rhs_ret.fmt_with_operand_width(OperandWidth::Byte),
-                    ),
-                    format!(
-                        "\tshr{}\t%cl, {}\n",
-                        operator_suffix(width),
-                        ret.fmt_with_operand_width(width)
-                    )
-                ],
-            )
-        })
+    allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
+
+        flattenable_instructions!(
+            rhs_ctx,
+            lhs_ctx,
+            vec![
+                format!(
+                    "\tmov{}\t{}, %cl\n",
+                    operator_suffix(OperandWidth::Byte),
+                    rhs_ret.fmt_with_operand_width(OperandWidth::Byte),
+                ),
+                format!(
+                    "\tshr{}\t%cl, {}\n",
+                    operator_suffix(width),
+                    ret.fmt_with_operand_width(width)
+                )
+            ],
+        )
     })
 }
 
@@ -1709,45 +1724,48 @@ fn codegen_compare_and_set(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
+    let rhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        flattenable_instructions!(
+            codegen_expr(allocator, rhs_ret, *rhs),
+            codegen_mov(ty, rhs_ret, ret),
+        )
+    });
+
     allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-        allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-            let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
-            let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
+        let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
 
-            let set_operator = match comparison_op {
-                ComparisonOperation::LessThan => "setl",
-                ComparisonOperation::LessEqual => "setle",
-                ComparisonOperation::GreaterThan => "setg",
-                ComparisonOperation::GreaterEqual => "setge",
-                ComparisonOperation::Equal => "sete",
-                ComparisonOperation::NotEqual => "setne",
-            };
+        let set_operator = match comparison_op {
+            ComparisonOperation::LessThan => "setl",
+            ComparisonOperation::LessEqual => "setle",
+            ComparisonOperation::GreaterThan => "setg",
+            ComparisonOperation::GreaterEqual => "setge",
+            ComparisonOperation::Equal => "sete",
+            ComparisonOperation::NotEqual => "setne",
+        };
 
-            let operand_suffix = operator_suffix(width);
+        let operand_suffix = operator_suffix(width);
 
-            flattenable_instructions!(
-                lhs_ctx,
-                rhs_ctx,
-                codegen_mov(ty, rhs_ret, ret),
-                vec![
-                    format!(
-                        "\tcmp{}\t{}, {}\n",
-                        operand_suffix,
-                        ret.fmt_with_operand_width(width),
-                        lhs_ret.fmt_with_operand_width(width)
-                    ),
-                    format!(
-                        "\t{}\t{}\n",
-                        set_operator,
-                        ret.fmt_with_operand_width(OperandWidth::Byte)
-                    ),
-                    format!(
-                        "\tandq\t$255, {}\n",
-                        ret.fmt_with_operand_width(OperandWidth::QuadWord)
-                    ),
-                ],
-            )
-        })
+        flattenable_instructions!(
+            lhs_ctx,
+            rhs_ctx,
+            vec![
+                format!(
+                    "\tcmp{}\t{}, {}\n",
+                    operand_suffix,
+                    ret.fmt_with_operand_width(width),
+                    lhs_ret.fmt_with_operand_width(width)
+                ),
+                format!(
+                    "\t{}\t{}\n",
+                    set_operator,
+                    ret.fmt_with_operand_width(OperandWidth::Byte)
+                ),
+                format!(
+                    "\tandq\t$255, {}\n",
+                    ret.fmt_with_operand_width(OperandWidth::QuadWord)
+                ),
+            ],
+        )
     })
 }
 
@@ -1999,16 +2017,16 @@ mod tests {
         assert_eq!(
             Ok(vec![
                 "\tmovq\t$10, %r14
-\tmovq\t$3, %r13
 \tmovb\t%r14b, %al
+\tmovq\t$3, %r13
 \txorq\t%rdx, %rdx
 \tdivb\t%r13b
 \tmovb\t%dl, %r15b
 "
                 .to_string(),
                 "\tmovq\t$10, %r11
-\tmovq\t$3, %r10
 \tmovb\t%r11b, %al
+\tmovq\t$3, %r10
 \txorq\t%rdx, %rdx
 \tdivb\t%r10b
 \tmovb\t%al, %r12b
