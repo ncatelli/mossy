@@ -1724,45 +1724,48 @@ fn codegen_compare_and_set(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
+    let rhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        flattenable_instructions!(
+            codegen_expr(allocator, rhs_ret, *rhs),
+            codegen_mov(ty, rhs_ret, ret),
+        )
+    });
+
     allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-        allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-            let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
-            let rhs_ctx = codegen_expr(allocator, rhs_ret, *rhs);
+        let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
 
-            let set_operator = match comparison_op {
-                ComparisonOperation::LessThan => "setl",
-                ComparisonOperation::LessEqual => "setle",
-                ComparisonOperation::GreaterThan => "setg",
-                ComparisonOperation::GreaterEqual => "setge",
-                ComparisonOperation::Equal => "sete",
-                ComparisonOperation::NotEqual => "setne",
-            };
+        let set_operator = match comparison_op {
+            ComparisonOperation::LessThan => "setl",
+            ComparisonOperation::LessEqual => "setle",
+            ComparisonOperation::GreaterThan => "setg",
+            ComparisonOperation::GreaterEqual => "setge",
+            ComparisonOperation::Equal => "sete",
+            ComparisonOperation::NotEqual => "setne",
+        };
 
-            let operand_suffix = operator_suffix(width);
+        let operand_suffix = operator_suffix(width);
 
-            flattenable_instructions!(
-                lhs_ctx,
-                rhs_ctx,
-                codegen_mov(ty, rhs_ret, ret),
-                vec![
-                    format!(
-                        "\tcmp{}\t{}, {}\n",
-                        operand_suffix,
-                        ret.fmt_with_operand_width(width),
-                        lhs_ret.fmt_with_operand_width(width)
-                    ),
-                    format!(
-                        "\t{}\t{}\n",
-                        set_operator,
-                        ret.fmt_with_operand_width(OperandWidth::Byte)
-                    ),
-                    format!(
-                        "\tandq\t$255, {}\n",
-                        ret.fmt_with_operand_width(OperandWidth::QuadWord)
-                    ),
-                ],
-            )
-        })
+        flattenable_instructions!(
+            lhs_ctx,
+            rhs_ctx,
+            vec![
+                format!(
+                    "\tcmp{}\t{}, {}\n",
+                    operand_suffix,
+                    ret.fmt_with_operand_width(width),
+                    lhs_ret.fmt_with_operand_width(width)
+                ),
+                format!(
+                    "\t{}\t{}\n",
+                    set_operator,
+                    ret.fmt_with_operand_width(OperandWidth::Byte)
+                ),
+                format!(
+                    "\tandq\t$255, {}\n",
+                    ret.fmt_with_operand_width(OperandWidth::QuadWord)
+                ),
+            ],
+        )
     })
 }
 
@@ -2014,16 +2017,16 @@ mod tests {
         assert_eq!(
             Ok(vec![
                 "\tmovq\t$10, %r14
-\tmovq\t$3, %r13
 \tmovb\t%r14b, %al
+\tmovq\t$3, %r13
 \txorq\t%rdx, %rdx
 \tdivb\t%r13b
 \tmovb\t%dl, %r15b
 "
                 .to_string(),
                 "\tmovq\t$10, %r11
-\tmovq\t$3, %r10
 \tmovb\t%r11b, %al
+\tmovq\t$3, %r10
 \txorq\t%rdx, %rdx
 \tdivb\t%r10b
 \tmovb\t%al, %r12b
