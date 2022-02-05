@@ -21,7 +21,8 @@ impl CompilationUnit {
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum GlobalDecls {
-    Func(FunctionDeclaration),
+    FuncDefinition(FunctionDefinition),
+    FuncProto(FunctionProto),
     Var(Declaration),
 }
 
@@ -56,12 +57,12 @@ impl FunctionProto {
 
 /// A new fuction declaration wrapping a string and block.
 #[derive(PartialEq, Debug, Clone)]
-pub struct FunctionDeclaration {
+pub struct FunctionDefinition {
     pub proto: FunctionProto,
     pub block: CompoundStmts,
 }
 
-impl FunctionDeclaration {
+impl FunctionDefinition {
     pub fn new(proto: FunctionProto, block: CompoundStmts) -> Self {
         Self { proto, block }
     }

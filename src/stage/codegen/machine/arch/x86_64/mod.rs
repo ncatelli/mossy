@@ -65,6 +65,8 @@ impl CompilationStage<ast::TypedProgram, Vec<String>, String> for X86_64 {
                     ast::TypedGlobalDecls::Var(ast::Declaration::Array { ty, id, size }) => {
                         Ok(codegen_global_symbol(&ty, &id, size))
                     }
+                    // Prototypes are dropped at the typecheck and are effectively no-ops.
+                    ast::TypedGlobalDecls::FuncProto => Ok(vec![]),
                 };
 
                 res
@@ -1942,7 +1944,7 @@ fn operand_width_of_type(ty: ast::Type) -> OperandWidth {
             ast::IntegerWidth::ThirtyTwo => OperandWidth::DoubleWord,
             ast::IntegerWidth::SixtyFour => OperandWidth::QuadWord,
         },
-        Type::Void | Type::Func(_) | Type::Pointer(_) => OperandWidth::QuadWord,
+        Type::Void | Type::Func(_, _) | Type::Pointer(_) => OperandWidth::QuadWord,
     }
 }
 

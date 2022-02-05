@@ -110,6 +110,7 @@ impl TypedFunctionDeclaration {
 #[derive(PartialEq, Debug, Clone)]
 pub enum TypedGlobalDecls {
     Func(TypedFunctionDeclaration),
+    FuncProto,
     Var(Declaration),
 }
 
@@ -341,6 +342,22 @@ impl ByteSized for IntegerWidth {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DefinitionState {
+    Declared,
+    Defined,
+}
+
+impl DefinitionState {
+    pub fn is_defined(&self) -> bool {
+        matches!(self, DefinitionState::Defined)
+    }
+
+    pub fn is_declared(&self) -> bool {
+        matches!(self, DefinitionState::Declared)
+    }
+}
+
 /// A concrete type for function prototypes
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FunctionSignature {
@@ -365,7 +382,7 @@ const POINTER_BYTE_WIDTH: usize = (usize::BITS / 8) as usize;
 pub enum Type {
     Integer(Signed, IntegerWidth),
     Void,
-    Func(FunctionSignature),
+    Func(DefinitionState, FunctionSignature),
     Pointer(Box<Type>),
 }
 

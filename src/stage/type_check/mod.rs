@@ -239,8 +239,25 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
         input: crate::parser::ast::GlobalDecls,
     ) -> Result<ast::TypedGlobalDecls, String> {
         match input {
-            crate::parser::ast::GlobalDecls::Func(fd) => {
-                self.apply(fd).map(ast::TypedGlobalDecls::Func)
+            crate::parser::ast::GlobalDecls::FuncDefinition(fd) => {
+                let (id, return_ty, block) = (fd.proto.id, fd.proto.return_type, fd.block);
+                let params = fd
+                    .proto
+                    .params
+                    .into_iter()
+                    .map(|p| ast::Parameter::new(p.id, p.r#type))
+                    .collect();
+
+                let proto = FunctionSignature::new(Box::new(return_ty), params);
+                let defined = ast::DefinitionState::Defined;
+                self.scopes.declare_global_mut(
+                    &id,
+                    ast::Type::Func(defined, proto.clone()),
+                    scopes::Kind::Basic,
+                );
+
+                self.analyze_function_body(id.clone(), proto, block)
+                    .map(ast::TypedGlobalDecls::Func)
             }
             crate::parser::ast::GlobalDecls::Var(ast::Declaration::Scalar(ty, ids)) => {
                 for id in ids.iter() {
@@ -262,31 +279,25 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                     size,
                 }))
             }
+            crate::parser::ast::GlobalDecls::FuncProto(proto) => {
+                let (id, return_ty) = (proto.id, proto.return_type);
+                let params = proto
+                    .params
+                    .into_iter()
+                    .map(|p| ast::Parameter::new(p.id, p.r#type))
+                    .collect();
+
+                let proto = FunctionSignature::new(Box::new(return_ty), params);
+                let defined = ast::DefinitionState::Declared;
+                self.scopes.declare_global_mut(
+                    &id,
+                    ast::Type::Func(defined, proto),
+                    scopes::Kind::Basic,
+                );
+
+                Ok(ast::TypedGlobalDecls::FuncProto)
+            }
         }
-    }
-}
-
-impl
-    CompilationStage<crate::parser::ast::FunctionDeclaration, ast::TypedFunctionDeclaration, String>
-    for TypeAnalysis
-{
-    fn apply(
-        &mut self,
-        input: crate::parser::ast::FunctionDeclaration,
-    ) -> Result<ast::TypedFunctionDeclaration, String> {
-        let (id, return_ty, block) = (input.proto.id, input.proto.return_type, input.block);
-        let params = input
-            .proto
-            .params
-            .into_iter()
-            .map(|p| ast::Parameter::new(p.id, p.r#type))
-            .collect();
-
-        let proto = FunctionSignature::new(Box::new(return_ty), params);
-        self.scopes
-            .declare_global_mut(&id, ast::Type::Func(proto.clone()), scopes::Kind::Basic);
-
-        self.analyze_function_body(id.clone(), proto, block)
     }
 }
 
@@ -543,7 +554,7 @@ impl TypeAnalysis {
                     .lookup(&identifier)
                     .ok_or_else(|| format!("undefined_function: {}", &identifier))
                     .and_then(|dm| match dm.r#type.clone() {
-                        ast::Type::Func(FunctionSignature {
+                        ast::Type::Func(ast::DefinitionState::Defined, FunctionSignature {
                             return_type,
                             parameters: params,
                         }) => {
@@ -582,7 +593,10 @@ impl TypeAnalysis {
                                 ))
                             }
                         }
-
+                        ast::Type::Func(ast::DefinitionState::Declared, _) => Err(format!(
+                            "function {} declared but not defined",
+                            &identifier
+                        )),
                         _ => Err(format!(
                             "type mismatch, cannot call non-function type: {:?}",
                             &dm.r#type

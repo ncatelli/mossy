@@ -21,16 +21,27 @@ pub enum ParseErr {
 /// parse expects a character slice as input and attempts to parse a valid
 /// expression, returning a parse error if it is invalid.
 pub fn parse(input: &[(usize, char)]) -> Result<CompilationUnit, ParseErr> {
-    parcel::one_or_more(function_declaration().map(ast::GlobalDecls::Func).or(|| {
-        semicolon_terminated_statement(declaration()).map(|stmt| {
-            // safe to unpack due to declaration guarantee.
-            if let ast::StmtNode::Declaration(decl) = stmt {
-                ast::GlobalDecls::Var(decl)
-            } else {
-                unreachable!()
-            }
-        })
-    }))
+    parcel::one_or_more(
+        function_definition()
+            .map(ast::GlobalDecls::FuncDefinition)
+            .or(|| {
+                parcel::left(parcel::join(
+                    function_prototype(),
+                    whitespace_wrapped(expect_character(';')),
+                ))
+                .map(ast::GlobalDecls::FuncProto)
+            })
+            .or(|| {
+                semicolon_terminated_statement(declaration()).map(|stmt| {
+                    // safe to unpack due to declaration guarantee.
+                    if let ast::StmtNode::Declaration(decl) = stmt {
+                        ast::GlobalDecls::Var(decl)
+                    } else {
+                        unreachable!()
+                    }
+                })
+            }),
+    )
     .parse(input)
     .map_err(ParseErr::UnexpectedToken)
     .and_then(|ms| match ms {
@@ -80,9 +91,9 @@ fn function_prototype<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Func
     .map(|((ty, id), params)| FunctionProto::new(id, ty, params))
 }
 
-fn function_declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionDeclaration> {
+fn function_definition<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionDefinition> {
     parcel::join(function_prototype(), compound_statements())
-        .map(|(proto, block)| FunctionDeclaration::new(proto, block))
+        .map(|(proto, block)| FunctionDefinition::new(proto, block))
 }
 
 fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], CompoundStmts> {
