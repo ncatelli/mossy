@@ -238,6 +238,8 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
         &mut self,
         input: crate::parser::ast::GlobalDecls,
     ) -> Result<ast::TypedGlobalDecls, String> {
+        use scopes::DeclarationMetadata;
+
         match input {
             crate::parser::ast::GlobalDecls::FuncDefinition(fd) => {
                 let (id, return_ty, block) = (fd.proto.id, fd.proto.return_type, fd.block);
@@ -248,16 +250,50 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                     .map(|p| ast::Parameter::new(p.id, p.r#type))
                     .collect();
 
-                let proto = FunctionSignature::new(Box::new(return_ty), params);
-                let defined = ast::DefinitionState::Defined;
-                self.scopes.declare_global_mut(
-                    &id,
-                    ast::Type::Func(defined, proto.clone()),
-                    scopes::Kind::Basic,
-                );
+                let new_sig = FunctionSignature::new(Box::new(return_ty), params);
 
-                self.analyze_function_body(id.clone(), proto, block)
-                    .map(ast::TypedGlobalDecls::Func)
+                match self.scopes.lookup(&id) {
+                    // clobbers non-existent function.
+                    Some(DeclarationMetadata { r#type: ty, .. })
+                        if !matches!(ty.clone(), Type::Func(_, _)) =>
+                    {
+                        Err(format!(
+                            "function {} redefines conflicting type: {:?}",
+                            &id, ty
+                        ))
+                    }
+                    // clobbers already defined function.
+                    Some(DeclarationMetadata { r#type: ty, .. })
+                        if matches!(ty.clone(), Type::Func(ast::DefinitionState::Defined, _)) =>
+                    {
+                        Err(format!("function {} defined multiple times", &id))
+                    }
+                    // declared previously and matching the signature
+                    Some(DeclarationMetadata {
+                        r#type: Type::Func(ast::DefinitionState::Declared, previous_sig),
+                        ..
+                    }) if previous_sig == new_sig => {
+                        let type_proto =
+                            ast::Type::Func(ast::DefinitionState::Defined, new_sig.clone());
+                        self.scopes
+                            .declare_global_mut(&id, type_proto, scopes::Kind::Basic);
+
+                        self.analyze_function_body(id.clone(), new_sig, block)
+                            .map(ast::TypedGlobalDecls::Func)
+                    }
+                    // undeclared/undefined safe to redefine.
+                    None => {
+                        let type_proto =
+                            ast::Type::Func(ast::DefinitionState::Defined, new_sig.clone());
+                        self.scopes
+                            .declare_global_mut(&id, type_proto, scopes::Kind::Basic);
+
+                        self.analyze_function_body(id.clone(), new_sig, block)
+                            .map(ast::TypedGlobalDecls::Func)
+                    }
+                    // all posible cases otherwise should be covered
+                    _ => unreachable!(),
+                }
             }
             crate::parser::ast::GlobalDecls::Var(ast::Declaration::Scalar(ty, ids)) => {
                 for id in ids.iter() {
