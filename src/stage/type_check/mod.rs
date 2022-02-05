@@ -554,7 +554,7 @@ impl TypeAnalysis {
                     .lookup(&identifier)
                     .ok_or_else(|| format!("undefined_function: {}", &identifier))
                     .and_then(|dm| match dm.r#type.clone() {
-                        ast::Type::Func(ast::DefinitionState::Defined, FunctionSignature {
+                        ast::Type::Func(_, FunctionSignature {
                             return_type,
                             parameters: params,
                         }) => {
@@ -593,10 +593,6 @@ impl TypeAnalysis {
                                 ))
                             }
                         }
-                        ast::Type::Func(ast::DefinitionState::Declared, _) => Err(format!(
-                            "function {} declared but not defined",
-                            &identifier
-                        )),
                         _ => Err(format!(
                             "type mismatch, cannot call non-function type: {:?}",
                             &dm.r#type
