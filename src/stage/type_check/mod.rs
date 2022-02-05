@@ -268,6 +268,13 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                     {
                         Err(format!("function {} defined multiple times", &id))
                     }
+                    Some(DeclarationMetadata {
+                        r#type: Type::Func(ast::DefinitionState::Declared, previous_sig),
+                        ..
+                    }) if previous_sig != new_sig => Err(format!(
+                        "function {} conflicts with previous declaration: {:?}",
+                        &id, &previous_sig
+                    )),
                     // declared previously and matching the signature
                     Some(DeclarationMetadata {
                         r#type: Type::Func(ast::DefinitionState::Declared, previous_sig),
@@ -323,15 +330,46 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                     .map(|p| ast::Parameter::new(p.id, p.r#type))
                     .collect();
 
-                let proto = FunctionSignature::new(Box::new(return_ty), params);
-                let defined = ast::DefinitionState::Declared;
-                self.scopes.declare_global_mut(
-                    &id,
-                    ast::Type::Func(defined, proto),
-                    scopes::Kind::Basic,
-                );
+                let new_sig = FunctionSignature::new(Box::new(return_ty), params);
 
-                Ok(ast::TypedGlobalDecls::FuncProto)
+                match self.scopes.lookup(&id) {
+                    // clobbers non-existent function.
+                    Some(DeclarationMetadata { r#type: ty, .. })
+                        if !(matches!(ty.clone(), Type::Func(_, _))) =>
+                    {
+                        Err(format!(
+                            "function {} redefines conflicting type: {:?}",
+                            &id, ty
+                        ))
+                    }
+                    // clobbers already defined function.
+                    Some(DeclarationMetadata { r#type: ty, .. })
+                        if matches!(ty.clone(), Type::Func(ast::DefinitionState::Defined, _)) =>
+                    {
+                        Err(format!("function {} already defined", &id))
+                    }
+                    Some(DeclarationMetadata {
+                        r#type: Type::Func(ast::DefinitionState::Declared, previous_sig),
+                        ..
+                    }) if previous_sig != new_sig => {
+                        Err(format!("declaration of function signature {:?} conflicts with previous declaration: {:?}", &new_sig, &previous_sig))
+                    }
+                    // if already declared, do nothing.
+                    Some(DeclarationMetadata {
+                        r#type: Type::Func(ast::DefinitionState::Declared, previous_sig),
+                        ..
+                    }) if previous_sig == new_sig => Ok(ast::TypedGlobalDecls::FuncProto),
+                    // if undeclared/undefined, declare the function.
+                    None => {
+                        let type_proto = ast::Type::Func(ast::DefinitionState::Declared, new_sig);
+                        self.scopes
+                            .declare_global_mut(&id, type_proto, scopes::Kind::Basic);
+
+                        Ok(ast::TypedGlobalDecls::FuncProto)
+                    }
+                    // all posible cases otherwise should be covered
+                    _ => unreachable!(),
+                }
             }
         }
     }
