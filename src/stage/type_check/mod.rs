@@ -5,7 +5,7 @@ use super::CompilationStage;
 
 #[macro_use]
 pub mod ast;
-use ast::{FuncProto, Type, Typed};
+use ast::{FunctionSignature, Type, Typed};
 
 mod scopes;
 use scopes::ScopeStack;
@@ -186,7 +186,7 @@ impl TypeCompatibility for LeftFlowing {
 
 /// TypeAnalysis stores a scope stack for maintaining local variables.
 pub struct TypeAnalysis {
-    in_func: Option<(String, ast::FuncProto)>,
+    in_func: Option<(String, ast::FunctionSignature)>,
     scopes: ScopeStack,
 }
 
@@ -238,9 +238,69 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
         &mut self,
         input: crate::parser::ast::GlobalDecls,
     ) -> Result<ast::TypedGlobalDecls, String> {
+        use scopes::DeclarationMetadata;
+
         match input {
-            crate::parser::ast::GlobalDecls::Func(fd) => {
-                self.apply(fd).map(ast::TypedGlobalDecls::Func)
+            crate::parser::ast::GlobalDecls::FuncDefinition(fd) => {
+                let (id, return_ty, block) = (fd.proto.id, fd.proto.return_type, fd.block);
+                let params = fd
+                    .proto
+                    .params
+                    .into_iter()
+                    .map(|p| ast::Parameter::new(p.id, p.r#type))
+                    .collect();
+
+                let new_sig = FunctionSignature::new(Box::new(return_ty), params);
+
+                match self.scopes.lookup(&id) {
+                    // clobbers non-existent function.
+                    Some(DeclarationMetadata { r#type: ty, .. })
+                        if !matches!(ty.clone(), Type::Func(_, _)) =>
+                    {
+                        Err(format!(
+                            "function {} redefines conflicting type: {:?}",
+                            &id, ty
+                        ))
+                    }
+                    // clobbers already defined function.
+                    Some(DeclarationMetadata { r#type: ty, .. })
+                        if matches!(ty.clone(), Type::Func(ast::DefinitionState::Defined, _)) =>
+                    {
+                        Err(format!("function {} defined multiple times", &id))
+                    }
+                    Some(DeclarationMetadata {
+                        r#type: Type::Func(ast::DefinitionState::Declared, previous_sig),
+                        ..
+                    }) if previous_sig != new_sig => Err(format!(
+                        "function {} conflicts with previous declaration: {:?}",
+                        &id, &previous_sig
+                    )),
+                    // declared previously and matching the signature
+                    Some(DeclarationMetadata {
+                        r#type: Type::Func(ast::DefinitionState::Declared, previous_sig),
+                        ..
+                    }) if previous_sig == new_sig => {
+                        let type_proto =
+                            ast::Type::Func(ast::DefinitionState::Defined, new_sig.clone());
+                        self.scopes
+                            .declare_global_mut(&id, type_proto, scopes::Kind::Basic);
+
+                        self.analyze_function_body(id.clone(), new_sig, block)
+                            .map(ast::TypedGlobalDecls::Func)
+                    }
+                    // undeclared/undefined safe to redefine.
+                    None => {
+                        let type_proto =
+                            ast::Type::Func(ast::DefinitionState::Defined, new_sig.clone());
+                        self.scopes
+                            .declare_global_mut(&id, type_proto, scopes::Kind::Basic);
+
+                        self.analyze_function_body(id.clone(), new_sig, block)
+                            .map(ast::TypedGlobalDecls::Func)
+                    }
+                    // all posible cases otherwise should be covered
+                    _ => unreachable!(),
+                }
             }
             crate::parser::ast::GlobalDecls::Var(ast::Declaration::Scalar(ty, ids)) => {
                 for id in ids.iter() {
@@ -262,30 +322,56 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                     size,
                 }))
             }
+            crate::parser::ast::GlobalDecls::FuncProto(proto) => {
+                let (id, return_ty) = (proto.id, proto.return_type);
+                let params = proto
+                    .params
+                    .into_iter()
+                    .map(|p| ast::Parameter::new(p.id, p.r#type))
+                    .collect();
+
+                let new_sig = FunctionSignature::new(Box::new(return_ty), params);
+
+                match self.scopes.lookup(&id) {
+                    // clobbers non-existent function.
+                    Some(DeclarationMetadata { r#type: ty, .. })
+                        if !(matches!(ty.clone(), Type::Func(_, _))) =>
+                    {
+                        Err(format!(
+                            "function {} redefines conflicting type: {:?}",
+                            &id, ty
+                        ))
+                    }
+                    // clobbers already defined function.
+                    Some(DeclarationMetadata { r#type: ty, .. })
+                        if matches!(ty.clone(), Type::Func(ast::DefinitionState::Defined, _)) =>
+                    {
+                        Err(format!("function {} already defined", &id))
+                    }
+                    Some(DeclarationMetadata {
+                        r#type: Type::Func(ast::DefinitionState::Declared, previous_sig),
+                        ..
+                    }) if previous_sig != new_sig => {
+                        Err(format!("declaration of function signature {:?} conflicts with previous declaration: {:?}", &new_sig, &previous_sig))
+                    }
+                    // if already declared, do nothing.
+                    Some(DeclarationMetadata {
+                        r#type: Type::Func(ast::DefinitionState::Declared, previous_sig),
+                        ..
+                    }) if previous_sig == new_sig => Ok(ast::TypedGlobalDecls::FuncProto),
+                    // if undeclared/undefined, declare the function.
+                    None => {
+                        let type_proto = ast::Type::Func(ast::DefinitionState::Declared, new_sig);
+                        self.scopes
+                            .declare_global_mut(&id, type_proto, scopes::Kind::Basic);
+
+                        Ok(ast::TypedGlobalDecls::FuncProto)
+                    }
+                    // all posible cases otherwise should be covered
+                    _ => unreachable!(),
+                }
+            }
         }
-    }
-}
-
-impl
-    CompilationStage<crate::parser::ast::FunctionDeclaration, ast::TypedFunctionDeclaration, String>
-    for TypeAnalysis
-{
-    fn apply(
-        &mut self,
-        input: crate::parser::ast::FunctionDeclaration,
-    ) -> Result<ast::TypedFunctionDeclaration, String> {
-        let (id, return_ty, block) = (input.id, input.return_type, input.block);
-        let params = input
-            .params
-            .into_iter()
-            .map(|p| ast::Parameter::new(p.id, p.r#type))
-            .collect();
-
-        let proto = FuncProto::new(Box::new(return_ty), params);
-        self.scopes
-            .declare_global_mut(&id, ast::Type::Func(proto.clone()), scopes::Kind::Basic);
-
-        self.analyze_function_body(id.clone(), proto, block)
     }
 }
 
@@ -293,7 +379,7 @@ impl TypeAnalysis {
     fn analyze_function_body(
         &mut self,
         id: String,
-        func_proto: FuncProto,
+        func_proto: FunctionSignature,
         block: crate::parser::ast::CompoundStmts,
     ) -> Result<ast::TypedFunctionDeclaration, String> {
         let old_body = self.in_func.replace((id.clone(), func_proto.clone()));
@@ -542,7 +628,7 @@ impl TypeAnalysis {
                     .lookup(&identifier)
                     .ok_or_else(|| format!("undefined_function: {}", &identifier))
                     .and_then(|dm| match dm.r#type.clone() {
-                        ast::Type::Func(FuncProto {
+                        ast::Type::Func(_, FunctionSignature {
                             return_type,
                             parameters: params,
                         }) => {
@@ -581,7 +667,6 @@ impl TypeAnalysis {
                                 ))
                             }
                         }
-
                         _ => Err(format!(
                             "type mismatch, cannot call non-function type: {:?}",
                             &dm.r#type

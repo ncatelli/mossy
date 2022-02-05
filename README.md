@@ -26,11 +26,15 @@ Grammar is heavily referenced from [WMU cs4850 course grammar](https://cs.wmich.
 tranlation_unit: external_declaration*
         ;
 
-external_declaration: function_declaration
+external_declaration: function_definition 
+        | function_prototype ';'
         | var_declaration
         ;
 
-function_declaration: type_declarator identifier '(' ((type_declarator identifier,)* type_declarator identifier) | (type_declarator identifier) ')' compound_statement
+function_prototype: type_declarator identifier '(' ((type_declarator identifier,)* type_declarator identifier) | (type_declarator identifier) ')'
+        ;
+
+function_definition: function_prototype compound_statement
         ;
 
 compound_statement: '{' '}'
