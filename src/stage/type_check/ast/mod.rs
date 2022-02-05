@@ -343,12 +343,12 @@ impl ByteSized for IntegerWidth {
 
 /// A concrete type for function prototypes
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct FuncProto {
+pub struct FunctionSignature {
     pub return_type: Box<Type>,
     pub parameters: Vec<Parameter>,
 }
 
-impl FuncProto {
+impl FunctionSignature {
     pub fn new(return_type: Box<Type>, parameters: Vec<Parameter>) -> Self {
         Self {
             return_type,
@@ -365,7 +365,7 @@ const POINTER_BYTE_WIDTH: usize = (usize::BITS / 8) as usize;
 pub enum Type {
     Integer(Signed, IntegerWidth),
     Void,
-    Func(FuncProto),
+    Func(FunctionSignature),
     Pointer(Box<Type>),
 }
 

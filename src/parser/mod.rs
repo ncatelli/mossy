@@ -44,43 +44,45 @@ pub fn parse(input: &[(usize, char)]) -> Result<CompilationUnit, ParseErr> {
     .map(CompilationUnit::new)
 }
 
-fn function_declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionDeclaration> {
+fn function_prototype<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionProto> {
     parcel::join(
         parcel::join(type_declarator(), whitespace_wrapped(identifier())),
-        parcel::join(
-            expect_character('(').and_then(|_| {
-                parcel::left(parcel::join(
-                    parcel::join(
-                        parcel::zero_or_more(
-                            parcel::join(
-                                whitespace_wrapped(type_declarator()),
-                                parcel::left(parcel::join(
-                                    identifier(),
-                                    whitespace_wrapped(expect_character(',')),
-                                )),
-                            )
-                            .map(|(ty, id)| ast::Parameter::new(id, ty)),
-                        ),
+        expect_character('(').and_then(|_| {
+            parcel::left(parcel::join(
+                parcel::join(
+                    parcel::zero_or_more(
+                        parcel::join(
+                            whitespace_wrapped(type_declarator()),
+                            parcel::left(parcel::join(
+                                identifier(),
+                                whitespace_wrapped(expect_character(',')),
+                            )),
+                        )
+                        .map(|(ty, id)| ast::Parameter::new(id, ty)),
+                    ),
+                    parcel::join(whitespace_wrapped(type_declarator()), identifier())
+                        .map(|(ty, id)| ast::Parameter::new(id, ty)),
+                )
+                .map(|(mut head, tail)| {
+                    head.push(tail);
+                    head
+                })
+                .or(|| {
+                    parcel::zero_or_more(
                         parcel::join(whitespace_wrapped(type_declarator()), identifier())
                             .map(|(ty, id)| ast::Parameter::new(id, ty)),
                     )
-                    .map(|(mut head, tail)| {
-                        head.push(tail);
-                        head
-                    })
-                    .or(|| {
-                        parcel::zero_or_more(
-                            parcel::join(whitespace_wrapped(type_declarator()), identifier())
-                                .map(|(ty, id)| ast::Parameter::new(id, ty)),
-                        )
-                    }),
-                    whitespace_wrapped(expect_character(')')),
-                ))
-            }),
-            compound_statements(),
-        ),
+                }),
+                whitespace_wrapped(expect_character(')')),
+            ))
+        }),
     )
-    .map(|((ty, id), (params, block))| FunctionDeclaration::new(id, ty, params, block))
+    .map(|((ty, id), params)| FunctionProto::new(id, ty, params))
+}
+
+fn function_declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionDeclaration> {
+    parcel::join(function_prototype(), compound_statements())
+        .map(|(proto, block)| FunctionDeclaration::new(proto, block))
 }
 
 fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], CompoundStmts> {

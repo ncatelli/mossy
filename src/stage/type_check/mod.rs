@@ -5,7 +5,7 @@ use super::CompilationStage;
 
 #[macro_use]
 pub mod ast;
-use ast::{FuncProto, Type, Typed};
+use ast::{FunctionSignature, Type, Typed};
 
 mod scopes;
 use scopes::ScopeStack;
@@ -186,7 +186,7 @@ impl TypeCompatibility for LeftFlowing {
 
 /// TypeAnalysis stores a scope stack for maintaining local variables.
 pub struct TypeAnalysis {
-    in_func: Option<(String, ast::FuncProto)>,
+    in_func: Option<(String, ast::FunctionSignature)>,
     scopes: ScopeStack,
 }
 
@@ -274,14 +274,15 @@ impl
         &mut self,
         input: crate::parser::ast::FunctionDeclaration,
     ) -> Result<ast::TypedFunctionDeclaration, String> {
-        let (id, return_ty, block) = (input.id, input.return_type, input.block);
+        let (id, return_ty, block) = (input.proto.id, input.proto.return_type, input.block);
         let params = input
+            .proto
             .params
             .into_iter()
             .map(|p| ast::Parameter::new(p.id, p.r#type))
             .collect();
 
-        let proto = FuncProto::new(Box::new(return_ty), params);
+        let proto = FunctionSignature::new(Box::new(return_ty), params);
         self.scopes
             .declare_global_mut(&id, ast::Type::Func(proto.clone()), scopes::Kind::Basic);
 
@@ -293,7 +294,7 @@ impl TypeAnalysis {
     fn analyze_function_body(
         &mut self,
         id: String,
-        func_proto: FuncProto,
+        func_proto: FunctionSignature,
         block: crate::parser::ast::CompoundStmts,
     ) -> Result<ast::TypedFunctionDeclaration, String> {
         let old_body = self.in_func.replace((id.clone(), func_proto.clone()));
@@ -542,7 +543,7 @@ impl TypeAnalysis {
                     .lookup(&identifier)
                     .ok_or_else(|| format!("undefined_function: {}", &identifier))
                     .and_then(|dm| match dm.r#type.clone() {
-                        ast::Type::Func(FuncProto {
+                        ast::Type::Func(FunctionSignature {
                             return_type,
                             parameters: params,
                         }) => {

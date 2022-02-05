@@ -37,28 +37,33 @@ impl Parameter {
     }
 }
 
-/// A new fuction declaration wrapping a string and block.
 #[derive(PartialEq, Debug, Clone)]
-pub struct FunctionDeclaration {
+pub struct FunctionProto {
     pub id: String,
     pub return_type: ast::Type,
     pub params: Vec<Parameter>,
+}
+
+impl FunctionProto {
+    pub fn new(id: String, return_type: ast::Type, params: Vec<Parameter>) -> Self {
+        Self {
+            id,
+            return_type,
+            params,
+        }
+    }
+}
+
+/// A new fuction declaration wrapping a string and block.
+#[derive(PartialEq, Debug, Clone)]
+pub struct FunctionDeclaration {
+    pub proto: FunctionProto,
     pub block: CompoundStmts,
 }
 
 impl FunctionDeclaration {
-    pub fn new(
-        id: String,
-        return_type: ast::Type,
-        params: Vec<Parameter>,
-        block: CompoundStmts,
-    ) -> Self {
-        Self {
-            id,
-            params,
-            return_type,
-            block,
-        }
+    pub fn new(proto: FunctionProto, block: CompoundStmts) -> Self {
+        Self { proto, block }
     }
 }
 
