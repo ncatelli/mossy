@@ -27,16 +27,16 @@ impl Operand for &allocator::register::FunctionPassingRegisters {}
 
 impl Operand for IntegerRegister {}
 
-impl<GP> Operand for allocator::RegisterOrOffset<GP>
+impl<REG> Operand for allocator::RegisterOrOffset<REG>
 where
-    GP: WidthFormatted,
+    REG: WidthFormatted,
     Self: WidthFormatted + Copy,
 {
 }
 
-impl<GP> Operand for &allocator::RegisterOrOffset<GP>
+impl<REG> Operand for &allocator::RegisterOrOffset<REG>
 where
-    GP: WidthFormatted,
+    REG: WidthFormatted,
     Self: WidthFormatted + Copy,
 {
 }
