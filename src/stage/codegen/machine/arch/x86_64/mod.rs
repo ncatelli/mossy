@@ -1372,14 +1372,21 @@ fn codegen_addition(
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty.clone());
+    let width = operand_width_of_type(ty);
 
-    let rhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-        flattenable_instructions!(
-            codegen_expr(allocator, rhs_ret, *rhs),
-            codegen_mov(ty, rhs_ret, ret),
-        )
-    });
+    let rhs_ctx =
+        allocator.allocate_and_zero_general_purpose_register_then(|allocator, rhs_ret| {
+            let rhs_ty = rhs.r#type();
+            flattenable_instructions!(
+                codegen_expr(allocator, rhs_ret, *rhs),
+                vec![format!(
+                    "\tand{}\t$0, {}\n",
+                    operator_suffix(OperandWidth::QuadWord),
+                    ret.fmt_with_operand_width(OperandWidth::QuadWord)
+                )],
+                codegen_mov(rhs_ty, rhs_ret, ret),
+            )
+        });
 
     allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
         flattenable_instructions!(
@@ -1432,12 +1439,13 @@ fn codegen_multiplication(
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty.clone());
+    let width = operand_width_of_type(ty);
 
     let rhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
+        let rhs_ty = rhs.r#type();
         flattenable_instructions!(
             codegen_expr(allocator, rhs_ret, *rhs),
-            codegen_mov(ty, rhs_ret, ret),
+            codegen_mov(rhs_ty, rhs_ret, ret),
         )
     });
 
