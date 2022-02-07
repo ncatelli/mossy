@@ -84,6 +84,29 @@ impl SysVAllocator {
             .expect("unable to allocate register")
     }
 
+    pub fn allocate_and_zero_general_purpose_register_then<F>(&mut self, f: F) -> Vec<String>
+    where
+        F: FnOnce(
+            &mut Self,
+            &mut RegisterOrOffset<&register::GeneralPurposeRegister>,
+        ) -> Vec<String>,
+    {
+        self.general_purpose_reg_allocator
+            .allocate()
+            .map(|guard| {
+                let borrowed_reg = guard.borrow_inner();
+                let ret_val = f(self, &mut RegisterOrOffset::Register(borrowed_reg));
+                vec![format!(
+                    "\tandq\t$0, {}\n",
+                    borrowed_reg.fmt_with_operand_width(register::OperandWidth::QuadWord)
+                )]
+                .into_iter()
+                .chain(ret_val.into_iter())
+                .collect()
+            })
+            .expect("unable to allocate register")
+    }
+
     pub fn allocate_new_local_stack_scope<F, R>(&mut self, f: F) -> R
     where
         F: FnOnce(&mut Self) -> R,
