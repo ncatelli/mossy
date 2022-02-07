@@ -52,6 +52,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct SysVAllocator {
+    pub(crate) accumulator: register::Accumulator,
     pub(crate) general_purpose_reg_allocator: register::GPRegisterAllocator,
     pub(crate) parameter_stack_offsets: Vec<Range<isize>>,
     pub(crate) local_stack_offsets: Vec<Range<isize>>,
@@ -60,6 +61,7 @@ pub(crate) struct SysVAllocator {
 impl SysVAllocator {
     pub fn new(general_purpose_reg_allocator: register::GPRegisterAllocator) -> Self {
         Self {
+            accumulator: register::Accumulator,
             general_purpose_reg_allocator,
             parameter_stack_offsets: vec![],
             local_stack_offsets: vec![],
@@ -82,6 +84,33 @@ impl SysVAllocator {
                 ret_val
             })
             .expect("unable to allocate register")
+    }
+
+    pub fn safe_and_zero_accumulator_then<F>(&mut self, f: F) -> Vec<String>
+    where
+        F: FnOnce(&mut Self) -> Vec<String>,
+    {
+        let ret_val = f(self);
+        vec![
+            format!(
+                "\tpushq\t{}\n",
+                self.accumulator
+                    .fmt_with_operand_width(register::OperandWidth::QuadWord)
+            ),
+            format!(
+                "\tandq\t$0, {}\n",
+                self.accumulator
+                    .fmt_with_operand_width(register::OperandWidth::QuadWord)
+            ),
+        ]
+        .into_iter()
+        .chain(ret_val.into_iter())
+        .chain(vec![format!(
+            "\tpopq\t{}\n",
+            self.accumulator
+                .fmt_with_operand_width(register::OperandWidth::QuadWord)
+        )])
+        .collect()
     }
 
     pub fn allocate_and_zero_general_purpose_register_then<F>(&mut self, f: F) -> Vec<String>

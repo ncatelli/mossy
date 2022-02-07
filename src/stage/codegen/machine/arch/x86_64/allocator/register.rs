@@ -49,6 +49,17 @@ impl WidthFormatted for BasePointerRegister {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Accumulator;
+
+impl WidthFormatted for Accumulator {
+    type Output = &'static str;
+
+    fn fmt_with_operand_width(&self, width: OperandWidth) -> Self::Output {
+        IntegerRegister::A.fmt_with_operand_width(width)
+    }
+}
+
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IntegerRegister {
@@ -147,7 +158,6 @@ impl WidthFormatted for IntegerRegister {
 impl From<GeneralPurposeRegister> for IntegerRegister {
     fn from(gpr: GeneralPurposeRegister) -> Self {
         match gpr {
-            GeneralPurposeRegister::A => Self::A,
             GeneralPurposeRegister::R10 => Self::R10,
             GeneralPurposeRegister::R11 => Self::R11,
             GeneralPurposeRegister::R12 => Self::R12,
@@ -166,7 +176,6 @@ pub enum GeneralPurposeRegister {
     R13,
     R14,
     R15,
-    A,
 }
 
 impl WidthFormatted for GeneralPurposeRegister {
@@ -292,7 +301,6 @@ impl Default for GPRegisterAllocator {
             GeneralPurposeRegister::R12,
             GeneralPurposeRegister::R11,
             GeneralPurposeRegister::R10,
-            GeneralPurposeRegister::A,
         ])
     }
 }
