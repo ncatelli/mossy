@@ -2099,14 +2099,19 @@ mod tests {
         ));
 
         assert_eq!(
-            Ok(vec!["\tleaq\tx(%rip), %r11
+            Ok(vec!["\tleaq\tx(%rip), %r10
+\tandq\t$0, %r14
+\tmovq\t$1, %r11
 \tmovq\t$1, %r12
-\tmovq\t$1, %r13
+\tmovb\t%r12b, %r13b
 \tmovq\t%r13, %r14
-\timulq\t%r12, %r14
-\tmovq\t%r14, %r15
-\taddq\t%r11, %r15
-\tmovb\t(%r15), %r15b
+\timulq\t%r11, %r14
+\tandq\t$0, %r15
+\tmovb\t%r14b, %r15b
+\taddq\t%r10, %r15
+\tandq\t$0, %rax
+\tmovb\t(%r15), %al
+\tmovq\t%rax, %r15
 "
             .to_string()]),
             X86_64.apply(compound_statements!(index_expression,))
