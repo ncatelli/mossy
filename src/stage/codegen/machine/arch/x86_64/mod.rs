@@ -578,7 +578,7 @@ fn codegen_inc_or_dec_expression_from_pointer(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    allocator.allocate_general_purpose_register_then(|_, ptr_reg| {
+    allocator.allocate_general_purpose_register_then(|allocator, ptr_reg| {
         let op = match expr_op {
             IncDecExpression::PreIncrement | IncDecExpression::PostIncrement => format!(
                 "\tinc{}\t({})\n",
@@ -597,13 +597,13 @@ fn codegen_inc_or_dec_expression_from_pointer(
                 flattenable_instructions!(
                     codegen_mov_with_explicit_width(OperandWidth::QuadWord, ret, ptr_reg),
                     vec![op],
-                    codegen_deref(ty, ret, 0),
+                    codegen_deref(ty, allocator, ret, 0),
                 )
             }
             IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => {
                 flattenable_instructions!(
                     codegen_mov_with_explicit_width(OperandWidth::QuadWord, ret, ptr_reg),
-                    codegen_deref(ty, ret, 0),
+                    codegen_deref(ty, allocator, ret, 0),
                     vec![op],
                 )
             }
@@ -1135,14 +1135,22 @@ fn codegen_expr(
         TypedExprNode::Deref(ty, expr) => {
             flattenable_instructions!(
                 codegen_expr(allocator, ret, *expr),
-                codegen_deref(ty, ret, 0),
+                codegen_deref(ty, allocator, ret, 0),
             )
         }
         TypedExprNode::ScaleBy(ty, lhs) => {
             let scale_by_size = ty.size();
             codegen_scaleby(allocator, ret, scale_by_size, lhs)
         }
-        TypedExprNode::Grouping(_, expr) => codegen_expr(allocator, ret, *expr),
+        TypedExprNode::Grouping(_, expr) => {
+            let expr_ty = expr.r#type();
+            allocator.allocate_general_purpose_register_then(|allocator, expr_ret| {
+                flattenable_instructions!(
+                    codegen_expr(allocator, expr_ret, *expr),
+                    codegen_mov(expr_ty, expr_ret, ret),
+                )
+            })
+        }
     }
 }
 
@@ -1294,28 +1302,39 @@ where
 
 fn codegen_deref(
     ty: ast::Type,
+    allocator: &mut SysVAllocator,
     ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     scale: usize,
 ) -> Vec<String> {
     let scale_by = ty.size() * scale;
     let width = operand_width_of_type(ty);
 
-    if scale == 0 {
-        vec![format!(
-            "\tmov{}\t({}), {}\n",
-            operator_suffix(width),
-            ret.fmt_with_operand_width(OperandWidth::QuadWord),
-            ret.fmt_with_operand_width(width)
-        )]
-    } else {
-        vec![format!(
-            "\tmov{}\t{}({}), {}\n",
-            operator_suffix(width),
-            scale_by,
-            ret.fmt_with_operand_width(OperandWidth::QuadWord),
-            ret.fmt_with_operand_width(width)
-        )]
-    }
+    allocator.allocate_general_purpose_register_then(|_, tmp_reg| {
+        flattenable_instructions!(
+            vec![format!(
+                "\tand{}\t$0, {}\n",
+                operator_suffix(OperandWidth::QuadWord),
+                tmp_reg.fmt_with_operand_width(OperandWidth::QuadWord),
+            )],
+            if scale == 0 {
+                vec![format!(
+                    "\tmov{}\t({}), {}\n",
+                    operator_suffix(width),
+                    ret.fmt_with_operand_width(OperandWidth::QuadWord),
+                    tmp_reg.fmt_with_operand_width(width)
+                )]
+            } else {
+                vec![format!(
+                    "\tmov{}\t{}({}), {}\n",
+                    operator_suffix(width),
+                    scale_by,
+                    ret.fmt_with_operand_width(OperandWidth::QuadWord),
+                    tmp_reg.fmt_with_operand_width(width)
+                )]
+            },
+            codegen_mov_with_explicit_width(OperandWidth::QuadWord, tmp_reg, ret),
+        )
+    })
 }
 
 fn codegen_scaleby(
