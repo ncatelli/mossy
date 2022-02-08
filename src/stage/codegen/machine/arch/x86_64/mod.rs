@@ -7,6 +7,8 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 static BLOCK_ID: AtomicUsize = AtomicUsize::new(0);
 
+pub mod arch_rebuild;
+
 mod allocator;
 use allocator::{
     register::{
