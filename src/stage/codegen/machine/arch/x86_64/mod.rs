@@ -1017,10 +1017,19 @@ fn codegen_expr(
             ),
             codegen_mov(ty, &mut allocator.accumulator, ret),
         ),
-        TypedExprNode::LogicalNot(_, expr) => codegen_not(allocator, ret, *expr),
-        TypedExprNode::Negate(_, expr) => codegen_negate(allocator, ret, *expr),
-        TypedExprNode::Invert(_, expr) => codegen_invert(allocator, ret, *expr),
+        TypedExprNode::LogicalNot(ty, expr) => flattenable_instructions!(
+            codegen_not(allocator, *expr),
+            codegen_mov(ty, &mut allocator.accumulator, ret),
+        ),
 
+        TypedExprNode::Negate(ty, expr) => flattenable_instructions!(
+            codegen_negate(allocator, *expr),
+            codegen_mov(ty, &mut allocator.accumulator, ret),
+        ),
+        TypedExprNode::Invert(ty, expr) => flattenable_instructions!(
+            codegen_invert(allocator, *expr),
+            codegen_mov(ty, &mut allocator.accumulator, ret),
+        ),
         TypedExprNode::PreIncrement(_, expr) => match *expr {
             TypedExprNode::Primary(
                 ty,
@@ -1921,11 +1930,7 @@ fn codegen_shift_right(
 }
 
 /// Invert a register's value.
-fn codegen_invert(
-    allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
-    expr: ast::TypedExprNode,
-) -> Vec<String> {
+fn codegen_invert(allocator: &mut SysVAllocator, expr: ast::TypedExprNode) -> Vec<String> {
     let width = operand_width_of_type(expr.r#type());
 
     allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
@@ -1934,11 +1939,11 @@ fn codegen_invert(
 
         flattenable_instructions!(
             expr_ctx,
-            codegen_mov(ty, lhs_ret, ret),
+            codegen_mov(ty, lhs_ret, &mut allocator.accumulator),
             vec![format!(
                 "\tnot{}\t{}\n",
                 operator_suffix(width),
-                ret.fmt_with_operand_width(width)
+                allocator.accumulator.fmt_with_operand_width(width)
             )],
         )
     })
@@ -2050,11 +2055,7 @@ where
 // Unary
 
 /// Negate a register's value.
-fn codegen_negate(
-    allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
-    expr: ast::TypedExprNode,
-) -> Vec<String> {
+fn codegen_negate(allocator: &mut SysVAllocator, expr: ast::TypedExprNode) -> Vec<String> {
     let width = operand_width_of_type(expr.r#type());
 
     allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
@@ -2063,31 +2064,31 @@ fn codegen_negate(
 
         flattenable_instructions!(
             expr_ctx,
-            codegen_mov(ty, lhs_ret, ret),
+            codegen_mov(ty, lhs_ret, &mut allocator.accumulator),
             vec![format!(
                 "\tneg{}\t{}\n",
                 operator_suffix(width),
-                ret.fmt_with_operand_width(width)
+                allocator.accumulator.fmt_with_operand_width(width)
             )],
         )
     })
 }
 
 /// Logically negate a register's value.
-fn codegen_not(
-    allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
-    expr: ast::TypedExprNode,
-) -> Vec<String> {
+fn codegen_not(allocator: &mut SysVAllocator, expr: ast::TypedExprNode) -> Vec<String> {
     allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
         let ty = expr.r#type();
         let expr_ctx = codegen_expr(allocator, lhs_ret, expr);
-        let byte_ret_reg = ret.fmt_with_operand_width(OperandWidth::Byte);
-        let quadword_ret_reg = ret.fmt_with_operand_width(OperandWidth::QuadWord);
+        let byte_ret_reg = allocator
+            .accumulator
+            .fmt_with_operand_width(OperandWidth::Byte);
+        let quadword_ret_reg = allocator
+            .accumulator
+            .fmt_with_operand_width(OperandWidth::QuadWord);
 
         flattenable_instructions!(
             expr_ctx,
-            codegen_mov(ty, lhs_ret, ret),
+            codegen_mov(ty, lhs_ret, &mut allocator.accumulator),
             vec![
                 format!(
                     "\ttestq\t{width_adj_reg}, {width_adj_reg}\n",
