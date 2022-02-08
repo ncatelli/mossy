@@ -878,11 +878,20 @@ numeric_type_parser!(
 );
 
 fn ascii<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
-    any_character().predicate(|c| c.is_ascii())
+    ascii_whitespace()
+        .or(ascii_control)
+        .or(|| any_character().predicate(|c| c.is_ascii()))
 }
 
 fn ascii_whitespace<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
-    any_character().predicate(|c| c.is_ascii_whitespace())
+    parcel::right(parcel::join(
+        expect_character('\\'),
+        expect_character('n')
+            .map(|_| '\n')
+            .or(|| expect_character('t').map(|_| '\t')),
+    ))
+    .or(any_character)
+    .predicate(|c| c.is_ascii_whitespace())
 }
 
 fn ascii_alphanumeric<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
