@@ -994,25 +994,29 @@ fn codegen_expr(
                 codegen_mov(ty, &mut allocator.accumulator, ret),
             )
         }
-        TypedExprNode::Division(ty, lhs, rhs) => codegen_division(
-            allocator,
-            ret,
-            ty,
-            lhs,
-            rhs,
-            Signed::Unsigned,
-            DivisionVariant::Division,
-        ),
-        TypedExprNode::Modulo(ty, lhs, rhs) => codegen_division(
-            allocator,
-            ret,
-            ty,
-            lhs,
-            rhs,
-            Signed::Unsigned,
-            DivisionVariant::Modulo,
+        TypedExprNode::Division(ty, lhs, rhs) => flattenable_instructions!(
+            codegen_division(
+                allocator,
+                ty.clone(),
+                lhs,
+                rhs,
+                Signed::Unsigned,
+                DivisionVariant::Division,
+            ),
+            codegen_mov(ty, &mut allocator.accumulator, ret),
         ),
 
+        TypedExprNode::Modulo(ty, lhs, rhs) => flattenable_instructions!(
+            codegen_division(
+                allocator,
+                ty.clone(),
+                lhs,
+                rhs,
+                Signed::Unsigned,
+                DivisionVariant::Modulo,
+            ),
+            codegen_mov(ty, &mut allocator.accumulator, ret),
+        ),
         TypedExprNode::LogicalNot(_, expr) => codegen_not(allocator, ret, *expr),
         TypedExprNode::Negate(_, expr) => codegen_negate(allocator, ret, *expr),
         TypedExprNode::Invert(_, expr) => codegen_invert(allocator, ret, *expr),
@@ -1684,7 +1688,6 @@ enum DivisionVariant {
 
 fn codegen_division(
     allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
@@ -1730,17 +1733,12 @@ fn codegen_division(
                     }
                 },
                 match division_variant {
-                    DivisionVariant::Division => format!(
-                        "\tmov{}\t{}, {}\n",
-                        operand_suffix,
-                        IntegerRegister::A.fmt_with_operand_width(width),
-                        ret.fmt_with_operand_width(width)
-                    ),
+                    DivisionVariant::Division => "".to_string(),
                     DivisionVariant::Modulo => format!(
                         "\tmov{}\t{}, {}\n",
                         operand_suffix,
                         IntegerRegister::D.fmt_with_operand_width(width),
-                        ret.fmt_with_operand_width(width)
+                        allocator.accumulator.fmt_with_operand_width(width)
                     ),
                 }
             ],
