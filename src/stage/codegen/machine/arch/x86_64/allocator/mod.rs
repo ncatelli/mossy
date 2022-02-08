@@ -86,33 +86,6 @@ impl SysVAllocator {
             .expect("unable to allocate register")
     }
 
-    pub fn save_and_zero_accumulator_then<F>(&mut self, f: F) -> Vec<String>
-    where
-        F: FnOnce(&mut Self) -> Vec<String>,
-    {
-        let ret_val = f(self);
-        vec![
-            format!(
-                "\tpushq\t{}\n",
-                self.accumulator
-                    .fmt_with_operand_width(register::OperandWidth::QuadWord)
-            ),
-            format!(
-                "\tandq\t$0, {}\n",
-                self.accumulator
-                    .fmt_with_operand_width(register::OperandWidth::QuadWord)
-            ),
-        ]
-        .into_iter()
-        .chain(ret_val.into_iter())
-        .chain(vec![format!(
-            "\tpopq\t{}\n",
-            self.accumulator
-                .fmt_with_operand_width(register::OperandWidth::QuadWord)
-        )])
-        .collect()
-    }
-
     pub fn allocate_and_zero_general_purpose_register_then<F>(&mut self, f: F) -> Vec<String>
     where
         F: FnOnce(
