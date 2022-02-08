@@ -504,7 +504,6 @@ enum IncDecExpression {
 fn codegen_inc_or_dec_expression_from_identifier(
     ty: ast::Type,
     allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     identifier: &str,
     expr_op: IncDecExpression,
 ) -> Vec<String> {
@@ -527,26 +526,10 @@ fn codegen_inc_or_dec_expression_from_identifier(
 
     match expr_op {
         IncDecExpression::PreIncrement | IncDecExpression::PreDecrement => {
-            flattenable_instructions!(
-                vec![op],
-                codegen_load_global(ty, allocator, identifier, 0),
-                codegen_mov_with_explicit_width(
-                    OperandWidth::QuadWord,
-                    &mut allocator.accumulator,
-                    ret
-                ),
-            )
+            flattenable_instructions!(vec![op], codegen_load_global(ty, allocator, identifier, 0),)
         }
         IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => {
-            flattenable_instructions!(
-                codegen_load_global(ty, allocator, identifier, 0),
-                codegen_mov_with_explicit_width(
-                    OperandWidth::QuadWord,
-                    &mut allocator.accumulator,
-                    ret
-                ),
-                vec![op],
-            )
+            flattenable_instructions!(codegen_load_global(ty, allocator, identifier, 0), vec![op],)
         }
     }
 }
@@ -1040,12 +1023,18 @@ fn codegen_expr(
             TypedExprNode::Primary(
                 ty,
                 Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
-            ) => codegen_inc_or_dec_expression_from_identifier(
-                ty,
-                allocator,
-                ret,
-                &identifier,
-                IncDecExpression::PreIncrement,
+            ) => flattenable_instructions!(
+                codegen_inc_or_dec_expression_from_identifier(
+                    ty,
+                    allocator,
+                    &identifier,
+                    IncDecExpression::PreIncrement,
+                ),
+                codegen_mov_with_explicit_width(
+                    OperandWidth::QuadWord,
+                    &mut allocator.accumulator,
+                    ret
+                ),
             ),
             TypedExprNode::Primary(
                 ty,
@@ -1094,12 +1083,18 @@ fn codegen_expr(
             TypedExprNode::Primary(
                 ty,
                 Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
-            ) => codegen_inc_or_dec_expression_from_identifier(
-                ty,
-                allocator,
-                ret,
-                &identifier,
-                IncDecExpression::PreDecrement,
+            ) => flattenable_instructions!(
+                codegen_inc_or_dec_expression_from_identifier(
+                    ty,
+                    allocator,
+                    &identifier,
+                    IncDecExpression::PreDecrement,
+                ),
+                codegen_mov_with_explicit_width(
+                    OperandWidth::QuadWord,
+                    &mut allocator.accumulator,
+                    ret
+                ),
             ),
             TypedExprNode::Primary(
                 ty,
@@ -1148,12 +1143,18 @@ fn codegen_expr(
             TypedExprNode::Primary(
                 ty,
                 Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
-            ) => codegen_inc_or_dec_expression_from_identifier(
-                ty,
-                allocator,
-                ret,
-                &identifier,
-                IncDecExpression::PostIncrement,
+            ) => flattenable_instructions!(
+                codegen_inc_or_dec_expression_from_identifier(
+                    ty,
+                    allocator,
+                    &identifier,
+                    IncDecExpression::PostIncrement,
+                ),
+                codegen_mov_with_explicit_width(
+                    OperandWidth::QuadWord,
+                    &mut allocator.accumulator,
+                    ret
+                ),
             ),
             TypedExprNode::Primary(
                 ty,
@@ -1202,13 +1203,20 @@ fn codegen_expr(
             TypedExprNode::Primary(
                 ty,
                 Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
-            ) => codegen_inc_or_dec_expression_from_identifier(
-                ty,
-                allocator,
-                ret,
-                &identifier,
-                IncDecExpression::PostDecrement,
+            ) => flattenable_instructions!(
+                codegen_inc_or_dec_expression_from_identifier(
+                    ty,
+                    allocator,
+                    &identifier,
+                    IncDecExpression::PostDecrement,
+                ),
+                codegen_mov_with_explicit_width(
+                    OperandWidth::QuadWord,
+                    &mut allocator.accumulator,
+                    ret
+                ),
             ),
+
             TypedExprNode::Primary(
                 ty,
                 Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
