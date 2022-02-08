@@ -503,6 +503,7 @@ enum IncDecExpression {
 
 fn codegen_inc_or_dec_expression_from_identifier(
     ty: ast::Type,
+    allocator: &mut SysVAllocator,
     ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     identifier: &str,
     expr_op: IncDecExpression,
@@ -526,10 +527,26 @@ fn codegen_inc_or_dec_expression_from_identifier(
 
     match expr_op {
         IncDecExpression::PreIncrement | IncDecExpression::PreDecrement => {
-            flattenable_instructions!(vec![op], codegen_load_global(ty, ret, identifier, 0),)
+            flattenable_instructions!(
+                vec![op],
+                codegen_load_global(ty, allocator, identifier, 0),
+                codegen_mov_with_explicit_width(
+                    OperandWidth::QuadWord,
+                    &mut allocator.accumulator,
+                    ret
+                ),
+            )
         }
         IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => {
-            flattenable_instructions!(codegen_load_global(ty, ret, identifier, 0), vec![op],)
+            flattenable_instructions!(
+                codegen_load_global(ty, allocator, identifier, 0),
+                codegen_mov_with_explicit_width(
+                    OperandWidth::QuadWord,
+                    &mut allocator.accumulator,
+                    ret
+                ),
+                vec![op],
+            )
         }
     }
 }
@@ -616,29 +633,34 @@ fn codegen_inc_or_dec_expression_from_pointer(
 
 fn codegen_load_global(
     ty: ast::Type,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
+    allocator: &mut SysVAllocator,
     identifier: &str,
     scale: usize,
 ) -> Vec<String> {
     let scale_by = ty.size() * scale;
-    let width = operand_width_of_type(ty);
+    let (suffix, width) = match operand_width_of_type(ty) {
+        ow @ OperandWidth::QuadWord => ("q", ow),
+        OperandWidth::DoubleWord => ("l", OperandWidth::DoubleWord),
+        OperandWidth::Word => ("zwl", OperandWidth::DoubleWord),
+        OperandWidth::Byte => ("zbl", OperandWidth::DoubleWord),
+    };
 
     if scale == 0 {
         vec![format!(
             "\tmov{}\t{}({}), {}\n",
-            operator_suffix(width),
+            suffix,
             identifier,
             PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
-            ret.fmt_with_operand_width(width)
+            allocator.accumulator.fmt_with_operand_width(width)
         )]
     } else {
         vec![format!(
             "\tmov{}\t{}+{}({}), {}\n",
-            operator_suffix(width),
+            suffix,
             identifier,
             scale_by,
             PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
-            ret.fmt_with_operand_width(width)
+            allocator.accumulator.fmt_with_operand_width(width)
         )]
     }
 }
@@ -815,7 +837,14 @@ fn codegen_expr(
         },
 
         TypedExprNode::Primary(ty, Primary::Identifier(_, ast::IdentifierLocality::Global(id))) => {
-            codegen_load_global(ty, ret, &id, 0)
+            flattenable_instructions!(
+                codegen_load_global(ty, allocator, &id, 0),
+                codegen_mov_with_explicit_width(
+                    OperandWidth::QuadWord,
+                    &mut allocator.accumulator,
+                    ret
+                ),
+            )
         }
         TypedExprNode::Primary(
             ty,
@@ -980,6 +1009,7 @@ fn codegen_expr(
                 Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
             ) => codegen_inc_or_dec_expression_from_identifier(
                 ty,
+                allocator,
                 ret,
                 &identifier,
                 IncDecExpression::PreIncrement,
@@ -1033,6 +1063,7 @@ fn codegen_expr(
                 Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
             ) => codegen_inc_or_dec_expression_from_identifier(
                 ty,
+                allocator,
                 ret,
                 &identifier,
                 IncDecExpression::PreDecrement,
@@ -1086,6 +1117,7 @@ fn codegen_expr(
                 Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
             ) => codegen_inc_or_dec_expression_from_identifier(
                 ty,
+                allocator,
                 ret,
                 &identifier,
                 IncDecExpression::PostIncrement,
@@ -1139,6 +1171,7 @@ fn codegen_expr(
                 Primary::Identifier(_, ast::IdentifierLocality::Global(identifier)),
             ) => codegen_inc_or_dec_expression_from_identifier(
                 ty,
+                allocator,
                 ret,
                 &identifier,
                 IncDecExpression::PostDecrement,
