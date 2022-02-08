@@ -989,7 +989,10 @@ fn codegen_expr(
             codegen_mov(ty, &mut allocator.accumulator, ret),
         ),
         TypedExprNode::Multiplication(ty, lhs, rhs) => {
-            codegen_multiplication(allocator, ret, ty, lhs, rhs)
+            flattenable_instructions!(
+                codegen_multiplication(allocator, ty.clone(), lhs, rhs),
+                codegen_mov(ty, &mut allocator.accumulator, ret),
+            )
         }
         TypedExprNode::Division(ty, lhs, rhs) => codegen_division(
             allocator,
@@ -1537,12 +1540,18 @@ fn codegen_scaleby(
             },
         );
 
-        codegen_multiplication(
-            allocator,
-            ret,
-            ast::Type::Integer(sign, ast::IntegerWidth::SixtyFour),
-            Box::new(scale_by_expr),
-            expr,
+        flattenable_instructions!(
+            codegen_multiplication(
+                allocator,
+                ast::Type::Integer(sign, ast::IntegerWidth::SixtyFour),
+                Box::new(scale_by_expr),
+                expr,
+            ),
+            codegen_mov_with_explicit_width(
+                OperandWidth::QuadWord,
+                &mut allocator.accumulator,
+                ret
+            ),
         )
     } else {
         panic!("invalid scale_by types")
@@ -1632,20 +1641,26 @@ fn codegen_subtraction(
 
 fn codegen_multiplication(
     allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
-    let rhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-        let rhs_ty = rhs.r#type();
-        flattenable_instructions!(
-            codegen_expr(allocator, rhs_ret, *rhs),
-            codegen_mov(rhs_ty, rhs_ret, ret),
-        )
-    });
+    let rhs_ctx =
+        allocator.allocate_and_zero_general_purpose_register_then(|allocator, rhs_ret| {
+            let rhs_ty = rhs.r#type();
+            flattenable_instructions!(
+                codegen_expr(allocator, rhs_ret, *rhs),
+                codegen_mov_with_sized_src_and_dest(
+                    ast::Signed::Unsigned,
+                    rhs_ty,
+                    rhs_ret,
+                    ty,
+                    &mut allocator.accumulator
+                ),
+            )
+        });
 
     allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
         flattenable_instructions!(
@@ -1655,7 +1670,7 @@ fn codegen_multiplication(
                 "\timul{}\t{}, {}\n",
                 operator_suffix(width),
                 lhs_ret.fmt_with_operand_width(width),
-                ret.fmt_with_operand_width(width)
+                allocator.accumulator.fmt_with_operand_width(width)
             )],
         )
     })
