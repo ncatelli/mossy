@@ -878,9 +878,17 @@ numeric_type_parser!(
 );
 
 fn ascii<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
-    ascii_whitespace()
-        .or(ascii_control)
-        .or(|| any_character().predicate(|c| c.is_ascii()))
+    parcel::right(parcel::join(
+        expect_character('\\'),
+        expect_character('\\')
+            .map(|_| '\\')
+            .or(|| expect_character('\'').map(|_| '\''))
+            .or(|| expect_character('"').map(|_| '"')),
+    ))
+    .or(ascii_alphanumeric)
+    .or(ascii_whitespace)
+    .or(ascii_control)
+    .or(|| any_character().predicate(|c| c.is_ascii()))
 }
 
 fn ascii_whitespace<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
@@ -899,7 +907,11 @@ fn ascii_alphanumeric<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
 }
 
 fn ascii_control<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
-    any_character().predicate(|c| c.is_ascii_control())
+    parcel::right(parcel::join(
+        expect_character('\\'),
+        expect_character('r').map(|_| '\r'),
+    ))
+    .or(|| any_character().predicate(|c| c.is_ascii_control()))
 }
 
 fn whitespace_wrapped<'a, P, B>(parser: P) -> impl Parser<'a, &'a [(usize, char)], B>
