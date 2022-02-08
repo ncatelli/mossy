@@ -86,7 +86,7 @@ impl SysVAllocator {
             .expect("unable to allocate register")
     }
 
-    pub fn safe_and_zero_accumulator_then<F>(&mut self, f: F) -> Vec<String>
+    pub fn save_and_zero_accumulator_then<F>(&mut self, f: F) -> Vec<String>
     where
         F: FnOnce(&mut Self) -> Vec<String>,
     {

@@ -155,6 +155,14 @@ impl WidthFormatted for IntegerRegister {
     }
 }
 
+impl WidthFormatted for &IntegerRegister {
+    type Output = &'static str;
+
+    fn fmt_with_operand_width(&self, width: OperandWidth) -> Self::Output {
+        (*self).fmt_with_operand_width(width)
+    }
+}
+
 impl From<GeneralPurposeRegister> for IntegerRegister {
     fn from(gpr: GeneralPurposeRegister) -> Self {
         match gpr {

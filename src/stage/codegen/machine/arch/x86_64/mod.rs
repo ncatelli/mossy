@@ -7,8 +7,6 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 static BLOCK_ID: AtomicUsize = AtomicUsize::new(0);
 
-pub mod arch_rebuild;
-
 mod allocator;
 use allocator::{
     register::{
@@ -27,7 +25,10 @@ impl Operand for &GeneralPurposeRegister {}
 impl Operand for allocator::register::FunctionPassingRegisters {}
 impl Operand for &allocator::register::FunctionPassingRegisters {}
 
+impl Operand for allocator::register::Accumulator {}
+
 impl Operand for IntegerRegister {}
+impl Operand for &IntegerRegister {}
 
 impl<REG> Operand for allocator::RegisterOrOffset<REG>
 where
@@ -700,13 +701,27 @@ fn codegen_expr(
             (_, IntegerWidth::One) => {
                 let boolean_literal = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
                     .expect("value exceeds unsigned 8-bit integer");
-                codegen_constant_u8(ret, boolean_literal)
+                flattenable_instructions!(
+                    codegen_constant_u8(allocator, boolean_literal),
+                    codegen_mov_with_explicit_width(
+                        OperandWidth::QuadWord,
+                        &mut allocator.accumulator,
+                        ret
+                    ),
+                )
             }
 
             (Signed::Signed, IntegerWidth::Eight) => {
                 let signed_literal = u64::from_le_bytes(value);
                 if signed_literal.leading_zeros() >= 56 {
-                    codegen_constant_i8(ret, signed_literal as i8)
+                    flattenable_instructions!(
+                        codegen_constant_i8(allocator, signed_literal as i8),
+                        codegen_mov_with_explicit_width(
+                            OperandWidth::QuadWord,
+                            &mut allocator.accumulator,
+                            ret
+                        ),
+                    )
                 } else {
                     panic!("value exceeds signed 8-bit integer")
                 }
@@ -714,7 +729,14 @@ fn codegen_expr(
             (Signed::Signed, IntegerWidth::Sixteen) => {
                 let signed_literal = u64::from_le_bytes(value);
                 if signed_literal.leading_zeros() >= 48 {
-                    codegen_constant_i16(ret, signed_literal as i16)
+                    flattenable_instructions!(
+                        codegen_constant_i16(allocator, signed_literal as i16),
+                        codegen_mov_with_explicit_width(
+                            OperandWidth::QuadWord,
+                            &mut allocator.accumulator,
+                            ret
+                        ),
+                    )
                 } else {
                     panic!("value exceeds signed 16-bit integer")
                 }
@@ -722,31 +744,73 @@ fn codegen_expr(
             (Signed::Signed, IntegerWidth::ThirtyTwo) => {
                 let signed_literal = u64::from_le_bytes(value);
                 if signed_literal.leading_zeros() >= 32 {
-                    codegen_constant_i32(ret, signed_literal as i32)
+                    flattenable_instructions!(
+                        codegen_constant_i32(allocator, signed_literal as i32),
+                        codegen_mov_with_explicit_width(
+                            OperandWidth::QuadWord,
+                            &mut allocator.accumulator,
+                            ret
+                        ),
+                    )
                 } else {
                     panic!("value exceeds signed 32-bit integer")
                 }
             }
             (Signed::Signed, IntegerWidth::SixtyFour) => {
-                codegen_constant_i64(ret, i64::from_le_bytes(value))
+                flattenable_instructions!(
+                    codegen_constant_i64(allocator, i64::from_le_bytes(value)),
+                    codegen_mov_with_explicit_width(
+                        OperandWidth::QuadWord,
+                        &mut allocator.accumulator,
+                        ret
+                    ),
+                )
             }
             (Signed::Unsigned, IntegerWidth::Eight) => {
                 let unsigned_literal = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
                     .expect("value exceeds unsigned 8-bit integer");
-                codegen_constant_u8(ret, unsigned_literal)
+                flattenable_instructions!(
+                    codegen_constant_u8(allocator, unsigned_literal),
+                    codegen_mov_with_explicit_width(
+                        OperandWidth::QuadWord,
+                        &mut allocator.accumulator,
+                        ret
+                    ),
+                )
             }
             (Signed::Unsigned, IntegerWidth::Sixteen) => {
                 let unsigned_literal = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
                     .expect("value exceeds unsigned 32-bit integer");
-                codegen_constant_u16(ret, unsigned_literal)
+                flattenable_instructions!(
+                    codegen_constant_u16(allocator, unsigned_literal),
+                    codegen_mov_with_explicit_width(
+                        OperandWidth::QuadWord,
+                        &mut allocator.accumulator,
+                        ret
+                    ),
+                )
             }
             (Signed::Unsigned, IntegerWidth::ThirtyTwo) => {
                 let unsigned_literal = core::convert::TryFrom::try_from(u64::from_le_bytes(value))
                     .expect("value exceeds unsigned 32-bit integer");
-                codegen_constant_u32(ret, unsigned_literal)
+                flattenable_instructions!(
+                    codegen_constant_u32(allocator, unsigned_literal),
+                    codegen_mov_with_explicit_width(
+                        OperandWidth::QuadWord,
+                        &mut allocator.accumulator,
+                        ret
+                    ),
+                )
             }
             (Signed::Unsigned, IntegerWidth::SixtyFour) => {
-                codegen_constant_u64(ret, u64::from_le_bytes(value))
+                flattenable_instructions!(
+                    codegen_constant_u64(allocator, u64::from_le_bytes(value)),
+                    codegen_mov_with_explicit_width(
+                        OperandWidth::QuadWord,
+                        &mut allocator.accumulator,
+                        ret
+                    ),
+                )
             }
         },
 
@@ -1156,89 +1220,91 @@ fn codegen_expr(
     }
 }
 
-fn codegen_constant_i8<OP: Operand>(ret: &mut OP, constant: i8) -> Vec<String> {
+fn codegen_constant_i8(allocator: &mut SysVAllocator, constant: i8) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
+
     vec![format!(
         "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret.fmt_with_operand_width(WIDTH)
+        allocator.accumulator.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_u8<OP: Operand>(ret: &mut OP, constant: u8) -> Vec<String> {
+fn codegen_constant_u8(allocator: &mut SysVAllocator, constant: u8) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
+
     vec![format!(
         "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret.fmt_with_operand_width(WIDTH)
+        allocator.accumulator.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_i16<OP: Operand>(ret: &mut OP, constant: i16) -> Vec<String> {
+fn codegen_constant_i16(allocator: &mut SysVAllocator, constant: i16) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
         "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret.fmt_with_operand_width(WIDTH)
+        allocator.accumulator.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_u16<OP: Operand>(ret: &mut OP, constant: u16) -> Vec<String> {
+fn codegen_constant_u16(allocator: &mut SysVAllocator, constant: u16) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
         "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret.fmt_with_operand_width(WIDTH)
+        allocator.accumulator.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_i32<OP: Operand>(ret: &mut OP, constant: i32) -> Vec<String> {
+fn codegen_constant_i32(allocator: &mut SysVAllocator, constant: i32) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
         "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret.fmt_with_operand_width(WIDTH)
+        allocator.accumulator.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_u32<OP: Operand>(ret: &mut OP, constant: u32) -> Vec<String> {
+fn codegen_constant_u32(allocator: &mut SysVAllocator, constant: u32) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
         "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret.fmt_with_operand_width(WIDTH)
+        allocator.accumulator.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_i64<OP: Operand>(ret: &mut OP, constant: i64) -> Vec<String> {
+fn codegen_constant_i64(allocator: &mut SysVAllocator, constant: i64) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
         "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret.fmt_with_operand_width(WIDTH)
+        allocator.accumulator.fmt_with_operand_width(WIDTH)
     )]
 }
 
-fn codegen_constant_u64<OP: Operand>(ret: &mut OP, constant: u64) -> Vec<String> {
+fn codegen_constant_u64(allocator: &mut SysVAllocator, constant: u64) -> Vec<String> {
     const WIDTH: OperandWidth = OperandWidth::QuadWord;
 
     vec![format!(
         "\tmov{}\t${}, {}\n",
         operator_suffix(WIDTH),
         constant,
-        ret.fmt_with_operand_width(WIDTH)
+        allocator.accumulator.fmt_with_operand_width(WIDTH)
     )]
 }
 
