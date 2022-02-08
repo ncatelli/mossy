@@ -971,12 +971,23 @@ fn codegen_expr(
         }
 
         TypedExprNode::Addition(ast::Type::Pointer(ty), lhs, rhs) => {
-            codegen_addition(allocator, ret, ty.pointer_to(), lhs, rhs)
+            flattenable_instructions!(
+                codegen_addition(allocator, ty.pointer_to(), lhs, rhs),
+                codegen_mov_with_explicit_width(
+                    OperandWidth::QuadWord,
+                    &mut allocator.accumulator,
+                    ret
+                ),
+            )
         }
-        TypedExprNode::Addition(ty, lhs, rhs) => codegen_addition(allocator, ret, ty, lhs, rhs),
-        TypedExprNode::Subtraction(ty, lhs, rhs) => {
-            codegen_subtraction(allocator, ret, ty, lhs, rhs)
-        }
+        TypedExprNode::Addition(ty, lhs, rhs) => flattenable_instructions!(
+            codegen_addition(allocator, ty.clone(), lhs, rhs),
+            codegen_mov(ty, &mut allocator.accumulator, ret),
+        ),
+        TypedExprNode::Subtraction(ty, lhs, rhs) => flattenable_instructions!(
+            codegen_subtraction(allocator, ty.clone(), lhs, rhs),
+            codegen_mov(ty, &mut allocator.accumulator, ret),
+        ),
         TypedExprNode::Multiplication(ty, lhs, rhs) => {
             codegen_multiplication(allocator, ret, ty, lhs, rhs)
         }
@@ -1341,6 +1352,22 @@ fn codegen_constant_u64(allocator: &mut SysVAllocator, constant: u64) -> Vec<Str
     )]
 }
 
+fn codegen_mov_with_sized_src_and_dest<SRC, DST>(
+    sign: ast::Signed,
+    src_ty: ast::Type,
+    src: &mut SRC,
+    dest_ty: ast::Type,
+    dst: &mut DST,
+) -> Vec<String>
+where
+    SRC: Operand,
+    DST: Operand,
+{
+    let src_width = operand_width_of_type(src_ty);
+    let dst_width = operand_width_of_type(dest_ty);
+    codegen_mov_with_extend(sign, src_width, src, dst_width, dst)
+}
+
 fn codegen_mov<SRC, DST>(ty: ast::Type, src: &mut SRC, dst: &mut DST) -> Vec<String>
 where
     SRC: Operand,
@@ -1365,6 +1392,62 @@ where
         operator_suffix(width),
         src.fmt_with_operand_width(width),
         dst.fmt_with_operand_width(width)
+    )]
+}
+
+fn codegen_mov_with_extend<SRC, DST>(
+    sign: ast::Signed,
+    src_width: OperandWidth,
+    src: &mut SRC,
+    dst_width: OperandWidth,
+    dst: &mut DST,
+) -> Vec<String>
+where
+    SRC: Operand,
+    DST: Operand,
+{
+    let sign_formatter = match sign {
+        // sign extend
+        ast::Signed::Signed => "s",
+        // zero extend
+        ast::Signed::Unsigned => "z",
+    };
+
+    let extension_operator_suffix = match (src_width, dst_width) {
+        // mov
+        (OperandWidth::QuadWord, OperandWidth::QuadWord) => {
+            operator_suffix(OperandWidth::QuadWord).to_string()
+        }
+        (OperandWidth::QuadWord, OperandWidth::DoubleWord)
+        | (OperandWidth::DoubleWord, OperandWidth::DoubleWord)
+        | (OperandWidth::DoubleWord, OperandWidth::QuadWord) => {
+            operator_suffix(OperandWidth::DoubleWord).to_string()
+        }
+        (OperandWidth::QuadWord, OperandWidth::Word)
+        | (OperandWidth::DoubleWord, OperandWidth::Word) => {
+            operator_suffix(OperandWidth::Word).to_string()
+        }
+
+        (OperandWidth::QuadWord, OperandWidth::Byte)
+        | (OperandWidth::DoubleWord, OperandWidth::Byte)
+        | (OperandWidth::Word, OperandWidth::Byte)
+        | (OperandWidth::Byte, OperandWidth::Byte) => {
+            operator_suffix(OperandWidth::Byte).to_string()
+        }
+        (OperandWidth::Word, OperandWidth::Word) => operator_suffix(OperandWidth::Word).to_string(),
+        // mov with sign/zero extend
+        (OperandWidth::Word, OperandWidth::QuadWord)
+        | (OperandWidth::Word, OperandWidth::DoubleWord) => format!("{}{}", sign_formatter, "wl"),
+        (OperandWidth::Byte, OperandWidth::QuadWord)
+        | (OperandWidth::Byte, OperandWidth::DoubleWord) => format!("{}{}", sign_formatter, "bl"),
+        (OperandWidth::Byte, OperandWidth::Word) => format!("{}{}", sign_formatter, "bw"),
+    };
+
+    vec![format!(
+        "\tmov{}\t{}, {}\n",
+        extension_operator_suffix,
+        src.fmt_with_operand_width(src_width),
+        dst.fmt_with_operand_width(dst_width)
     )]
 }
 
@@ -1468,24 +1551,24 @@ fn codegen_scaleby(
 
 fn codegen_addition(
     allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty);
+    let width = operand_width_of_type(ty.clone());
 
     let rhs_ctx =
         allocator.allocate_and_zero_general_purpose_register_then(|allocator, rhs_ret| {
             let rhs_ty = rhs.r#type();
             flattenable_instructions!(
                 codegen_expr(allocator, rhs_ret, *rhs),
-                vec![format!(
-                    "\tand{}\t$0, {}\n",
-                    operator_suffix(OperandWidth::QuadWord),
-                    ret.fmt_with_operand_width(OperandWidth::QuadWord)
-                )],
-                codegen_mov(rhs_ty, rhs_ret, ret),
+                codegen_mov_with_sized_src_and_dest(
+                    ast::Signed::Unsigned,
+                    rhs_ty,
+                    rhs_ret,
+                    ty,
+                    &mut allocator.accumulator
+                ),
             )
         });
 
@@ -1497,7 +1580,7 @@ fn codegen_addition(
                 "\tadd{}\t{}, {}\n",
                 operator_suffix(width),
                 lhs_ret.fmt_with_operand_width(width),
-                ret.fmt_with_operand_width(width)
+                allocator.accumulator.fmt_with_operand_width(width)
             )],
         )
     })
@@ -1505,29 +1588,43 @@ fn codegen_addition(
 
 fn codegen_subtraction(
     allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    let lhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-        flattenable_instructions!(
-            codegen_expr(allocator, lhs_ret, *lhs),
-            codegen_mov(ty, lhs_ret, ret),
-        )
-    });
+    let lhs_ctx =
+        allocator.allocate_and_zero_general_purpose_register_then(|allocator, lhs_ret| {
+            let lhs_ty = lhs.r#type();
+            flattenable_instructions!(
+                codegen_expr(allocator, lhs_ret, *lhs),
+                vec![format!(
+                    "\tand{}\t$0, {}\n",
+                    operator_suffix(OperandWidth::QuadWord),
+                    allocator
+                        .accumulator
+                        .fmt_with_operand_width(OperandWidth::QuadWord)
+                )],
+                codegen_mov_with_sized_src_and_dest(
+                    ast::Signed::Unsigned,
+                    lhs_ty,
+                    lhs_ret,
+                    ty,
+                    &mut allocator.accumulator
+                ),
+            )
+        });
 
     allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
         flattenable_instructions!(
-            lhs_ctx,
             codegen_expr(allocator, rhs_ret, *rhs),
+            lhs_ctx,
             vec![format!(
                 "\tsub{}\t{}, {}\n",
                 operator_suffix(width),
                 rhs_ret.fmt_with_operand_width(width),
-                ret.fmt_with_operand_width(width)
+                allocator.accumulator.fmt_with_operand_width(width)
             )],
         )
     })
