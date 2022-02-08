@@ -964,10 +964,16 @@ fn codegen_expr(
         ),
 
         TypedExprNode::BitShiftLeft(ty, lhs, rhs) => {
-            codegen_shift_left(ty, allocator, ret, *lhs, *rhs)
+            flattenable_instructions!(
+                codegen_shift_left(ty.clone(), allocator, *lhs, *rhs),
+                codegen_mov(ty, &mut allocator.accumulator, ret),
+            )
         }
         TypedExprNode::BitShiftRight(ty, lhs, rhs) => {
-            codegen_shift_right(ty, allocator, ret, *lhs, *rhs)
+            flattenable_instructions!(
+                codegen_shift_right(ty.clone(), allocator, *lhs, *rhs),
+                codegen_mov(ty, &mut allocator.accumulator, ret),
+            )
         }
 
         TypedExprNode::Addition(ast::Type::Pointer(ty), lhs, rhs) => {
@@ -1621,13 +1627,6 @@ fn codegen_subtraction(
             let lhs_ty = lhs.r#type();
             flattenable_instructions!(
                 codegen_expr(allocator, lhs_ret, *lhs),
-                vec![format!(
-                    "\tand{}\t$0, {}\n",
-                    operator_suffix(OperandWidth::QuadWord),
-                    allocator
-                        .accumulator
-                        .fmt_with_operand_width(OperandWidth::QuadWord)
-                )],
                 codegen_mov_with_sized_src_and_dest(
                     ast::Signed::Unsigned,
                     lhs_ty,
@@ -1856,18 +1855,25 @@ fn codegen_and(
 fn codegen_shift_left(
     ty: ast::Type,
     allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    let lhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-        flattenable_instructions!(
-            codegen_expr(allocator, lhs_ret, lhs),
-            codegen_mov(ty, lhs_ret, ret),
-        )
-    });
+    let lhs_ctx =
+        allocator.allocate_and_zero_general_purpose_register_then(|allocator, lhs_ret| {
+            let lhs_ty = lhs.r#type();
+            flattenable_instructions!(
+                codegen_expr(allocator, lhs_ret, lhs),
+                codegen_mov_with_sized_src_and_dest(
+                    ast::Signed::Unsigned,
+                    lhs_ty,
+                    lhs_ret,
+                    ty,
+                    &mut allocator.accumulator
+                ),
+            )
+        });
 
     allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
         let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
@@ -1884,7 +1890,7 @@ fn codegen_shift_left(
                 format!(
                     "\tshl{}\t%cl, {}\n",
                     operator_suffix(width),
-                    ret.fmt_with_operand_width(width)
+                    allocator.accumulator.fmt_with_operand_width(width)
                 )
             ],
         )
@@ -1894,18 +1900,25 @@ fn codegen_shift_left(
 fn codegen_shift_right(
     ty: ast::Type,
     allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    let lhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-        flattenable_instructions!(
-            codegen_expr(allocator, lhs_ret, lhs),
-            codegen_mov(ty, lhs_ret, ret),
-        )
-    });
+    let lhs_ctx =
+        allocator.allocate_and_zero_general_purpose_register_then(|allocator, lhs_ret| {
+            let lhs_ty = lhs.r#type();
+            flattenable_instructions!(
+                codegen_expr(allocator, lhs_ret, lhs),
+                codegen_mov_with_sized_src_and_dest(
+                    ast::Signed::Unsigned,
+                    lhs_ty,
+                    lhs_ret,
+                    ty,
+                    &mut allocator.accumulator
+                ),
+            )
+        });
 
     allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
         let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
@@ -1922,7 +1935,7 @@ fn codegen_shift_right(
                 format!(
                     "\tshr{}\t%cl, {}\n",
                     operator_suffix(width),
-                    ret.fmt_with_operand_width(width)
+                    allocator.accumulator.fmt_with_operand_width(width)
                 )
             ],
         )
