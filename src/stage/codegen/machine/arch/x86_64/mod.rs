@@ -2111,9 +2111,9 @@ mod tests {
 \tandq\t$0, %r15
 \tmovb\t%r14b, %r15b
 \taddq\t%r10, %r15
-\tandq\t$0, %rax
-\tmovb\t(%r15), %al
-\tmovq\t%rax, %r15
+\tandq\t$0, %r12
+\tmovb\t(%r15), %r12b
+\tmovq\t%r12, %r15
 "
             .to_string()]),
             X86_64.apply(compound_statements!(index_expression,))
