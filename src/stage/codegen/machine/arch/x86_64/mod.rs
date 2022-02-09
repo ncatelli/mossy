@@ -1932,22 +1932,19 @@ mod tests {
 
         assert_eq!(
             Ok(vec![
-                "\tmovq\t$10, %r14
-\tmovb\t%r14b, %al
-\tmovq\t$3, %r13
+                "\tmovq\t$3, %rax
+\tmovb\t%al, %r15b
+\tmovq\t$10, %rax
 \txorq\t%rdx, %rdx
-\tdivb\t%r13b
-\tmovb\t%dl, %r15b
-"
-                .to_string(),
-                "\tmovq\t$10, %r11
-\tmovb\t%r11b, %al
-\tmovq\t$3, %r10
+\tdivb\t%r15b
+\tmovb\t%dl, %al\n"
+                    .to_string(),
+                "\tmovq\t$3, %rax
+\tmovb\t%al, %r14b
+\tmovq\t$10, %rax
 \txorq\t%rdx, %rdx
-\tdivb\t%r10b
-\tmovb\t%al, %r12b
-"
-                .to_string()
+\tdivb\t%r14b\n"
+                    .to_string()
             ]),
             X86_64.apply(compound_statements!(modulo_expr_stmt, div_expr_stmt,))
         );
@@ -1986,21 +1983,17 @@ mod tests {
         ));
 
         assert_eq!(
-            Ok(vec!["\tleaq\tx(%rip), %r10
+            Ok(vec!["\tandq\t$0, %r15
 \tandq\t$0, %r14
-\tmovq\t$1, %r11
-\tmovq\t$1, %r12
-\tmovb\t%r12b, %r13b
-\tmovq\t%r13, %r14
-\timulq\t%r11, %r14
-\tandq\t$0, %r15
-\tmovb\t%r14b, %r15b
-\taddq\t%r10, %r15
-\tandq\t$0, %r12
-\tmovb\t(%r15), %r12b
-\tmovq\t%r12, %r15
-"
-            .to_string()]),
+\tmovq\t$1, %rax
+\tmovq\t%rax, %r14
+\tmovq\t$1, %rax
+\timulq\t%r14, %rax
+\tmovq\t%rax, %r15
+\tleaq\tx(%rip), %rax
+\taddq\t%r15, %rax
+\tmovzbl\t(%rax), %eax\n"
+                .to_string()]),
             X86_64.apply(compound_statements!(index_expression,))
         );
     }
