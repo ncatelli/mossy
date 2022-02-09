@@ -465,16 +465,12 @@ fn codegen_global_str(identifier: &str, str_literal: &[u8]) -> Vec<String> {
     )
 }
 
-fn codegen_store_local(
-    ty: ast::Type,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
-    offset: isize,
-) -> Vec<String> {
+fn codegen_store_local(ty: ast::Type, allocator: &mut SysVAllocator, offset: isize) -> Vec<String> {
     let width = operand_width_of_type(ty);
     vec![format!(
         "\tmov{}\t{}, {}({})\n",
         operator_suffix(width),
-        ret.fmt_with_operand_width(width),
+        allocator.accumulator.fmt_with_operand_width(width),
         offset,
         BasePointerRegister.fmt_with_operand_width(OperandWidth::QuadWord),
     )]
@@ -888,11 +884,14 @@ fn codegen_expr(
         ) => allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
             flattenable_instructions!(
                 codegen_expr(allocator, rhs_ret, *expr),
-                codegen_mov(ty.clone(), rhs_ret, ret),
+                codegen_mov(ty.clone(), rhs_ret, &mut allocator.accumulator),
                 allocator
                     .get_local_slot_offset(slot)
-                    .map(|offset_start| { codegen_store_local(ty, ret, offset_start) })
+                    .map(|offset_start| {
+                        codegen_store_local(ty.clone(), allocator, offset_start)
+                    })
                     .expect("local stack slot is undeclared"),
+                codegen_mov(ty, &mut allocator.accumulator, ret),
             )
         }),
         ast::TypedExprNode::IdentifierAssignment(
@@ -902,11 +901,14 @@ fn codegen_expr(
         ) => allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
             flattenable_instructions!(
                 codegen_expr(allocator, rhs_ret, *expr),
-                codegen_mov(ty.clone(), rhs_ret, ret),
+                codegen_mov(ty.clone(), rhs_ret, &mut allocator.accumulator),
                 allocator
                     .get_parameter_slot_offset(slot)
-                    .map(|offset_start| { codegen_store_local(ty, ret, offset_start) })
+                    .map(|offset_start| {
+                        codegen_store_local(ty.clone(), allocator, offset_start)
+                    })
                     .expect("local parameter stack slot is undeclared"),
+                codegen_mov(ty, &mut allocator.accumulator, ret),
             )
         }),
         TypedExprNode::DerefAssignment(ty, lhs, rhs) => allocator
