@@ -482,15 +482,31 @@ fn codegen_store_local(
 
 fn codegen_load_local(
     ty: ast::Type,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
+    allocator: &mut SysVAllocator,
     offset: isize,
     scale: usize,
 ) -> Vec<String> {
     let scale_by = -((ty.size() * scale) as isize);
     let scaled_offset = offset + scale_by;
 
-    *ret = RegisterOrOffset::Offset(scaled_offset);
-    vec![]
+    let sign = match &ty {
+        Type::Integer(ast::Signed::Signed, _) => ast::Signed::Signed,
+        _ => ast::Signed::Unsigned,
+    };
+    let width = operand_width_of_type(ty);
+    let casted_dst_width = match width {
+        d @ OperandWidth::DoubleWord | d @ OperandWidth::QuadWord => d,
+        OperandWidth::Word | OperandWidth::Byte => OperandWidth::DoubleWord,
+    };
+    let mut src: RegisterOrOffset<GeneralPurposeRegister> = RegisterOrOffset::Offset(scaled_offset);
+
+    flattenable_instructions!(codegen_mov_with_extend(
+        sign,
+        width,
+        &mut src,
+        casted_dst_width,
+        &mut allocator.accumulator,
+    ),)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -537,7 +553,6 @@ fn codegen_inc_or_dec_expression_from_identifier(
 fn codegen_inc_or_dec_expression_from_local_offset(
     ty: ast::Type,
     allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     offset: isize,
     expr_op: IncDecExpression,
 ) -> Vec<String> {
@@ -560,16 +575,11 @@ fn codegen_inc_or_dec_expression_from_local_offset(
 
     match expr_op {
         IncDecExpression::PreIncrement | IncDecExpression::PreDecrement => {
-            flattenable_instructions!(vec![op], codegen_load_local(ty, ret, offset, 0),)
+            flattenable_instructions!(vec![op], codegen_load_local(ty, allocator, offset, 0),)
         }
-        IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => allocator
-            .allocate_general_purpose_register_then(|_, post_inc_op_reg| {
-                flattenable_instructions!(
-                    codegen_load_local(ty.clone(), post_inc_op_reg, offset, 0),
-                    codegen_mov(ty, post_inc_op_reg, ret),
-                    vec![op],
-                )
-            }),
+        IncDecExpression::PostIncrement | IncDecExpression::PostDecrement => {
+            flattenable_instructions!(codegen_load_local(ty, allocator, offset, 0), vec![op],)
+        }
     }
 }
 
@@ -827,14 +837,24 @@ fn codegen_expr(
             Primary::Identifier(_, ast::IdentifierLocality::Local(slot)),
         ) => allocator
             .get_local_slot_offset(slot)
-            .map(|offset_start| codegen_load_local(ty, ret, offset_start, 0))
+            .map(|offset_start| {
+                flattenable_instructions!(
+                    codegen_load_local(ty.clone(), allocator, offset_start, 0),
+                    codegen_mov(ty, &mut allocator.accumulator, ret),
+                )
+            })
             .expect("local stack slot is undeclared"),
         TypedExprNode::Primary(
             ty,
             Primary::Identifier(_, ast::IdentifierLocality::Parameter(slot)),
         ) => allocator
             .get_parameter_slot_offset(slot)
-            .map(|offset_start| codegen_load_local(ty, ret, offset_start, 0))
+            .map(|offset_start| {
+                flattenable_instructions!(
+                    codegen_load_local(ty.clone(), allocator, offset_start, 0),
+                    codegen_mov(ty, &mut allocator.accumulator, ret),
+                )
+            })
             .expect("local parameter stack slot is undeclared"),
         TypedExprNode::Primary(ty, Primary::Str(lit)) => {
             let identifier = format!("V{}", BLOCK_ID.fetch_add(1, Ordering::SeqCst));
@@ -1036,12 +1056,14 @@ fn codegen_expr(
             ) => allocator
                 .get_local_slot_offset(slot)
                 .map(|offset_start| {
-                    codegen_inc_or_dec_expression_from_local_offset(
-                        ty,
-                        allocator,
-                        ret,
-                        offset_start,
-                        IncDecExpression::PreIncrement,
+                    flattenable_instructions!(
+                        codegen_inc_or_dec_expression_from_local_offset(
+                            ty.clone(),
+                            allocator,
+                            offset_start,
+                            IncDecExpression::PreIncrement,
+                        ),
+                        codegen_mov(ty, &mut allocator.accumulator, ret),
                     )
                 })
                 .expect("local stack slot is undeclared"),
@@ -1051,12 +1073,14 @@ fn codegen_expr(
             ) => allocator
                 .get_parameter_slot_offset(slot)
                 .map(|offset_start| {
-                    codegen_inc_or_dec_expression_from_local_offset(
-                        ty,
-                        allocator,
-                        ret,
-                        offset_start,
-                        IncDecExpression::PreIncrement,
+                    flattenable_instructions!(
+                        codegen_inc_or_dec_expression_from_local_offset(
+                            ty.clone(),
+                            allocator,
+                            offset_start,
+                            IncDecExpression::PreIncrement,
+                        ),
+                        codegen_mov(ty, &mut allocator.accumulator, ret),
                     )
                 })
                 .expect("local parameter stack slot is undeclared"),
@@ -1100,12 +1124,14 @@ fn codegen_expr(
             ) => allocator
                 .get_local_slot_offset(slot)
                 .map(|offset_start| {
-                    codegen_inc_or_dec_expression_from_local_offset(
-                        ty,
-                        allocator,
-                        ret,
-                        offset_start,
-                        IncDecExpression::PreDecrement,
+                    flattenable_instructions!(
+                        codegen_inc_or_dec_expression_from_local_offset(
+                            ty.clone(),
+                            allocator,
+                            offset_start,
+                            IncDecExpression::PreDecrement,
+                        ),
+                        codegen_mov(ty, &mut allocator.accumulator, ret),
                     )
                 })
                 .expect("local stack slot is undeclared"),
@@ -1115,12 +1141,14 @@ fn codegen_expr(
             ) => allocator
                 .get_parameter_slot_offset(slot)
                 .map(|offset_start| {
-                    codegen_inc_or_dec_expression_from_local_offset(
-                        ty,
-                        allocator,
-                        ret,
-                        offset_start,
-                        IncDecExpression::PreDecrement,
+                    flattenable_instructions!(
+                        codegen_inc_or_dec_expression_from_local_offset(
+                            ty.clone(),
+                            allocator,
+                            offset_start,
+                            IncDecExpression::PreDecrement,
+                        ),
+                        codegen_mov(ty, &mut allocator.accumulator, ret),
                     )
                 })
                 .expect("local stack slot is undeclared"),
@@ -1164,12 +1192,14 @@ fn codegen_expr(
             ) => allocator
                 .get_local_slot_offset(slot)
                 .map(|offset_start| {
-                    codegen_inc_or_dec_expression_from_local_offset(
-                        ty,
-                        allocator,
-                        ret,
-                        offset_start,
-                        IncDecExpression::PostIncrement,
+                    flattenable_instructions!(
+                        codegen_inc_or_dec_expression_from_local_offset(
+                            ty.clone(),
+                            allocator,
+                            offset_start,
+                            IncDecExpression::PostIncrement,
+                        ),
+                        codegen_mov(ty, &mut allocator.accumulator, ret),
                     )
                 })
                 .expect("local stack slot is undeclared"),
@@ -1179,12 +1209,14 @@ fn codegen_expr(
             ) => allocator
                 .get_parameter_slot_offset(slot)
                 .map(|offset_start| {
-                    codegen_inc_or_dec_expression_from_local_offset(
-                        ty,
-                        allocator,
-                        ret,
-                        offset_start,
-                        IncDecExpression::PostIncrement,
+                    flattenable_instructions!(
+                        codegen_inc_or_dec_expression_from_local_offset(
+                            ty.clone(),
+                            allocator,
+                            offset_start,
+                            IncDecExpression::PostIncrement,
+                        ),
+                        codegen_mov(ty, &mut allocator.accumulator, ret),
                     )
                 })
                 .expect("local parameter stack slot is undeclared"),
@@ -1229,12 +1261,14 @@ fn codegen_expr(
             ) => allocator
                 .get_local_slot_offset(slot)
                 .map(|offset_start| {
-                    codegen_inc_or_dec_expression_from_local_offset(
-                        ty,
-                        allocator,
-                        ret,
-                        offset_start,
-                        IncDecExpression::PostDecrement,
+                    flattenable_instructions!(
+                        codegen_inc_or_dec_expression_from_local_offset(
+                            ty.clone(),
+                            allocator,
+                            offset_start,
+                            IncDecExpression::PostDecrement,
+                        ),
+                        codegen_mov(ty, &mut allocator.accumulator, ret),
                     )
                 })
                 .expect("local stack slot is undeclared"),
@@ -1244,12 +1278,14 @@ fn codegen_expr(
             ) => allocator
                 .get_parameter_slot_offset(slot)
                 .map(|offset_start| {
-                    codegen_inc_or_dec_expression_from_local_offset(
-                        ty,
-                        allocator,
-                        ret,
-                        offset_start,
-                        IncDecExpression::PostDecrement,
+                    flattenable_instructions!(
+                        codegen_inc_or_dec_expression_from_local_offset(
+                            ty.clone(),
+                            allocator,
+                            offset_start,
+                            IncDecExpression::PostDecrement,
+                        ),
+                        codegen_mov(ty, &mut allocator.accumulator, ret),
                     )
                 })
                 .expect("local paramater stack slot is undeclared"),
