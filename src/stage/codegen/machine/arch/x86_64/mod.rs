@@ -932,32 +932,72 @@ fn codegen_expr(
         TypedExprNode::BitAnd(ty, lhs, rhs) => codegen_and(ty, allocator, ret, *lhs, *rhs),
 
         TypedExprNode::Equal(ty, lhs, rhs) => {
-            codegen_compare_and_set(allocator, ret, ComparisonOperation::Equal, ty, lhs, rhs)
+            flattenable_instructions!(
+                codegen_compare_and_set(
+                    allocator,
+                    ComparisonOperation::Equal,
+                    ty.clone(),
+                    lhs,
+                    rhs
+                ),
+                codegen_mov(ty, &mut allocator.accumulator, ret),
+            )
         }
         TypedExprNode::NotEqual(ty, lhs, rhs) => {
-            codegen_compare_and_set(allocator, ret, ComparisonOperation::NotEqual, ty, lhs, rhs)
+            flattenable_instructions!(
+                codegen_compare_and_set(
+                    allocator,
+                    ComparisonOperation::NotEqual,
+                    ty.clone(),
+                    lhs,
+                    rhs
+                ),
+                codegen_mov(ty, &mut allocator.accumulator, ret),
+            )
         }
         TypedExprNode::LessThan(ty, lhs, rhs) => {
-            codegen_compare_and_set(allocator, ret, ComparisonOperation::LessThan, ty, lhs, rhs)
+            flattenable_instructions!(
+                codegen_compare_and_set(
+                    allocator,
+                    ComparisonOperation::LessThan,
+                    ty.clone(),
+                    lhs,
+                    rhs
+                ),
+                codegen_mov(ty, &mut allocator.accumulator, ret),
+            )
         }
-        TypedExprNode::GreaterThan(ty, lhs, rhs) => codegen_compare_and_set(
-            allocator,
-            ret,
-            ComparisonOperation::GreaterThan,
-            ty,
-            lhs,
-            rhs,
+        TypedExprNode::GreaterThan(ty, lhs, rhs) => flattenable_instructions!(
+            codegen_compare_and_set(
+                allocator,
+                ComparisonOperation::GreaterThan,
+                ty.clone(),
+                lhs,
+                rhs
+            ),
+            codegen_mov(ty, &mut allocator.accumulator, ret),
         ),
         TypedExprNode::LessEqual(ty, lhs, rhs) => {
-            codegen_compare_and_set(allocator, ret, ComparisonOperation::LessEqual, ty, lhs, rhs)
+            flattenable_instructions!(
+                codegen_compare_and_set(
+                    allocator,
+                    ComparisonOperation::LessEqual,
+                    ty.clone(),
+                    lhs,
+                    rhs
+                ),
+                codegen_mov(ty, &mut allocator.accumulator, ret),
+            )
         }
-        TypedExprNode::GreaterEqual(ty, lhs, rhs) => codegen_compare_and_set(
-            allocator,
-            ret,
-            ComparisonOperation::GreaterEqual,
-            ty,
-            lhs,
-            rhs,
+        TypedExprNode::GreaterEqual(ty, lhs, rhs) => flattenable_instructions!(
+            codegen_compare_and_set(
+                allocator,
+                ComparisonOperation::GreaterEqual,
+                ty.clone(),
+                lhs,
+                rhs
+            ),
+            codegen_mov(ty, &mut allocator.accumulator, ret),
         ),
 
         TypedExprNode::BitShiftLeft(ty, lhs, rhs) => {
@@ -2045,7 +2085,6 @@ enum ComparisonOperation {
 
 fn codegen_compare_and_set(
     allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     comparison_op: ComparisonOperation,
     ty: ast::Type,
     lhs: Box<ast::TypedExprNode>,
@@ -2053,12 +2092,20 @@ fn codegen_compare_and_set(
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    let rhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
-        flattenable_instructions!(
-            codegen_expr(allocator, rhs_ret, *rhs),
-            codegen_mov(ty, rhs_ret, ret),
-        )
-    });
+    let rhs_ctx =
+        allocator.allocate_and_zero_general_purpose_register_then(|allocator, rhs_ret| {
+            let rhs_ty = rhs.r#type();
+            flattenable_instructions!(
+                codegen_expr(allocator, rhs_ret, *rhs),
+                codegen_mov_with_sized_src_and_dest(
+                    ast::Signed::Unsigned,
+                    rhs_ty,
+                    rhs_ret,
+                    ty,
+                    &mut allocator.accumulator
+                ),
+            )
+        });
 
     allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
         let lhs_ctx = codegen_expr(allocator, lhs_ret, *lhs);
@@ -2081,17 +2128,21 @@ fn codegen_compare_and_set(
                 format!(
                     "\tcmp{}\t{}, {}\n",
                     operand_suffix,
-                    ret.fmt_with_operand_width(width),
+                    allocator.accumulator.fmt_with_operand_width(width),
                     lhs_ret.fmt_with_operand_width(width)
                 ),
                 format!(
                     "\t{}\t{}\n",
                     set_operator,
-                    ret.fmt_with_operand_width(OperandWidth::Byte)
+                    allocator
+                        .accumulator
+                        .fmt_with_operand_width(OperandWidth::Byte)
                 ),
                 format!(
                     "\tandq\t$255, {}\n",
-                    ret.fmt_with_operand_width(OperandWidth::QuadWord)
+                    allocator
+                        .accumulator
+                        .fmt_with_operand_width(OperandWidth::QuadWord)
                 ),
             ],
         )
