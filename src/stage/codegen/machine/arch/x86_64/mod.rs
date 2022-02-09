@@ -1153,22 +1153,6 @@ fn codegen_constant_u64(allocator: &mut SysVAllocator, constant: u64) -> Vec<Str
     )]
 }
 
-fn codegen_mov_with_sized_src_and_dest<SRC, DST>(
-    sign: ast::Signed,
-    src_ty: ast::Type,
-    src: &mut SRC,
-    dest_ty: ast::Type,
-    dst: &mut DST,
-) -> Vec<String>
-where
-    SRC: Operand,
-    DST: Operand,
-{
-    let src_width = operand_width_of_type(src_ty);
-    let dst_width = operand_width_of_type(dest_ty);
-    codegen_mov_with_extend(sign, src_width, src, dst_width, dst)
-}
-
 fn codegen_mov<SRC, DST>(ty: ast::Type, src: &mut SRC, dst: &mut DST) -> Vec<String>
 where
     SRC: Operand,
@@ -1363,17 +1347,14 @@ fn codegen_addition(
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty.clone());
+    let width = operand_width_of_type(ty);
 
     allocator.allocate_and_zero_general_purpose_register_then(|allocator, rhs_ret| {
-        let rhs_ty = rhs.r#type();
         let rhs_ctx = flattenable_instructions!(
             codegen_expr(allocator, *rhs),
-            codegen_mov_with_sized_src_and_dest(
-                ty.sign(),
-                ty,
+            codegen_mov_with_explicit_width(
+                OperandWidth::QuadWord,
                 &mut allocator.accumulator,
-                rhs_ty,
                 rhs_ret,
             ),
         );
@@ -1397,17 +1378,14 @@ fn codegen_subtraction(
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty.clone());
+    let width = operand_width_of_type(ty);
 
     allocator.allocate_and_zero_general_purpose_register_then(|allocator, rhs_ret| {
-        let rhs_ty = rhs.r#type();
         let rhs_ctx = flattenable_instructions!(
             codegen_expr(allocator, *rhs),
-            codegen_mov_with_sized_src_and_dest(
-                ty.sign(),
-                ty,
+            codegen_mov_with_explicit_width(
+                OperandWidth::QuadWord,
                 &mut allocator.accumulator,
-                rhs_ty,
                 rhs_ret,
             ),
         );
@@ -1431,17 +1409,14 @@ fn codegen_multiplication(
     lhs: Box<ast::TypedExprNode>,
     rhs: Box<ast::TypedExprNode>,
 ) -> Vec<String> {
-    let width = operand_width_of_type(ty.clone());
+    let width = operand_width_of_type(ty);
 
     allocator.allocate_and_zero_general_purpose_register_then(|allocator, rhs_ret| {
-        let rhs_ty = rhs.r#type();
         let rhs_ctx = flattenable_instructions!(
             codegen_expr(allocator, *rhs),
-            codegen_mov_with_sized_src_and_dest(
-                ty.sign(),
-                ty,
+            codegen_mov_with_explicit_width(
+                OperandWidth::QuadWord,
                 &mut allocator.accumulator,
-                rhs_ty,
                 rhs_ret,
             ),
         );
