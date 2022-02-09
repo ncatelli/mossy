@@ -481,10 +481,7 @@ fn codegen_load_local(
     let scale_by = -((ty.size() * scale) as isize);
     let scaled_offset = offset + scale_by;
 
-    let sign = match &ty {
-        Type::Integer(ast::Signed::Signed, _) => ast::Signed::Signed,
-        _ => ast::Signed::Unsigned,
-    };
+    let sign = ty.sign();
     let width = operand_width_of_type(ty);
     let casted_dst_width = match width {
         d @ OperandWidth::DoubleWord | d @ OperandWidth::QuadWord => d,
@@ -1664,10 +1661,7 @@ where
 
 fn codegen_deref(ty: ast::Type, allocator: &mut SysVAllocator, scale: usize) -> Vec<String> {
     let scale_by = ty.size() * scale;
-    let sign = match &ty {
-        Type::Integer(ast::Signed::Signed, _) => ast::Signed::Signed,
-        _ => ast::Signed::Unsigned,
-    };
+    let sign = ty.sign();
     let width = operand_width_of_type(ty);
     let casted_dst_width = match width {
         d @ OperandWidth::DoubleWord | d @ OperandWidth::QuadWord => d,
