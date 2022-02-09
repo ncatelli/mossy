@@ -920,16 +920,32 @@ fn codegen_expr(
 
         TypedExprNode::LogOr(_, lhs, rhs) => {
             let ty = generate_type_specifier!(u64);
-            codegen_or(ty, allocator, ret, *lhs, *rhs)
+            flattenable_instructions!(
+                codegen_or(ty.clone(), allocator, *lhs, *rhs),
+                codegen_mov(ty, &mut allocator.accumulator, ret),
+            )
         }
         TypedExprNode::LogAnd(_, lhs, rhs) => {
             let ty = generate_type_specifier!(u64);
-            codegen_and(ty, allocator, ret, *lhs, *rhs)
+            flattenable_instructions!(
+                codegen_and(ty.clone(), allocator, *lhs, *rhs),
+                codegen_mov(ty, &mut allocator.accumulator, ret),
+            )
         }
 
-        TypedExprNode::BitOr(ty, lhs, rhs) => codegen_or(ty, allocator, ret, *lhs, *rhs),
-        TypedExprNode::BitXor(ty, lhs, rhs) => codegen_xor(ty, allocator, ret, *lhs, *rhs),
-        TypedExprNode::BitAnd(ty, lhs, rhs) => codegen_and(ty, allocator, ret, *lhs, *rhs),
+        TypedExprNode::BitOr(ty, lhs, rhs) => flattenable_instructions!(
+            codegen_or(ty.clone(), allocator, *lhs, *rhs),
+            codegen_mov(ty, &mut allocator.accumulator, ret),
+        ),
+        TypedExprNode::BitXor(ty, lhs, rhs) => flattenable_instructions!(
+            codegen_xor(ty.clone(), allocator, *lhs, *rhs),
+            codegen_mov(ty, &mut allocator.accumulator, ret),
+        ),
+
+        TypedExprNode::BitAnd(ty, lhs, rhs) => flattenable_instructions!(
+            codegen_and(ty.clone(), allocator, *lhs, *rhs),
+            codegen_mov(ty, &mut allocator.accumulator, ret),
+        ),
 
         TypedExprNode::Equal(ty, lhs, rhs) => {
             flattenable_instructions!(
@@ -1870,18 +1886,25 @@ fn codegen_division(
 fn codegen_or(
     ty: ast::Type,
     allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    let lhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-        flattenable_instructions!(
-            codegen_expr(allocator, lhs_ret, lhs),
-            codegen_mov(ty, lhs_ret, ret),
-        )
-    });
+    let lhs_ctx =
+        allocator.allocate_and_zero_general_purpose_register_then(|allocator, lhs_ret| {
+            let lhs_ty = lhs.r#type();
+            flattenable_instructions!(
+                codegen_expr(allocator, lhs_ret, lhs),
+                codegen_mov_with_sized_src_and_dest(
+                    ast::Signed::Unsigned,
+                    lhs_ty,
+                    lhs_ret,
+                    ty,
+                    &mut allocator.accumulator
+                ),
+            )
+        });
 
     allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
         let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
@@ -1893,7 +1916,7 @@ fn codegen_or(
                 "\tor{}\t{}, {}\n",
                 operator_suffix(width),
                 rhs_ret.fmt_with_operand_width(width),
-                ret.fmt_with_operand_width(width)
+                allocator.accumulator.fmt_with_operand_width(width)
             )],
         )
     })
@@ -1902,18 +1925,25 @@ fn codegen_or(
 fn codegen_xor(
     ty: ast::Type,
     allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    let lhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-        flattenable_instructions!(
-            codegen_expr(allocator, lhs_ret, lhs),
-            codegen_mov(ty, lhs_ret, ret),
-        )
-    });
+    let lhs_ctx =
+        allocator.allocate_and_zero_general_purpose_register_then(|allocator, lhs_ret| {
+            let lhs_ty = lhs.r#type();
+            flattenable_instructions!(
+                codegen_expr(allocator, lhs_ret, lhs),
+                codegen_mov_with_sized_src_and_dest(
+                    ast::Signed::Unsigned,
+                    lhs_ty,
+                    lhs_ret,
+                    ty,
+                    &mut allocator.accumulator
+                ),
+            )
+        });
 
     allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
         let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
@@ -1925,7 +1955,7 @@ fn codegen_xor(
                 "\txor{}\t{}, {}\n",
                 operator_suffix(width),
                 rhs_ret.fmt_with_operand_width(width),
-                ret.fmt_with_operand_width(width)
+                allocator.accumulator.fmt_with_operand_width(width)
             )],
         )
     })
@@ -1934,18 +1964,25 @@ fn codegen_xor(
 fn codegen_and(
     ty: ast::Type,
     allocator: &mut SysVAllocator,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
     lhs: ast::TypedExprNode,
     rhs: ast::TypedExprNode,
 ) -> Vec<String> {
     let width = operand_width_of_type(ty.clone());
 
-    let lhs_ctx = allocator.allocate_general_purpose_register_then(|allocator, lhs_ret| {
-        flattenable_instructions!(
-            codegen_expr(allocator, lhs_ret, lhs),
-            codegen_mov(ty, lhs_ret, ret),
-        )
-    });
+    let lhs_ctx =
+        allocator.allocate_and_zero_general_purpose_register_then(|allocator, lhs_ret| {
+            let lhs_ty = lhs.r#type();
+            flattenable_instructions!(
+                codegen_expr(allocator, lhs_ret, lhs),
+                codegen_mov_with_sized_src_and_dest(
+                    ast::Signed::Unsigned,
+                    lhs_ty,
+                    lhs_ret,
+                    ty,
+                    &mut allocator.accumulator
+                ),
+            )
+        });
 
     allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
         let rhs_ctx = codegen_expr(allocator, rhs_ret, rhs);
@@ -1957,7 +1994,7 @@ fn codegen_and(
                 "\tand{}\t{}, {}\n",
                 operator_suffix(width),
                 rhs_ret.fmt_with_operand_width(width),
-                ret.fmt_with_operand_width(width)
+                allocator.accumulator.fmt_with_operand_width(width)
             )],
         )
     })
