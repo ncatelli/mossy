@@ -438,16 +438,12 @@ fn codegen_global_symbol(ty: &ast::Type, identifier: &str, count: usize) -> Vec<
     )]
 }
 
-fn codegen_store_global(
-    ty: ast::Type,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
-    identifier: &str,
-) -> Vec<String> {
+fn codegen_store_global(ty: ast::Type, allocator: &SysVAllocator, identifier: &str) -> Vec<String> {
     let width = operand_width_of_type(ty);
     vec![format!(
         "\tmov{}\t{}, {}({})\n",
         operator_suffix(width),
-        ret.fmt_with_operand_width(width),
+        allocator.accumulator.fmt_with_operand_width(width),
         identifier,
         PointerRegister.fmt_with_operand_width(OperandWidth::QuadWord)
     )]
@@ -863,7 +859,16 @@ fn codegen_expr(
         }
 
         TypedExprNode::FunctionCall(ty, func_name, args) => {
-            codegen_call(allocator, ty, ret, &func_name, args)
+            flattenable_instructions!(
+                codegen_call(allocator, ty.clone(), &func_name, args),
+                codegen_mov_with_sized_src_and_dest(
+                    ty.sign(),
+                    ty.clone(),
+                    &mut allocator.accumulator,
+                    ty,
+                    ret
+                ),
+            )
         }
 
         ast::TypedExprNode::IdentifierAssignment(
@@ -873,8 +878,16 @@ fn codegen_expr(
         ) => allocator.allocate_general_purpose_register_then(|allocator, rhs_ret| {
             flattenable_instructions!(
                 codegen_expr(allocator, rhs_ret, *expr),
-                codegen_mov(ty.clone(), rhs_ret, ret),
-                codegen_store_global(ty, ret, &identifier),
+                codegen_mov(ty.clone(), rhs_ret, &mut allocator.accumulator),
+                codegen_store_global(ty.clone(), allocator, &identifier),
+                codegen_mov(ty.clone(), &mut allocator.accumulator, ret),
+                codegen_mov_with_sized_src_and_dest(
+                    ty.sign(),
+                    ty.clone(),
+                    &mut allocator.accumulator,
+                    ty.clone(),
+                    ret
+                ),
             )
         }),
         ast::TypedExprNode::IdentifierAssignment(
@@ -916,7 +929,14 @@ fn codegen_expr(
                 flattenable_instructions!(
                     codegen_expr(allocator, rhs_ret, *rhs),
                     codegen_expr(allocator, ret, *lhs),
-                    codegen_store_deref(ty, ret, rhs_ret),
+                    // moving the deref pointer
+                    codegen_mov_with_explicit_width(
+                        OperandWidth::QuadWord,
+                        ret,
+                        &mut allocator.accumulator
+                    ),
+                    codegen_store_deref(ty.clone(), &mut allocator.accumulator, rhs_ret),
+                    codegen_mov(ty, &mut allocator.accumulator, ret),
                 )
             }),
 
@@ -2277,8 +2297,7 @@ fn codegen_not(allocator: &mut SysVAllocator, expr: ast::TypedExprNode) -> Vec<S
 
 fn codegen_call(
     allocator: &mut SysVAllocator,
-    ty: ast::Type,
-    ret: &mut RegisterOrOffset<&GeneralPurposeRegister>,
+    _ty: ast::Type,
     func_name: &str,
     args: Vec<ast::TypedExprNode>,
 ) -> Vec<String> {
@@ -2325,7 +2344,6 @@ fn codegen_call(
         arg_exprs,
         vec![format!("\tcall\t{}\n", func_name)],
         post_call_alignment,
-        codegen_mov(ty, &mut IntegerRegister::A, ret),
     )
 }
 

@@ -404,6 +404,13 @@ impl ByteSized for &Type {
 }
 
 impl Type {
+    pub fn sign(&self) -> Signed {
+        match self {
+            Type::Integer(Signed::Signed, _) => Signed::Signed,
+            _ => Signed::Unsigned,
+        }
+    }
+
     pub fn pointer_to(&self) -> Self {
         Self::Pointer(Box::new(self.clone()))
     }
