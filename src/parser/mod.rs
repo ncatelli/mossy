@@ -255,11 +255,9 @@ fn logical<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         bitwise(),
         parcel::zero_or_more(parcel::join(
-            whitespace_wrapped(
-                expect_str("||")
-                    .map(|_| LogicalExprOp::Or)
-                    .or(|| expect_str("&&").map(|_| LogicalExprOp::And)),
-            ),
+            whitespace_wrapped(expect_str("||"))
+                .map(|_| LogicalExprOp::Or)
+                .or(|| whitespace_wrapped(expect_str("&&")).map(|_| LogicalExprOp::And)),
             whitespace_wrapped(bitwise()),
         ))
         .map(unzip),
@@ -288,9 +286,14 @@ fn bitwise<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
         parcel::zero_or_more(parcel::join(
             whitespace_wrapped(
                 expect_str("|")
+                    .peek_next(any_character().predicate(|&c| c != '|'))
                     .map(|_| BitwiseExprOp::Or)
                     .or(|| expect_str("^").map(|_| BitwiseExprOp::Xor))
-                    .or(|| expect_str("&").map(|_| BitwiseExprOp::And)),
+                    .or(|| {
+                        expect_str("&")
+                            .peek_next(any_character().predicate(|&c| c != '&'))
+                            .map(|_| BitwiseExprOp::And)
+                    }),
             ),
             whitespace_wrapped(equality()),
         ))

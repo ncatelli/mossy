@@ -52,6 +52,7 @@ where
 
 #[derive(Debug)]
 pub(crate) struct SysVAllocator {
+    pub(crate) accumulator: register::Accumulator,
     pub(crate) general_purpose_reg_allocator: register::GPRegisterAllocator,
     pub(crate) parameter_stack_offsets: Vec<Range<isize>>,
     pub(crate) local_stack_offsets: Vec<Range<isize>>,
@@ -60,6 +61,7 @@ pub(crate) struct SysVAllocator {
 impl SysVAllocator {
     pub fn new(general_purpose_reg_allocator: register::GPRegisterAllocator) -> Self {
         Self {
+            accumulator: register::Accumulator,
             general_purpose_reg_allocator,
             parameter_stack_offsets: vec![],
             local_stack_offsets: vec![],
