@@ -912,7 +912,9 @@ fn ascii_alphanumeric<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
 fn ascii_control<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
     parcel::right(parcel::join(
         expect_character('\\'),
-        expect_character('r').map(|_| '\r'),
+        expect_character('r')
+            .map(|_| '\r')
+            .or(|| expect_character('0').map(|_| '\0')),
     ))
     .or(|| any_character().predicate(|c| c.is_ascii_control()))
 }
