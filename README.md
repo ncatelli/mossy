@@ -1,6 +1,12 @@
 # mossy
 An (irresponsibly) experimental C compiler for the first-principles of computing project.
 
+## Running
+
+```bash
+$ cargo build && ./target/debug/mossy -i <file>
+```
+
 ## Pre-Processor
 The pre-processor provides for text replacement prior to parsing any context sensitive grammar.
 
