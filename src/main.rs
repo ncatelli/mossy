@@ -3,8 +3,16 @@ use std::env;
 use std::fmt;
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
+use std::process;
 
 type RuntimeResult<T> = Result<T, RuntimeError>;
+
+const ASSEMBLER_ENV_VAR: &str = "AS";
+const DEFAULT_ASSEMBLER: &str = "/usr/bin/as";
+const ASSEMBLER_FLAGS: &str = "";
+const LINKER_ENV_VAR: &str = "CC";
+const DEFAULT_LINKER: &str = "/usr/bin/cc";
+const LINKER_FLAGS: &str = "-O0 -o a";
 
 enum RuntimeError {
     FileUnreadable,
@@ -71,6 +79,33 @@ fn compile(source: &str) -> RuntimeResult<String> {
         .map_err(RuntimeError::Undefined)
 }
 
+fn assemble<'a, S>(filename: S) -> RuntimeResult<&'a str>
+where
+    S: AsRef<std::ffi::OsStr>,
+{
+    process::Command::new(
+        env::var(ASSEMBLER_ENV_VAR).unwrap_or_else(|_| DEFAULT_ASSEMBLER.to_string()),
+    )
+    .args(ASSEMBLER_FLAGS.split_whitespace())
+    .arg(filename)
+    .output()
+    .map(|_| "a.out")
+    .map_err(|e| RuntimeError::Undefined(e.to_string()))
+}
+
+fn link<'a, S>(filenames: &[S]) -> RuntimeResult<&'a str>
+where
+    S: AsRef<std::ffi::OsStr>,
+{
+    process::Command::new(env::var(LINKER_ENV_VAR).unwrap_or_else(|_| DEFAULT_LINKER.to_string()))
+        .args(LINKER_FLAGS.split_whitespace())
+        // output binary
+        .args(filenames)
+        .output()
+        .map(|_| "a")
+        .map_err(|e| RuntimeError::Undefined(e.to_string()))
+}
+
 fn main() -> RuntimeResult<()> {
     let raw_args: Vec<String> = env::args().into_iter().collect::<Vec<String>>();
     let args = raw_args.iter().map(|a| a.as_str()).collect::<Vec<&str>>();
@@ -103,6 +138,11 @@ fn main() -> RuntimeResult<()> {
             read_src_file(&inf)
                 .and_then(|input| compile(&input))
                 .and_then(|asm| write_dest_file(&ouf, asm.as_bytes()))
+                .and_then(|_| assemble(&ouf))
+                .and_then(|bin_out| {
+                    let bins = [bin_out, "./utils/print_int.o", "./utils/print_char.o"];
+                    link(&bins)
+                })
         });
 
     cmd.evaluate(&args[..])
@@ -112,7 +152,7 @@ fn main() -> RuntimeResult<()> {
                 println!("{}", cmd.help());
                 Ok(())
             } else {
-                cmd.dispatch((flags, None))
+                cmd.dispatch((flags, None)).map(|_| ())
             }
         })
 }
