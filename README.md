@@ -7,6 +7,12 @@ An (irresponsibly) experimental C compiler for the first-principles of computing
 $ cargo build && ./target/debug/mossy -i <file>
 ```
 
+## Flamegraph
+
+```
+cargo flamegraph -- ./target/debug/mossy -i <file>
+```
+
 ## Pre-Processor
 The pre-processor provides for text replacement prior to parsing any context sensitive grammar.
 
