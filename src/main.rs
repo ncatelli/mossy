@@ -159,7 +159,7 @@ fn main() -> RuntimeResult<()> {
         });
 
     cmd.evaluate(&args[..])
-        .map_err(|e| RuntimeError::Undefined(format!("{}\n{}", &e, cmd.help())))
+        .map_err(|e| RuntimeError::Undefined(format!("{}\n{}", e, cmd.help())))
         .and_then(|(flags, help)| {
             if help.is_some() {
                 println!("{}", cmd.help());
