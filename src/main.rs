@@ -121,7 +121,6 @@ fn main() -> RuntimeResult<()> {
 
     // Flag Definitions
     let help = scrap::Flag::store_true("help", "h", "display usage information.").optional();
-    let in_file = scrap::Flag::expect_string("in-file", "i", "an input path for a source file.");
     let out_file = scrap::Flag::expect_string("out-file", "o", "a binary output path.").optional();
     let backend = scrap::Flag::with_choices(
         "backend",
@@ -137,35 +136,68 @@ fn main() -> RuntimeResult<()> {
         .description("An (irresponsibly) experimental C compiler.")
         .author("Nate Catelli <ncatelli@packetfire.org>")
         .version("0.1.0")
-        .with_flag(in_file)
         .with_flag(out_file)
         .with_flag(backend)
         .with_flag(help)
-        .with_handler(|(((inf, ouf), _), _)| {
-            let input_file = Path::new(&inf);
+        .with_args_handler(|args, ((ouf, _), _)| {
+            let (src_files, obj_files) = args
+                .into_iter()
+                .map(|val| val.unwrap())
+                .filter(|s| s.ends_with(".c") || s.ends_with(".o"))
+                .fold((vec![], vec![]), |(mut src_files, mut obj_files), file| {
+                    if file.ends_with(".c") {
+                        src_files.push(Path::new(&file).to_path_buf())
+                    } else {
+                        obj_files.push(Path::new(&file).to_path_buf())
+                    }
+                    (src_files, obj_files)
+                });
 
-            read_src_file(input_file)
-                .and_then(|input| compile(&input))
-                .and_then(|asm| {
-                    let asm_out_file = input_file.with_extension("s");
-                    write_dest_file(&asm_out_file, asm.as_bytes()).map(|_| asm_out_file)
+            // collect all complied and assembled object paths
+            let assembled_objects: Vec<PathBuf> = src_files
+                .into_iter()
+                .map(|file| {
+                    read_src_file(&file)
+                        .and_then(|input| compile(&input))
+                        .and_then(|asm| {
+                            let asm_out_file = Path::new(&file).with_extension("s");
+                            write_dest_file(&asm_out_file, asm.as_bytes()).map(|_| asm_out_file)
+                        })
+                        .and_then(|asm_src| assemble(&asm_src))
                 })
-                .and_then(|asm_src| assemble(&asm_src))
-                .map(|out_file| ouf.map_or(out_file, |f| Path::new(&f).to_path_buf()))
-                .and_then(|bin_out| {
-                    let bins = [&bin_out, &Path::new("./utils/print_utils.o").to_path_buf()];
-                    link(&bin_out, &bins)
-                })
+                .collect::<Result<_, RuntimeError>>()?;
+
+            // collect all object file paths
+            let obj_files: Vec<PathBuf> = assembled_objects
+                .into_iter()
+                .chain(obj_files.into_iter().map(|f| Path::new(&f).to_path_buf()))
+                .collect();
+
+            // determine the output file name
+            let output_file = ouf
+                .map(|f| Path::new(&f).to_path_buf())
+                .and(obj_files.first().map(|f| f.to_path_buf()))
+                .ok_or(RuntimeError::FileUnreadable)?;
+
+            // link all binaries
+            link(&output_file, &obj_files)
         });
 
     cmd.evaluate(&args[..])
         .map_err(|e| RuntimeError::Undefined(format!("{}\n{}", e, cmd.help())))
-        .and_then(|(flags, help)| {
-            if help.is_some() {
-                println!("{}", cmd.help());
-                Ok(())
-            } else {
-                cmd.dispatch((flags, None)).map(|_| ())
-            }
-        })
+        .and_then(
+            |scrap::Value {
+                 span,
+                 value: (flags, help),
+             }| {
+                if help.is_some() {
+                    println!("{}", cmd.help());
+                    Ok(())
+                } else {
+                    let unmatched_args = scrap::return_unused_args(&args[..], &span);
+                    cmd.dispatch_with_args(unmatched_args, Value::new(span, (flags, help)))
+                        .map(|_| ())
+                }
+            },
+        )
 }
