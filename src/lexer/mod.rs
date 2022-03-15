@@ -256,6 +256,33 @@ macro_rules! lexeme {
     };
 }
 
+#[derive(Debug, Clone, Copy)]
+enum EscapedAscii {
+    /// Character was escaped
+    Escaped(char),
+    /// Represents a standard character
+    NonEscaped(char),
+}
+
+impl EscapedAscii {
+    fn unwrap(self) -> char {
+        match self {
+            Self::Escaped(c) | Self::NonEscaped(c) => c,
+        }
+    }
+}
+
+fn to_ascii_escaped_char(c: char) -> EscapedAscii {
+    use EscapedAscii::*;
+
+    match c {
+        '0' => Escaped('\0'),
+        't' => Escaped('\t'),
+        'n' => Escaped('\n'),
+        other => NonEscaped(other),
+    }
+}
+
 #[derive(Debug)]
 enum LexOperation<T> {
     // the last n elements to pop off and the target type
@@ -341,7 +368,13 @@ fn stack_eval_to_token(stack: &[TokenOrLexeme], next: Option<char>) -> LexOperat
         ([lexeme!('\''), TokenOrLexeme::Lexeme(c), lexeme!('\'')], _) if c.is_ascii() => {
             LexOperation::Reduce(3, token!(Token::CharLiteral(*c)))
         }
-        ([lexeme!('\'')], Some(l)) if l.is_ascii() => LexOperation::Shift(lexeme!(l)),
+        ([lexeme!('\'')], Some(l)) if l.is_ascii() || l == '\\' => LexOperation::Shift(lexeme!(l)),
+        ([lexeme!('\''), TokenOrLexeme::Lexeme('\\'), TokenOrLexeme::Lexeme(c)], Some('\''))
+            if c.is_ascii() =>
+        {
+            let escaped = to_ascii_escaped_char(*c).unwrap();
+            LexOperation::ShiftReduce(4, token!(Token::CharLiteral(escaped)))
+        }
         ([lexeme!('\''), TokenOrLexeme::Lexeme(c)], Some('\'')) if c.is_ascii() => {
             LexOperation::ShiftReduce(3, token!(Token::CharLiteral(*c)))
         }
@@ -501,6 +534,11 @@ impl<'a> Scanner<'a> {
         }
     }
 
+    fn is_empty(&self) -> bool {
+        let index = self.cursor.index;
+        index >= self.end
+    }
+
     fn scan_token_from(&mut self) -> Result<Token, String> {
         if self.source.peek().is_none() {
             Ok(Token::Eof)
@@ -596,21 +634,21 @@ impl<'a> Iterator for ScannerIntoIterator<'a> {
     type Item = Result<Token, String>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let index = self.scanner.cursor.index;
-        if index < self.scanner.end {
+        if self.scanner.is_empty() {
+            None
+        } else {
             let next = self.scanner.scan_token_from();
             match next {
                 Ok(Token::Eof) => None,
                 lex_res @ Ok(_) => Some(lex_res),
                 lex_res @ Err(_) => Some(lex_res),
             }
-        } else {
-            None
         }
     }
 }
 
-/// lex all tokens into a a result vector.
+/// lex all tokens into a a result vector. This should almost always be used directly as an iterator over
+/// the scanner.
 ///
 /// # Notes
 /// This requires a needless collect to prevent a stack error.
@@ -675,6 +713,9 @@ mod tests {
             (["\'a\'"], Token::CharLiteral('a')),
             ([" \'a\'"], Token::CharLiteral('a')),
             ([" \'a\' "], Token::CharLiteral('a')),
+            (["\'\t\'"], Token::CharLiteral('\t')),
+            ([" \'\t\'"], Token::CharLiteral('\t')),
+            ([" \'\t\' "], Token::CharLiteral('\t')),
         ];
 
         for (inputs, expected) in input_expected {
