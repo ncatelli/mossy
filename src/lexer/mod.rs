@@ -37,6 +37,8 @@ pub enum TokenType {
     MinusMinus,
 
     // Type keywords
+    Signed,
+    Unsigned,
     Void,
     Char,
     Short,
@@ -96,6 +98,8 @@ pub enum Token {
     MinusMinus,
 
     // Type keywords
+    Signed,
+    Unsigned,
     Void,
     Char,
     Short,
@@ -150,6 +154,8 @@ impl Token {
             Token::Tilde => TokenType::Tilde,
             Token::PlusPlus => TokenType::PlusPlus,
             Token::MinusMinus => TokenType::MinusMinus,
+            Token::Signed => TokenType::Signed,
+            Token::Unsigned => TokenType::Unsigned,
             Token::Void => TokenType::Void,
             Token::Char => TokenType::Char,
             Token::Short => TokenType::Short,
@@ -460,6 +466,12 @@ fn stack_eval_to_token(stack: &[TokenOrLexeme], next: Option<char>) -> LexOperat
         }
 
         // Type Keywords
+        ([TokenOrLexeme::Token(Token::Identifier(id))], _) if id == "signed" => {
+            LexOperation::Reduce(1, token!(Token::Signed))
+        }
+        ([TokenOrLexeme::Token(Token::Identifier(id))], _) if id == "unsigned" => {
+            LexOperation::Reduce(1, token!(Token::Unsigned))
+        }
         ([TokenOrLexeme::Token(Token::Identifier(id))], _) if id == "void" => {
             LexOperation::Reduce(1, token!(Token::Void))
         }
