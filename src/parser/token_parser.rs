@@ -1,16 +1,15 @@
 use parcel::parsers::character::*;
 use parcel::prelude::v1::*;
 
+use crate::lexer::{Token, TokenType};
+
 pub use crate::stage::type_check::ast::Type;
 use crate::stage::type_check::{
     self,
     ast::{IntegerWidth, Signed},
 };
 
-#[macro_use]
-pub mod ast;
-pub mod token_parser;
-use ast::*;
+use super::ast::{self, *};
 
 /// ParseErr represents a parser response that doesn't return a correct AstNode.
 #[derive(Debug, Clone, PartialEq)]
@@ -709,6 +708,16 @@ fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
         .predicate(|str| !RESERVED_KEYWORDS.contains(&str.as_str()))
 }
 
+fn new_identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], String> {
+    expect_tokentype(TokenType::Identifier).map(|t| {
+        match t {
+            Token::Identifier(id) => id,
+            // safe unpack due to expect_tokentype constraint
+            _ => unreachable!(),
+        }
+    })
+}
+
 fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
     whitespace_wrapped(
         parcel::join(
@@ -725,6 +734,22 @@ fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
         }),
     )
     .or(type_specifier)
+}
+
+fn new_type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Type> {
+    parcel::join(
+        new_type_specifier(),
+        expect_tokentype(TokenType::Star).one_or_more(),
+    )
+    .map(|(ty, pointer_depth)| {
+        let nested_pointers = pointer_depth.len() - 1;
+        (0..nested_pointers)
+            .into_iter()
+            .fold(Type::Pointer(Box::new(ty)), |acc, _| {
+                Type::Pointer(Box::new(acc))
+            })
+    })
+    .or(new_type_specifier)
 }
 
 fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
@@ -782,6 +807,146 @@ fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
         (Some(sign), Type::Integer(_, width)) => Type::Integer(sign, width),
         (_, ty) => ty,
     })
+}
+
+fn new_type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Type> {
+    parcel::join(
+        parcel::one_of(vec![
+            expect_tokentype(TokenType::Signed).map(|_| Signed::Signed),
+            expect_tokentype(TokenType::Unsigned).map(|_| Signed::Unsigned),
+        ])
+        .optional(),
+        parcel::one_of(vec![
+            //
+            // long parser
+            //
+            parcel::one_of(vec![
+                // long long int
+                expect_tokentype(TokenType::Long)
+                    .and_then(|_| expect_tokentype(TokenType::Long))
+                    .and_then(|_| expect_tokentype(TokenType::Int)),
+                // long long
+                expect_tokentype(TokenType::Long).and_then(|_| expect_tokentype(TokenType::Long)),
+                // long int
+                expect_tokentype(TokenType::Long).and_then(|_| expect_tokentype(TokenType::Int)),
+                // long
+                parcel::BoxedParser::new(expect_tokentype(TokenType::Long)),
+            ])
+            .map(|_| Type::Integer(Signed::Signed, IntegerWidth::SixtyFour)),
+            //
+            // int parser
+            //
+            expect_tokentype(TokenType::Int)
+                .map(|_| Type::Integer(Signed::Signed, IntegerWidth::ThirtyTwo)),
+            //
+            // short parser
+            //
+            parcel::one_of(vec![
+                // short int
+                expect_tokentype(TokenType::Short).and_then(|_| expect_tokentype(TokenType::Int)),
+                // short
+                parcel::BoxedParser::new(expect_tokentype(TokenType::Short)),
+            ])
+            .map(|_| Type::Integer(Signed::Signed, IntegerWidth::Sixteen)),
+            //
+            // char parser
+            //
+            expect_tokentype(TokenType::Char)
+                .map(|_| Type::Integer(Signed::Signed, IntegerWidth::Eight)),
+            //
+            // void parser
+            //
+            expect_tokentype(TokenType::Void).map(|_| Type::Void),
+        ]),
+    )
+    .map(|(sign, ty)| match (sign, ty) {
+        (Some(sign), Type::Integer(_, width)) => Type::Integer(sign, width),
+        (_, ty) => ty,
+    })
+}
+
+macro_rules! new_numeric_type_parser {
+    ($(unsigned, $parser_name:ident, $ret_type:ty,)*) => {
+        $(
+        #[allow(unused)]
+        fn $parser_name<'a>() -> impl Parser<'a, &'a [(usize, Token)], $ret_type> {
+            move |input: &'a [(usize, Token)]| {
+                let preparsed_input = input;
+                let res = expect_tokentype(TokenType::IntLiteral)
+                    .map(|digit_token| {
+                        if let Token::IntLiteral(i) = digit_token {
+                           Some(i as $ret_type)
+                        } else {
+                           None
+                        }
+                    })
+                    .parse(input);
+
+                match res {
+                    Ok(MatchStatus::Match {
+                        span,
+                        remainder,
+                        inner: Some(u),
+                    }) => Ok(MatchStatus::Match {
+                        span,
+                        remainder,
+                        inner: u,
+                    }),
+
+                    Ok(MatchStatus::Match {
+                        span: _,
+                        remainder: _,
+                        inner: None,
+                    }) => Ok(MatchStatus::NoMatch(preparsed_input)),
+
+                    Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
+                    Err(e) => Err(e),
+                }
+            }
+        }
+    )*
+    };
+    ($(signed, $parser_name:ident, $ret_type:ty,)*) => {
+        $(
+        #[allow(unused)]
+        fn $parser_name<'a>() -> impl Parser<'a, &'a [(usize, Token)], $ret_type> {
+            use std::convert::TryFrom;
+            move |input: &'a [(usize, Token)]| {
+                let preparsed_input = input;
+                let res = parcel::join(expect_tokentype(TokenType::Minus).optional(), expect_tokentype(TokenType::IntLiteral))
+                    .map(|(negative, digits)| {
+                        match (negative, digits) {
+                            (Some(_), Token::IntLiteral(i)) => Some(-(i as $ret_type)),
+                            (None, Token::IntLiteral(i)) => Some(i as $ret_type),
+                            _ => None
+                        }
+                    })
+                    .parse(input);
+
+                match res {
+                    Ok(MatchStatus::Match {
+                        span,
+                        remainder,
+                        inner: Some(u),
+                    }) => Ok(MatchStatus::Match {
+                        span,
+                        remainder,
+                        inner: u,
+                    }),
+
+                    Ok(MatchStatus::Match {
+                        span: _,
+                        remainder: _,
+                        inner: None,
+                    }) => Ok(MatchStatus::NoMatch(preparsed_input)),
+
+                    Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
+                    Err(e) => Err(e),
+                }
+            }
+        }
+    )*
+    };
 }
 
 macro_rules! numeric_type_parser {
@@ -864,6 +1029,22 @@ macro_rules! numeric_type_parser {
     )*
     };
 }
+
+#[rustfmt::skip]
+new_numeric_type_parser!(
+    signed, new_dec_i8, i8,
+    signed, new_dec_i16, i16,
+    signed, new_dec_i32, i32,
+    signed, new_dec_i64, i64,
+);
+
+#[rustfmt::skip]
+new_numeric_type_parser!(
+    unsigned, new_dec_u8, u8,
+    unsigned, new_dec_u16, u16,
+    unsigned, new_dec_u32, u32,
+    unsigned, new_dec_u64, u64,
+);
 
 #[rustfmt::skip]
 numeric_type_parser!(
@@ -949,240 +1130,32 @@ where
     ))
 }
 
-fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
-    pair.into_iter().unzip()
+fn tokentype_wrapped<'a, P, B>(
+    prefix: TokenType,
+    suffix: TokenType,
+    parser: P,
+) -> impl Parser<'a, &'a [(usize, Token)], B>
+where
+    B: 'a,
+    P: Parser<'a, &'a [(usize, Token)], B> + 'a,
+{
+    parcel::right(parcel::join(
+        expect_tokentype(prefix),
+        parcel::left(parcel::join(parser, expect_tokentype(suffix))),
+    ))
 }
 
-#[cfg(test)]
-mod tests {
-    use crate::parser::ast::*;
-
-    #[test]
-    fn should_parse_complex_arithmetic_expression() {
-        use parcel::Parser;
-
-        let input: Vec<(usize, char)> = "{ 13 - 6 + 4 * 5 + 8 / 3; }".chars().enumerate().collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
-
-        assert_eq!(
-            Ok(CompoundStmts::new(vec![StmtNode::Expression(term_expr!(
-                term_expr!(
-                    term_expr!(primary_expr!(i8 13), '-', primary_expr!(i8 6)),
-                    '+',
-                    factor_expr!(primary_expr!(i8 4), '*', primary_expr!(i8 5))
-                ),
-                '+',
-                factor_expr!(primary_expr!(i8 8), '/', primary_expr!(i8 3))
-            ))])),
-            res
-        )
+pub fn expect_tokentype<'a>(expected: TokenType) -> impl Parser<'a, &'a [(usize, Token)], Token> {
+    move |input: &'a [(usize, Token)]| match input.get(0) {
+        Some(&(pos, ref next)) if next.to_token_type() == expected => Ok(MatchStatus::Match {
+            span: pos..pos + 1,
+            remainder: &input[1..],
+            inner: next.clone(),
+        }),
+        _ => Ok(MatchStatus::NoMatch(input)),
     }
+}
 
-    #[test]
-    fn should_parse_unary_expressions() {
-        use parcel::Parser;
-
-        let input: Vec<(usize, char)> = "{ !1 + -2; }".chars().enumerate().collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
-
-        assert_eq!(
-            Ok(CompoundStmts::new(vec![StmtNode::Expression(term_expr!(
-                ExprNode::LogicalNot(Box::new(primary_expr!(i8 1))),
-                '+',
-                primary_expr!(i8 - 2)
-            ),)])),
-            res
-        )
-    }
-
-    #[test]
-    fn should_parse_a_keyword_from_a_dereferenced_identifier() {
-        use parcel::Parser;
-
-        let input: Vec<(usize, char)> = "{ return *x; }".chars().enumerate().collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
-
-        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Return(Some(
-            ExprNode::Deref(Box::new(ExprNode::Primary(Primary::Identifier(
-                "x".to_string(),
-            )))),
-        ))]));
-
-        assert_eq!(&expected_result, &res);
-
-        let input_with_arbitrary_whitespace: Vec<(usize, char)> =
-            "{ return *          \n\nx; }".chars().enumerate().collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input_with_arbitrary_whitespace)
-            .map(|ms| ms.unwrap());
-
-        assert_eq!(&expected_result, &res)
-    }
-
-    macro_rules! assignment_expr {
-        ($lhs:expr, $rhs:expr) => {
-            ExprNode::Assignment(Box::new($lhs), Box::new($rhs))
-        };
-    }
-
-    #[test]
-    fn should_parse_multiple_nested_assignment_expressions() {
-        use parcel::Parser;
-
-        let input: Vec<(usize, char)> = "{ x = y = 5; }".chars().enumerate().collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
-
-        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
-            assignment_expr!(
-                ExprNode::Primary(Primary::Identifier("x".to_string())),
-                assignment_expr!(
-                    ExprNode::Primary(Primary::Identifier("y".to_string())),
-                    primary_expr!(i8 5)
-                )
-            ),
-        )]));
-
-        assert_eq!(&expected_result, &res);
-    }
-
-    #[test]
-    fn should_parse_grouping_expressions_in_correct_precedence() {
-        use parcel::Parser;
-
-        let input: Vec<(usize, char)> = "{
-    2 * (3 + 4);
-}"
-        .chars()
-        .enumerate()
-        .collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
-
-        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
-            factor_expr!(
-                primary_expr!(i8 2),
-                '*',
-                grouping_expr!(term_expr!(primary_expr!(i8 3), '+', primary_expr!(i8 4)))
-            ),
-        )]));
-
-        assert_eq!(&expected_result, &res);
-    }
-
-    #[test]
-    fn should_parse_string_literals() {
-        use parcel::Parser;
-
-        let input: Vec<(usize, char)> = "{ \"hello\n\t\\\"world\\\"\"; }"
-            .chars()
-            .enumerate()
-            .collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
-
-        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
-            primary_expr!(str "hello\n\t\"world\""),
-        )]));
-
-        assert_eq!(&expected_result, &res);
-    }
-
-    #[test]
-    fn should_parse_character_literals() {
-        use parcel::Parser;
-
-        let input: Vec<(usize, char)> = "{ \'a\'; }".chars().enumerate().collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
-
-        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
-            primary_expr!(i8 97),
-        )]));
-
-        assert_eq!(&expected_result, &res);
-    }
-
-    #[test]
-    fn should_parse_index_expressions_in_correct_precedence() {
-        use parcel::Parser;
-
-        let input: Vec<(usize, char)> = "{
-    x[1];
-}"
-        .chars()
-        .enumerate()
-        .collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
-
-        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
-            ExprNode::Index("x".to_string(), Box::new(primary_expr!(i8 1))),
-        )]));
-
-        assert_eq!(&expected_result, &res);
-    }
-
-    #[test]
-    fn should_parse_for_statement() {
-        use parcel::Parser;
-
-        let input: Vec<(usize, char)> = "{
-    for (i=0; i<5; i++) {
-        i;
-    }
-}"
-        .chars()
-        .enumerate()
-        .collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
-
-        let expected_result = Ok(CompoundStmts::new(vec![StmtNode::For(
-            Box::new(StmtNode::Expression(assignment_expr!(
-                ExprNode::Primary(Primary::Identifier("i".to_string())),
-                primary_expr!(i8 0)
-            ))),
-            ExprNode::LessThan(
-                Box::new(ExprNode::Primary(Primary::Identifier("i".to_string()))),
-                Box::new(primary_expr!(i8 5)),
-            ),
-            Box::new(StmtNode::Expression(ExprNode::PostIncrement(Box::new(
-                ExprNode::Primary(Primary::Identifier("i".to_string())),
-            )))),
-            CompoundStmts::new(vec![StmtNode::Expression(ExprNode::Primary(
-                Primary::Identifier("i".to_string()),
-            ))]),
-        )]));
-
-        assert_eq!(&expected_result, &res);
-    }
-
-    #[test]
-    fn should_fail_to_parse_keyword_as_identifier() {
-        use parcel::Parser;
-
-        let input: Vec<(usize, char)> = "{ return auto; }".chars().enumerate().collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .ok()
-            .and_then(|ms| match ms {
-                parcel::MatchStatus::Match { .. } => None,
-                parcel::MatchStatus::NoMatch(_) => Some(()),
-            });
-
-        assert!(res.is_some());
-    }
+fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
+    pair.into_iter().unzip()
 }
