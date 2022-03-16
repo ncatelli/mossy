@@ -66,6 +66,8 @@ pub enum TokenType {
     LBracket,
     RBracket,
     Comma,
+    Newline,
+    Space,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,6 +130,8 @@ pub enum Token {
     LBracket,
     RBracket,
     Comma,
+    Newline,
+    Space,
 }
 
 impl Token {
@@ -181,6 +185,8 @@ impl Token {
             Token::LBracket => TokenType::LBracket,
             Token::RBracket => TokenType::RBracket,
             Token::Comma => TokenType::Comma,
+            Token::Newline => TokenType::Newline,
+            Token::Space => TokenType::Space,
         }
     }
 }
@@ -389,6 +395,9 @@ fn stack_eval_to_token(stack: &[TokenOrLexeme], next: Option<char>) -> LexOperat
         }
 
         ([lexeme!('\"'), .., lexeme!('\\')], Some('\"')) => LexOperation::Shift(lexeme!('\"')),
+        ([lexeme!('\"'), .., lexeme!('\\')], Some(c)) => {
+            LexOperation::ShiftReduce(1, lexeme!(to_ascii_escaped_char(c).unwrap()))
+        }
         ([lexeme!('\"'), inner @ ..], Some('\"')) => {
             let inner_str = inner
                 .iter()
@@ -512,9 +521,10 @@ fn stack_eval_to_token(stack: &[TokenOrLexeme], next: Option<char>) -> LexOperat
         ([TokenOrLexeme::Token(_)], _) | ([.., TokenOrLexeme::Token(_)], _) => {
             LexOperation::NoFurtherRefinement
         }
-        ([.., TokenOrLexeme::Lexeme(c)], _) if c.is_whitespace() => {
-            LexOperation::Reduce(1, lexeme!(*c))
-        }
+        ([.., TokenOrLexeme::Lexeme(c)], _) if c.is_whitespace() => match *c {
+            '\n' => LexOperation::Reduce(1, token!(Token::Newline)),
+            _ => LexOperation::Reduce(1, token!(Token::Space)),
+        },
 
         _ => LexOperation::Err("No rules matched with unpaired lexemes.".to_string()),
     }
@@ -576,6 +586,18 @@ impl<'a> Scanner<'a> {
                         lookahead = consume_and_peek_from_iter(&mut self.source);
                         self.cursor.increment_column_mut();
                     }
+                    LexOperation::ShiftReduce(by, TokenOrLexeme::Token(Token::Newline)) => {
+                        for _ in 0..by {
+                            self.stack.pop_mut();
+                        }
+                        self.cursor.increment_line_mut();
+                    }
+                    LexOperation::ShiftReduce(by, TokenOrLexeme::Token(Token::Space)) => {
+                        for _ in 0..by {
+                            self.stack.pop_mut();
+                        }
+                        self.cursor.increment_column_mut();
+                    }
                     LexOperation::ShiftReduce(by, TokenOrLexeme::Token(to_token)) => {
                         lookahead = consume_and_peek_from_iter(&mut self.source);
                         // pop n elements off the stack
@@ -587,25 +609,22 @@ impl<'a> Scanner<'a> {
                         // safe to unwrap due to is_some guarantee
                         self.cursor.increment_column_mut();
                     }
-                    LexOperation::ShiftReduce(by, TokenOrLexeme::Lexeme('\n')) => {
+
+                    LexOperation::ShiftReduce(by, TokenOrLexeme::Lexeme(next_val)) => {
+                        lookahead = consume_and_peek_from_iter(&mut self.source);
                         for _ in 0..by {
                             self.stack.pop_mut();
                         }
-                        self.cursor.increment_line_mut();
-                    }
-                    LexOperation::ShiftReduce(by, TokenOrLexeme::Lexeme(_)) => {
-                        for _ in 0..by {
-                            self.stack.pop_mut();
-                        }
+                        self.stack.push_mut(lexeme!(next_val));
                         self.cursor.increment_column_mut();
                     }
-                    LexOperation::Reduce(by, TokenOrLexeme::Lexeme('\n')) => {
+                    LexOperation::Reduce(by, TokenOrLexeme::Token(Token::Newline)) => {
                         for _ in 0..by {
                             self.stack.pop_mut();
                         }
                     }
                     // this will only occur with whitespace
-                    LexOperation::Reduce(by, TokenOrLexeme::Lexeme(_)) => {
+                    LexOperation::Reduce(by, TokenOrLexeme::Token(Token::Space)) => {
                         for _ in 0..by {
                             self.stack.pop_mut();
                         }
@@ -748,6 +767,7 @@ mod tests {
             (["\"hello\""], Token::StrLiteral("hello".to_string())),
             ([" \"hello\""], Token::StrLiteral("hello".to_string())),
             ([" \"hello\" "], Token::StrLiteral("hello".to_string())),
+            (["\"hello\\n\""], Token::StrLiteral("hello\n".to_string())),
         ];
 
         for (inputs, expected) in input_expected {
