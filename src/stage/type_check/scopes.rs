@@ -75,20 +75,18 @@ impl Scope {
     pub fn ordered_local_declarations(&self) -> Vec<(Type, usize)> {
         self.local_slots
             .iter()
-            .map(|id| {
+            .flat_map(|id| {
                 self.symbols
                     .get(id.as_str())
                     .map(|dm| (dm.r#type.clone(), dm.elems.unwrap_or(1)))
             })
-            .flatten()
             .collect()
     }
 
     pub fn ordered_parameter_declarations(&self) -> Vec<Type> {
         self.parameter_slots
             .iter()
-            .map(|id| self.symbols.get(id.as_str()).map(|dm| (dm.r#type.clone())))
-            .flatten()
+            .flat_map(|id| self.symbols.get(id.as_str()).map(|dm| (dm.r#type.clone())))
             .collect()
     }
 }
