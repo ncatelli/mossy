@@ -122,6 +122,16 @@ fn main() -> RuntimeResult<()> {
     // Flag Definitions
     let help = scrap::Flag::store_true("help", "h", "display usage information.").optional();
     let out_file = scrap::Flag::expect_string("out-file", "o", "a binary output path.").optional();
+    let frontend = scrap::Flag::with_choices(
+        "frontend",
+        "f",
+        "a temporary test frontend toggle.",
+        ["combined".to_string(), "tokenized".to_string()],
+        scrap::StringValue,
+    )
+    .optional()
+    .with_default("combined".to_string());
+
     let backend = scrap::Flag::with_choices(
         "backend",
         "b",
@@ -138,8 +148,9 @@ fn main() -> RuntimeResult<()> {
         .version("0.1.0")
         .with_flag(out_file)
         .with_flag(backend)
+        .with_flag(frontend)
         .with_flag(help)
-        .with_args_handler(|args, ((ouf, _), _)| {
+        .with_args_handler(|args, (((ouf, _), _), _)| {
             let (src_files, obj_files) = args
                 .into_iter()
                 .map(|val| val.unwrap())
