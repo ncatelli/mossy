@@ -236,6 +236,10 @@ fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     assignment()
 }
 
+fn new_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    new_assignment()
+}
+
 fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         whitespace_wrapped(logical()),
@@ -243,6 +247,15 @@ fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     )
     .map(|(lhs, rhs)| assignment_expr!(lhs, '=', rhs))
     .or(logical)
+}
+
+fn new_assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    parcel::join(
+        new_logical(),
+        expect_tokentype(TokenType::Equal).and_then(|_| new_assignment()),
+    )
+    .map(|(lhs, rhs)| assignment_expr!(lhs, '=', rhs))
+    .or(new_logical)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -259,6 +272,28 @@ fn logical<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
                 .map(|_| LogicalExprOp::Or)
                 .or(|| whitespace_wrapped(expect_str("&&")).map(|_| LogicalExprOp::And)),
             whitespace_wrapped(bitwise()),
+        ))
+        .map(unzip),
+    )
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
+                LogicalExprOp::Or => binary_logical_expr!(lhs, "||", rhs),
+                LogicalExprOp::And => binary_logical_expr!(lhs, "&&", rhs),
+            })
+    })
+}
+
+fn new_logical<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    parcel::join(
+        new_bitwise(),
+        parcel::zero_or_more(parcel::join(
+            expect_tokentype(TokenType::PipePipe)
+                .map(|_| LogicalExprOp::Or)
+                .or(|| expect_tokentype(TokenType::AmpersandAmpersand).map(|_| LogicalExprOp::And)),
+            new_bitwise(),
         ))
         .map(unzip),
     )
@@ -311,6 +346,30 @@ fn bitwise<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     })
 }
 
+fn new_bitwise<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    parcel::join(
+        new_equality(),
+        parcel::zero_or_more(parcel::join(
+            expect_tokentype(TokenType::Pipe)
+                .map(|_| BitwiseExprOp::Or)
+                .or(|| expect_tokentype(TokenType::Carat).map(|_| BitwiseExprOp::Xor))
+                .or(|| expect_tokentype(TokenType::Ampersand).map(|_| BitwiseExprOp::And)),
+            new_equality(),
+        ))
+        .map(unzip),
+    )
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
+                BitwiseExprOp::Or => bitwise_expr!(lhs, "|", rhs),
+                BitwiseExprOp::Xor => bitwise_expr!(lhs, "^", rhs),
+                BitwiseExprOp::And => bitwise_expr!(lhs, "&", rhs),
+            })
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum EqualityExprOp {
     Equal,
@@ -327,6 +386,28 @@ fn equality<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
                     .or(|| expect_str("!=").map(|_| EqualityExprOp::NotEqual)),
             ),
             whitespace_wrapped(relational()),
+        ))
+        .map(unzip),
+    )
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
+                EqualityExprOp::Equal => equality_expr!(lhs, "==", rhs),
+                EqualityExprOp::NotEqual => equality_expr!(lhs, "!=", rhs),
+            })
+    })
+}
+
+fn new_equality<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    parcel::join(
+        new_relational(),
+        parcel::zero_or_more(parcel::join(
+            expect_tokentype(TokenType::EqualEqual)
+                .map(|_| EqualityExprOp::Equal)
+                .or(|| expect_tokentype(TokenType::BangEqual).map(|_| EqualityExprOp::NotEqual)),
+            new_relational(),
         ))
         .map(unzip),
     )
@@ -381,6 +462,40 @@ fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     })
 }
 
+fn new_relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    parcel::join(
+        new_bitwise_shift(),
+        parcel::zero_or_more(parcel::join(
+            expect_tokentype(TokenType::LessEqual)
+                .map(|_| RelationalExprOp::LessEqual)
+                .or(|| {
+                    expect_tokentype(TokenType::GreaterEqual)
+                        .map(|_| RelationalExprOp::GreaterEqual)
+                })
+                .or(|| expect_tokentype(TokenType::LessThan).map(|_| RelationalExprOp::LessThan))
+                .or(|| {
+                    expect_tokentype(TokenType::GreaterThan).map(|_| RelationalExprOp::GreaterThan)
+                }),
+            new_bitwise_shift(),
+        ))
+        .map(unzip),
+    )
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
+                RelationalExprOp::LessThan => ExprNode::LessThan(Box::new(lhs), Box::new(rhs)),
+                RelationalExprOp::LessEqual => ExprNode::LessEqual(Box::new(lhs), Box::new(rhs)),
+                RelationalExprOp::GreaterThan => {
+                    ExprNode::GreaterThan(Box::new(lhs), Box::new(rhs))
+                }
+                RelationalExprOp::GreaterEqual => {
+                    ExprNode::GreaterEqual(Box::new(lhs), Box::new(rhs))
+                }
+            })
+    })
+}
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum BitwiseShiftExprOp {
     ShiftLeft,
@@ -411,6 +526,28 @@ fn bitwise_shift<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode>
     })
 }
 
+fn new_bitwise_shift<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    parcel::join(
+        new_addition(),
+        parcel::zero_or_more(parcel::join(
+            expect_tokentype(TokenType::LShift)
+                .map(|_| BitwiseShiftExprOp::ShiftLeft)
+                .or(|| expect_tokentype(TokenType::RShift).map(|_| BitwiseShiftExprOp::ShiftRight)),
+            new_addition(),
+        ))
+        .map(unzip),
+    )
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
+                BitwiseShiftExprOp::ShiftLeft => bitwise_shift_expr!(lhs, "<<", rhs),
+                BitwiseShiftExprOp::ShiftRight => bitwise_shift_expr!(lhs, ">>", rhs),
+            })
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum AdditionExprOp {
     Plus,
@@ -427,6 +564,28 @@ fn addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
                     .or(|| expect_character('-').map(|_| AdditionExprOp::Minus)),
             ),
             whitespace_wrapped(multiplication()),
+        ))
+        .map(unzip),
+    )
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
+                AdditionExprOp::Plus => term_expr!(lhs, '+', rhs),
+                AdditionExprOp::Minus => term_expr!(lhs, '-', rhs),
+            })
+    })
+}
+
+fn new_addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    parcel::join(
+        new_multiplication(),
+        parcel::zero_or_more(parcel::join(
+            expect_tokentype(TokenType::Plus)
+                .map(|_| AdditionExprOp::Plus)
+                .or(|| expect_tokentype(TokenType::Minus).map(|_| AdditionExprOp::Minus)),
+            new_multiplication(),
         ))
         .map(unzip),
     )
@@ -476,6 +635,32 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
     })
 }
 
+fn new_multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    parcel::join(
+        new_call(),
+        parcel::zero_or_more(parcel::join(
+            expect_tokentype(TokenType::Star)
+                .map(|_| MultiplicationExprOp::Star)
+                .or(|| expect_tokentype(TokenType::Slash).map(|_| MultiplicationExprOp::Slash))
+                .or(|| expect_tokentype(TokenType::PercentSign).map(|_| MultiplicationExprOp::Mod)),
+            new_call(),
+        ))
+        .map(unzip),
+    )
+    .map(|(first_expr, (operators, operands))| {
+        operators
+            .into_iter()
+            .zip(operands.into_iter())
+            .fold(first_expr, |lhs, (operator, rhs)| match operator {
+                MultiplicationExprOp::Star => {
+                    factor_expr!(lhs, '*', rhs)
+                }
+                MultiplicationExprOp::Slash => factor_expr!(lhs, '/', rhs),
+                MultiplicationExprOp::Mod => factor_expr!(lhs, '%', rhs),
+            })
+    })
+}
+
 fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         identifier(),
@@ -506,6 +691,38 @@ fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     )
     .map(|(id, exprs)| ExprNode::FunctionCall(id, exprs))
     .or(prefix_expression)
+}
+
+fn new_call<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    parcel::join(
+        new_identifier(),
+        expect_tokentype(TokenType::LParen).and_then(|_| {
+            parcel::left(parcel::join(
+                parcel::join(
+                    parcel::zero_or_more(parcel::left(parcel::join(
+                        new_expression(),
+                        expect_tokentype(TokenType::Comma),
+                    ))),
+                    new_expression(),
+                )
+                .map(|(mut head, tail)| {
+                    head.push(tail);
+                    head
+                })
+                .or(|| {
+                    new_expression()
+                        .optional()
+                        .map(|optional_expr| match optional_expr {
+                            Some(expr) => vec![expr],
+                            None => vec![],
+                        })
+                }),
+                expect_tokentype(TokenType::RParen),
+            ))
+        }),
+    )
+    .map(|(id, exprs)| ExprNode::FunctionCall(id, exprs))
+    .or(new_prefix_expression)
 }
 
 fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
@@ -556,6 +773,54 @@ fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprN
         .or(post_increment_decrement_expression)
 }
 
+fn new_prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    expect_tokentype(TokenType::Star)
+        .and_then(|_| new_prefix_expression())
+        .map(Box::new)
+        .map(ExprNode::Deref)
+        .or(|| {
+            expect_tokentype(TokenType::Ampersand)
+                .and_then(|_| new_identifier())
+                .map(ExprNode::Ref)
+        })
+        .or(|| {
+            expect_tokentype(TokenType::PlusPlus)
+                .and_then(|_| new_prefix_expression())
+                .map(Box::new)
+                .map(ExprNode::PreIncrement)
+        })
+        .or(|| {
+            expect_tokentype(TokenType::MinusMinus)
+                .and_then(|_| new_prefix_expression())
+                .map(Box::new)
+                .map(ExprNode::PreDecrement)
+        })
+        // unary logical not
+        .or(|| {
+            expect_tokentype(TokenType::Bang)
+                .and_then(|_| new_prefix_expression())
+                .map(Box::new)
+                .map(ExprNode::LogicalNot)
+        })
+        // unary negate
+        .or(|| {
+            expect_tokentype(TokenType::Minus)
+                .and_then(|_| new_prefix_expression())
+                // prevent negate from eating `-` on integer literals.
+                .predicate(|e| !matches!(e, ExprNode::Primary(Primary::Integer { .. })))
+                .map(Box::new)
+                .map(ExprNode::Negate)
+        })
+        // unary inverse
+        .or(|| {
+            expect_tokentype(TokenType::Tilde)
+                .and_then(|_| new_prefix_expression())
+                .map(Box::new)
+                .map(ExprNode::Invert)
+        })
+        .or(new_post_increment_decrement_expression)
+}
+
 fn post_increment_decrement_expression<'a>(
 ) -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::left(parcel::join(
@@ -575,6 +840,25 @@ fn post_increment_decrement_expression<'a>(
     .or(postfix_expression)
 }
 
+fn new_post_increment_decrement_expression<'a>(
+) -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    parcel::left(parcel::join(
+        new_postfix_expression(),
+        expect_tokentype(TokenType::PlusPlus),
+    ))
+    .map(Box::new)
+    .map(ExprNode::PostIncrement)
+    .or(|| {
+        parcel::left(parcel::join(
+            new_postfix_expression(),
+            expect_tokentype(TokenType::MinusMinus),
+        ))
+        .map(Box::new)
+        .map(ExprNode::PostDecrement)
+    })
+    .or(new_postfix_expression)
+}
+
 fn postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     parcel::join(
         identifier(),
@@ -587,6 +871,18 @@ fn postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Expr
     .or(primary)
 }
 
+fn new_postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    parcel::join(
+        new_identifier(),
+        parcel::left(parcel::join(
+            expect_tokentype(TokenType::LBracket).and_then(|_| new_expression()),
+            expect_tokentype(TokenType::RBracket),
+        )),
+    )
+    .map(|(id, expr)| ExprNode::Index(id, Box::new(expr)))
+    .or(new_primary)
+}
+
 fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     number()
         .map(ExprNode::Primary)
@@ -596,12 +892,32 @@ fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
         .or(grouping)
 }
 
+fn new_primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    new_number()
+        .map(ExprNode::Primary)
+        .or(|| new_character_literal().map(ExprNode::Primary))
+        .or(|| new_string_literal().map(ExprNode::Primary))
+        .or(|| new_identifier().map(|id| ExprNode::Primary(Primary::Identifier(id))))
+        .or(new_grouping)
+}
+
 fn grouping<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     whitespace_wrapped(expect_character('('))
         .and_then(|_| {
             parcel::left(parcel::join(
                 expression(),
                 whitespace_wrapped(expect_character(')')),
+            ))
+        })
+        .map(|expr| grouping_expr!(expr))
+}
+
+fn new_grouping<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    expect_tokentype(TokenType::LParen)
+        .and_then(|_| {
+            parcel::left(parcel::join(
+                new_expression(),
+                expect_tokentype(TokenType::RParen),
             ))
         })
         .map(|expr| grouping_expr!(expr))
@@ -623,12 +939,37 @@ fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary>
     .map(ast::Primary::Str)
 }
 
+fn new_string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Primary> {
+    expect_tokentype(TokenType::StrLiteral)
+        .map(|tok| match tok {
+            // guaranteed due to above constraint
+            Token::StrLiteral(lit) => lit,
+            _ => "".to_string(),
+        })
+        .map(|lit| lit.into_bytes())
+        .map(ast::Primary::Str)
+}
+
 fn character_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
     character_wrapped('\'', '\'', ascii().map(|c| c as u8)).map(|num| Primary::Integer {
         sign: Signed::Signed,
         width: IntegerWidth::Eight,
         value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
     })
+}
+
+fn new_character_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Primary> {
+    expect_tokentype(TokenType::CharLiteral)
+        .map(|tok| match tok {
+            // guaranteed due to above constraint
+            Token::CharLiteral(c) => c as u8,
+            _ => 0,
+        })
+        .map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::Eight,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        })
 }
 
 fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
@@ -676,6 +1017,51 @@ fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
     ])
 }
 
+fn new_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Primary> {
+    parcel::one_of(vec![
+        new_dec_i8().map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::Eight,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        new_dec_u8().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::Eight,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        new_dec_i16().map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::Sixteen,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        new_dec_u16().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::Sixteen,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        new_dec_i32().map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::ThirtyTwo,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        new_dec_u32().map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::ThirtyTwo,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        new_dec_i64().map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::SixtyFour,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        new_dec_u64().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::SixtyFour,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+    ])
+}
+
 fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
     parcel::one_of(vec![
         dec_u8().map(|num| Primary::Integer {
@@ -694,6 +1080,31 @@ fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary
             value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
         }),
         dec_u64().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::SixtyFour,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+    ])
+}
+
+fn new_unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Primary> {
+    parcel::one_of(vec![
+        new_dec_u8().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::Eight,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        new_dec_u16().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::Sixteen,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        new_dec_u32().map(|num| Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::ThirtyTwo,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        }),
+        new_dec_u64().map(|num| Primary::Integer {
             sign: Signed::Unsigned,
             width: IntegerWidth::SixtyFour,
             value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
