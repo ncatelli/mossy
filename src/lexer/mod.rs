@@ -30,6 +30,7 @@ pub enum TokenType {
     Minus,
     Star,
     Slash,
+    PercentSign,
 
     // Other operators
     Tilde,
@@ -91,6 +92,7 @@ pub enum Token {
     Minus,
     Star,
     Slash,
+    PercentSign,
 
     // Other operators
     Tilde,
@@ -151,6 +153,7 @@ impl Token {
             Token::Minus => TokenType::Minus,
             Token::Star => TokenType::Star,
             Token::Slash => TokenType::Slash,
+            Token::PercentSign => TokenType::PercentSign,
             Token::Tilde => TokenType::Tilde,
             Token::PlusPlus => TokenType::PlusPlus,
             Token::MinusMinus => TokenType::MinusMinus,
