@@ -60,8 +60,7 @@ impl CompilationStage<ast::TypedProgram, Vec<String>, String> for X86_64 {
                     ast::TypedGlobalDecls::Var(ast::Declaration::Scalar(ty, identifiers)) => {
                         let globals = identifiers
                             .iter()
-                            .map(|id| codegen_global_symbol(&ty, id, 1))
-                            .flatten()
+                            .flat_map(|id| codegen_global_symbol(&ty, id, 1))
                             .collect();
                         Ok(globals)
                     }

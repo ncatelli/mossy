@@ -9,6 +9,7 @@ use crate::stage::type_check::{
 
 #[macro_use]
 pub mod ast;
+pub mod token_parser;
 use ast::*;
 
 /// ParseErr represents a parser response that doesn't return a correct AstNode.
