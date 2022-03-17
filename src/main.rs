@@ -59,7 +59,7 @@ fn write_dest_file<P: AsRef<Path>>(filename: P, data: &[u8]) -> RuntimeResult<()
     }
 }
 
-fn compile(frontend: &str, source: &str) -> RuntimeResult<String> {
+fn compile(source: &str) -> RuntimeResult<String> {
     use mossy::lexer;
     use mossy::parser;
     use mossy::preprocessor;
@@ -70,36 +70,24 @@ fn compile(frontend: &str, source: &str) -> RuntimeResult<String> {
     let pre_processed_input = preprocessor::pre_process(&input)
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?;
 
-    if frontend == "tokenized" {
-        let preprocessed: String = pre_processed_input.into_iter().map(|(_, c)| c).collect();
-        lexer::lex(&preprocessed)
-            .map(|t| {
-                t.into_iter()
-                    .enumerate()
-                    .collect::<Vec<(usize, lexer::Token)>>()
-            })
-            .and_then(|tokens| {
-                parser::token_parser::parse(&tokens)
-                    .map_err(|e| format!("{:?}", e))
-                    .and_then(|program| {
-                        type_check::TypeAnalysis::default()
-                            .and_then(|| x86_64::X86_64)
-                            .apply(program)
-                    })
-            })
-            .map_err(RuntimeError::Undefined)
-            .map(|insts| insts.into_iter().collect::<String>())
-    } else {
-        parser::parse(&pre_processed_input)
-            .map(|program| {
-                type_check::TypeAnalysis::default()
-                    .and_then(|| x86_64::X86_64)
-                    .apply(program)
-            })
-            .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?
-            .map(|insts| insts.into_iter().collect::<String>())
-            .map_err(RuntimeError::Undefined)
-    }
+    let preprocessed: String = pre_processed_input.into_iter().map(|(_, c)| c).collect();
+    lexer::lex(&preprocessed)
+        .map(|t| {
+            t.into_iter()
+                .enumerate()
+                .collect::<Vec<(usize, lexer::Token)>>()
+        })
+        .and_then(|tokens| {
+            parser::token_parser::parse(&tokens)
+                .map_err(|e| format!("{:?}", e))
+                .and_then(|program| {
+                    type_check::TypeAnalysis::default()
+                        .and_then(|| x86_64::X86_64)
+                        .apply(program)
+                })
+        })
+        .map_err(RuntimeError::Undefined)
+        .map(|insts| insts.into_iter().collect::<String>())
 }
 
 fn assemble<P>(filename: P) -> RuntimeResult<PathBuf>
@@ -144,16 +132,6 @@ fn main() -> RuntimeResult<()> {
     // Flag Definitions
     let help = scrap::Flag::store_true("help", "h", "display usage information.").optional();
     let out_file = scrap::Flag::expect_string("out-file", "o", "a binary output path.").optional();
-    let frontend = scrap::Flag::with_choices(
-        "frontend",
-        "f",
-        "a temporary test frontend toggle.",
-        ["combined".to_string(), "tokenized".to_string()],
-        scrap::StringValue,
-    )
-    .optional()
-    .with_default("combined".to_string());
-
     let backend = scrap::Flag::with_choices(
         "backend",
         "b",
@@ -170,9 +148,8 @@ fn main() -> RuntimeResult<()> {
         .version("0.1.0")
         .with_flag(out_file)
         .with_flag(backend)
-        .with_flag(frontend)
         .with_flag(help)
-        .with_args_handler(|args, (((ouf, _), frontend), _)| {
+        .with_args_handler(|args, ((ouf, _), _)| {
             let (src_files, obj_files) = args
                 .into_iter()
                 .map(|val| val.unwrap())
@@ -191,7 +168,7 @@ fn main() -> RuntimeResult<()> {
                 .into_iter()
                 .map(|file| {
                     read_src_file(&file)
-                        .and_then(|input| compile(&frontend, &input))
+                        .and_then(|input| compile(&input))
                         .and_then(|asm| {
                             let asm_out_file = Path::new(&file).with_extension("s");
                             write_dest_file(&asm_out_file, asm.as_bytes()).map(|_| asm_out_file)
