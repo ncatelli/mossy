@@ -38,6 +38,7 @@ pub enum TokenType {
     MinusMinus,
 
     // Type keywords
+    Auto,
     Signed,
     Unsigned,
     Void,
@@ -102,6 +103,7 @@ pub enum Token {
     MinusMinus,
 
     // Type keywords
+    Auto,
     Signed,
     Unsigned,
     Void,
@@ -161,6 +163,7 @@ impl Token {
             Token::Tilde => TokenType::Tilde,
             Token::PlusPlus => TokenType::PlusPlus,
             Token::MinusMinus => TokenType::MinusMinus,
+            Token::Auto => TokenType::Auto,
             Token::Signed => TokenType::Signed,
             Token::Unsigned => TokenType::Unsigned,
             Token::Void => TokenType::Void,

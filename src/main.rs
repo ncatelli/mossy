@@ -78,7 +78,7 @@ fn compile(source: &str) -> RuntimeResult<String> {
                 .collect::<Vec<(usize, lexer::Token)>>()
         })
         .and_then(|tokens| {
-            parser::token_parser::parse(&tokens)
+            parser::parse(&tokens)
                 .map_err(|e| format!("{:?}", e))
                 .and_then(|program| {
                     type_check::TypeAnalysis::default()

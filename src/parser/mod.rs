@@ -1,5 +1,6 @@
-use parcel::parsers::character::*;
 use parcel::prelude::v1::*;
+
+use crate::lexer::{Token, TokenType};
 
 pub use crate::stage::type_check::ast::Type;
 use crate::stage::type_check::{
@@ -9,7 +10,6 @@ use crate::stage::type_check::{
 
 #[macro_use]
 pub mod ast;
-pub mod token_parser;
 use ast::*;
 
 /// ParseErr represents a parser response that doesn't return a correct AstNode.
@@ -21,14 +21,14 @@ pub enum ParseErr {
 
 /// parse expects a character slice as input and attempts to parse a valid
 /// expression, returning a parse error if it is invalid.
-pub fn parse(input: &[(usize, char)]) -> Result<CompilationUnit, ParseErr> {
+pub fn parse(input: &[(usize, Token)]) -> Result<CompilationUnit, ParseErr> {
     parcel::one_or_more(
         function_definition()
             .map(ast::GlobalDecls::FuncDefinition)
             .or(|| {
                 parcel::left(parcel::join(
                     function_prototype(),
-                    whitespace_wrapped(expect_character(';')),
+                    expect_tokentype(TokenType::SemiColon),
                 ))
                 .map(ast::GlobalDecls::FuncProto)
             })
@@ -56,23 +56,23 @@ pub fn parse(input: &[(usize, char)]) -> Result<CompilationUnit, ParseErr> {
     .map(CompilationUnit::new)
 }
 
-fn function_prototype<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionProto> {
+fn function_prototype<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], FunctionProto> {
     parcel::join(
-        parcel::join(type_declarator(), whitespace_wrapped(identifier())),
-        expect_character('(').and_then(|_| {
+        parcel::join(type_declarator(), identifier()),
+        expect_tokentype(TokenType::LParen).and_then(|_| {
             parcel::left(parcel::join(
                 parcel::join(
                     parcel::zero_or_more(
                         parcel::join(
-                            whitespace_wrapped(type_declarator()),
+                            type_declarator(),
                             parcel::left(parcel::join(
                                 identifier(),
-                                whitespace_wrapped(expect_character(',')),
+                                expect_tokentype(TokenType::Comma),
                             )),
                         )
                         .map(|(ty, id)| ast::Parameter::new(id, ty)),
                     ),
-                    parcel::join(whitespace_wrapped(type_declarator()), identifier())
+                    parcel::join(type_declarator(), identifier())
                         .map(|(ty, id)| ast::Parameter::new(id, ty)),
                 )
                 .map(|(mut head, tail)| {
@@ -81,27 +81,32 @@ fn function_prototype<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Func
                 })
                 .or(|| {
                     parcel::zero_or_more(
-                        parcel::join(whitespace_wrapped(type_declarator()), identifier())
+                        parcel::join(type_declarator(), identifier())
                             .map(|(ty, id)| ast::Parameter::new(id, ty)),
                     )
                 }),
-                whitespace_wrapped(expect_character(')')),
+                expect_tokentype(TokenType::RParen),
             ))
         }),
     )
     .map(|((ty, id), params)| FunctionProto::new(id, ty, params))
 }
 
-fn function_definition<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], FunctionDefinition> {
+fn function_definition<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], FunctionDefinition> {
     parcel::join(function_prototype(), compound_statements())
         .map(|(proto, block)| FunctionDefinition::new(proto, block))
 }
 
-fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], CompoundStmts> {
-    character_wrapped('{', '}', parcel::zero_or_more(statement())).map(CompoundStmts::new)
+fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], CompoundStmts> {
+    tokentype_wrapped(
+        TokenType::LBrace,
+        TokenType::RBrace,
+        parcel::zero_or_more(statement()),
+    )
+    .map(CompoundStmts::new)
 }
 
-fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
     semicolon_terminated_statement(declaration())
         .or(if_statement)
         .or(while_statement)
@@ -112,23 +117,20 @@ fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
 
 fn semicolon_terminated_statement<'a, P>(
     term: P,
-) -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode>
+) -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode>
 where
-    P: parcel::Parser<'a, &'a [(usize, char)], StmtNode> + 'a,
+    P: parcel::Parser<'a, &'a [(usize, Token)], StmtNode> + 'a,
 {
-    parcel::left(parcel::join(
-        term,
-        whitespace_wrapped(expect_character(';')),
-    ))
+    parcel::left(parcel::join(term, expect_tokentype(TokenType::SemiColon)))
 }
 
-fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
     parcel::join(
         type_declarator(),
-        whitespace_wrapped(parcel::join(
+        parcel::join(
             identifier(),
-            character_wrapped('[', ']', unsigned_number()),
-        )),
+            tokentype_wrapped(TokenType::LBracket, TokenType::RBracket, unsigned_number()),
+        ),
     )
     .map(|(ty, (id, size))| {
         let size = match size {
@@ -148,62 +150,60 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
     .or(|| {
         parcel::join(
             type_declarator(),
-            whitespace_wrapped(parcel::one_or_more(parcel::left(parcel::join(
+            parcel::one_or_more(parcel::left(parcel::join(
                 identifier(),
-                whitespace_wrapped(expect_character(',').optional()),
-            )))),
+                expect_tokentype(TokenType::Comma).optional(),
+            ))),
         )
         .map(|(ty, ids)| type_check::ast::Declaration::Scalar(ty, ids))
         .map(StmtNode::Declaration)
     })
 }
 
-fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
     parcel::join(
         if_head(),
-        parcel::optional(
-            whitespace_wrapped(expect_str("else")).and_then(|_| compound_statements()),
-        ),
+        parcel::optional(expect_tokentype(TokenType::Else).and_then(|_| compound_statements())),
     )
     .map(|((cond, cond_true), cond_false)| StmtNode::If(cond, cond_true, cond_false))
 }
 
-fn if_head<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], (ExprNode, CompoundStmts)> {
-    whitespace_wrapped(expect_str("if")).and_then(|_| {
+fn if_head<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], (ExprNode, CompoundStmts)> {
+    expect_tokentype(TokenType::If).and_then(|_| {
         parcel::join(
-            character_wrapped('(', ')', expression()),
+            tokentype_wrapped(TokenType::LParen, TokenType::RParen, expression()),
             compound_statements(),
         )
     })
 }
 
-fn while_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    whitespace_wrapped(expect_str("while"))
+fn while_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
+    expect_tokentype(TokenType::While)
         .and_then(|_| {
             parcel::join(
-                character_wrapped('(', ')', expression()),
+                tokentype_wrapped(TokenType::LParen, TokenType::RParen, expression()),
                 compound_statements(),
             )
         })
         .map(|(cond, block)| StmtNode::While(cond, block))
 }
 
-fn for_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
-    whitespace_wrapped(expect_str("for"))
+fn for_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
+    expect_tokentype(TokenType::For)
         .and_then(|_| {
             parcel::join(
-                character_wrapped(
-                    '(',
-                    ')',
+                tokentype_wrapped(
+                    TokenType::LParen,
+                    TokenType::RParen,
                     parcel::join(
                         parcel::left(parcel::join(
                             preop_statement(),
-                            whitespace_wrapped(expect_character(';')),
+                            expect_tokentype(TokenType::SemiColon),
                         )),
                         parcel::join(
                             parcel::left(parcel::join(
                                 expression(),
-                                whitespace_wrapped(expect_character(';')),
+                                expect_tokentype(TokenType::SemiColon),
                             )),
                             postop_statement(),
                         ),
@@ -217,30 +217,30 @@ fn for_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode>
         })
 }
 
-fn preop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+fn preop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
     assignment().map(StmtNode::Expression)
 }
 
-fn postop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+fn postop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
     expression().map(StmtNode::Expression)
 }
 
-fn return_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], StmtNode> {
+fn return_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
     parcel::right(parcel::join(
-        whitespace_wrapped(expect_str("return")),
+        expect_tokentype(TokenType::Return),
         expression().optional(),
     ))
     .map(StmtNode::Return)
 }
 
-fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
     assignment()
 }
 
-fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
     parcel::join(
-        whitespace_wrapped(logical()),
-        whitespace_wrapped(expect_character('=')).and_then(|_| whitespace_wrapped(assignment())),
+        logical(),
+        expect_tokentype(TokenType::Equal).and_then(|_| assignment()),
     )
     .map(|(lhs, rhs)| assignment_expr!(lhs, '=', rhs))
     .or(logical)
@@ -252,14 +252,14 @@ enum LogicalExprOp {
     And,
 }
 
-fn logical<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+fn logical<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
     parcel::join(
         bitwise(),
         parcel::zero_or_more(parcel::join(
-            whitespace_wrapped(expect_str("||"))
+            expect_tokentype(TokenType::PipePipe)
                 .map(|_| LogicalExprOp::Or)
-                .or(|| whitespace_wrapped(expect_str("&&")).map(|_| LogicalExprOp::And)),
-            whitespace_wrapped(bitwise()),
+                .or(|| expect_tokentype(TokenType::AmpersandAmpersand).map(|_| LogicalExprOp::And)),
+            bitwise(),
         ))
         .map(unzip),
     )
@@ -281,22 +281,15 @@ enum BitwiseExprOp {
     And,
 }
 
-fn bitwise<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+fn bitwise<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
     parcel::join(
         equality(),
         parcel::zero_or_more(parcel::join(
-            whitespace_wrapped(
-                expect_str("|")
-                    .peek_next(any_character().predicate(|&c| c != '|'))
-                    .map(|_| BitwiseExprOp::Or)
-                    .or(|| expect_str("^").map(|_| BitwiseExprOp::Xor))
-                    .or(|| {
-                        expect_str("&")
-                            .peek_next(any_character().predicate(|&c| c != '&'))
-                            .map(|_| BitwiseExprOp::And)
-                    }),
-            ),
-            whitespace_wrapped(equality()),
+            expect_tokentype(TokenType::Pipe)
+                .map(|_| BitwiseExprOp::Or)
+                .or(|| expect_tokentype(TokenType::Carat).map(|_| BitwiseExprOp::Xor))
+                .or(|| expect_tokentype(TokenType::Ampersand).map(|_| BitwiseExprOp::And)),
+            equality(),
         ))
         .map(unzip),
     )
@@ -318,16 +311,14 @@ enum EqualityExprOp {
     NotEqual,
 }
 
-fn equality<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+fn equality<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
     parcel::join(
         relational(),
         parcel::zero_or_more(parcel::join(
-            whitespace_wrapped(
-                expect_str("==")
-                    .map(|_| EqualityExprOp::Equal)
-                    .or(|| expect_str("!=").map(|_| EqualityExprOp::NotEqual)),
-            ),
-            whitespace_wrapped(relational()),
+            expect_tokentype(TokenType::EqualEqual)
+                .map(|_| EqualityExprOp::Equal)
+                .or(|| expect_tokentype(TokenType::BangEqual).map(|_| EqualityExprOp::NotEqual)),
+            relational(),
         ))
         .map(unzip),
     )
@@ -350,18 +341,21 @@ enum RelationalExprOp {
     GreaterEqual,
 }
 
-fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
     parcel::join(
         bitwise_shift(),
         parcel::zero_or_more(parcel::join(
-            whitespace_wrapped(
-                expect_str("<=")
-                    .map(|_| RelationalExprOp::LessEqual)
-                    .or(|| expect_str(">=").map(|_| RelationalExprOp::GreaterEqual))
-                    .or(|| expect_str("<").map(|_| RelationalExprOp::LessThan))
-                    .or(|| expect_str(">").map(|_| RelationalExprOp::GreaterThan)),
-            ),
-            whitespace_wrapped(bitwise_shift()),
+            expect_tokentype(TokenType::LessEqual)
+                .map(|_| RelationalExprOp::LessEqual)
+                .or(|| {
+                    expect_tokentype(TokenType::GreaterEqual)
+                        .map(|_| RelationalExprOp::GreaterEqual)
+                })
+                .or(|| expect_tokentype(TokenType::LessThan).map(|_| RelationalExprOp::LessThan))
+                .or(|| {
+                    expect_tokentype(TokenType::GreaterThan).map(|_| RelationalExprOp::GreaterThan)
+                }),
+            bitwise_shift(),
         ))
         .map(unzip),
     )
@@ -381,23 +375,20 @@ fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
             })
     })
 }
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum BitwiseShiftExprOp {
     ShiftLeft,
     ShiftRight,
 }
 
-fn bitwise_shift<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+fn bitwise_shift<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
     parcel::join(
         addition(),
         parcel::zero_or_more(parcel::join(
-            whitespace_wrapped(
-                expect_str("<<")
-                    .map(|_| BitwiseShiftExprOp::ShiftLeft)
-                    .or(|| expect_str(">>").map(|_| BitwiseShiftExprOp::ShiftRight)),
-            ),
-            whitespace_wrapped(addition()),
+            expect_tokentype(TokenType::LShift)
+                .map(|_| BitwiseShiftExprOp::ShiftLeft)
+                .or(|| expect_tokentype(TokenType::RShift).map(|_| BitwiseShiftExprOp::ShiftRight)),
+            addition(),
         ))
         .map(unzip),
     )
@@ -418,16 +409,14 @@ enum AdditionExprOp {
     Minus,
 }
 
-fn addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+fn addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
     parcel::join(
         multiplication(),
         parcel::zero_or_more(parcel::join(
-            whitespace_wrapped(
-                expect_character('+')
-                    .map(|_| AdditionExprOp::Plus)
-                    .or(|| expect_character('-').map(|_| AdditionExprOp::Minus)),
-            ),
-            whitespace_wrapped(multiplication()),
+            expect_tokentype(TokenType::Plus)
+                .map(|_| AdditionExprOp::Plus)
+                .or(|| expect_tokentype(TokenType::Minus).map(|_| AdditionExprOp::Minus)),
+            multiplication(),
         ))
         .map(unzip),
     )
@@ -449,17 +438,15 @@ enum MultiplicationExprOp {
     Mod,
 }
 
-fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
     parcel::join(
         call(),
         parcel::zero_or_more(parcel::join(
-            whitespace_wrapped(
-                expect_character('*')
-                    .map(|_| MultiplicationExprOp::Star)
-                    .or(|| expect_character('/').map(|_| MultiplicationExprOp::Slash))
-                    .or(|| expect_character('%').map(|_| MultiplicationExprOp::Mod)),
-            ),
-            whitespace_wrapped(call()),
+            expect_tokentype(TokenType::Star)
+                .map(|_| MultiplicationExprOp::Star)
+                .or(|| expect_tokentype(TokenType::Slash).map(|_| MultiplicationExprOp::Slash))
+                .or(|| expect_tokentype(TokenType::PercentSign).map(|_| MultiplicationExprOp::Mod)),
+            call(),
         ))
         .map(unzip),
     )
@@ -477,15 +464,15 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode
     })
 }
 
-fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
     parcel::join(
         identifier(),
-        whitespace_wrapped(expect_character('(')).and_then(|_| {
+        expect_tokentype(TokenType::LParen).and_then(|_| {
             parcel::left(parcel::join(
                 parcel::join(
                     parcel::zero_or_more(parcel::left(parcel::join(
                         expression(),
-                        whitespace_wrapped(expect_character(',')),
+                        expect_tokentype(TokenType::Comma),
                     ))),
                     expression(),
                 )
@@ -501,7 +488,7 @@ fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
                             None => vec![],
                         })
                 }),
-                whitespace_wrapped(expect_character(')')),
+                expect_tokentype(TokenType::RParen),
             ))
         }),
     )
@@ -509,38 +496,38 @@ fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
     .or(prefix_expression)
 }
 
-fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
-    whitespace_wrapped(expect_character('*'))
+fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    expect_tokentype(TokenType::Star)
         .and_then(|_| prefix_expression())
         .map(Box::new)
         .map(ExprNode::Deref)
         .or(|| {
-            whitespace_wrapped(expect_character('&'))
+            expect_tokentype(TokenType::Ampersand)
                 .and_then(|_| identifier())
                 .map(ExprNode::Ref)
         })
         .or(|| {
-            whitespace_wrapped(expect_str("++"))
+            expect_tokentype(TokenType::PlusPlus)
                 .and_then(|_| prefix_expression())
                 .map(Box::new)
                 .map(ExprNode::PreIncrement)
         })
         .or(|| {
-            whitespace_wrapped(expect_str("--"))
+            expect_tokentype(TokenType::MinusMinus)
                 .and_then(|_| prefix_expression())
                 .map(Box::new)
                 .map(ExprNode::PreDecrement)
         })
         // unary logical not
         .or(|| {
-            whitespace_wrapped(expect_character('!'))
+            expect_tokentype(TokenType::Bang)
                 .and_then(|_| prefix_expression())
                 .map(Box::new)
                 .map(ExprNode::LogicalNot)
         })
         // unary negate
         .or(|| {
-            whitespace_wrapped(expect_character('-'))
+            expect_tokentype(TokenType::Minus)
                 .and_then(|_| prefix_expression())
                 // prevent negate from eating `-` on integer literals.
                 .predicate(|e| !matches!(e, ExprNode::Primary(Primary::Integer { .. })))
@@ -549,7 +536,7 @@ fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprN
         })
         // unary inverse
         .or(|| {
-            whitespace_wrapped(expect_character('~'))
+            expect_tokentype(TokenType::Tilde)
                 .and_then(|_| prefix_expression())
                 .map(Box::new)
                 .map(ExprNode::Invert)
@@ -558,17 +545,17 @@ fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprN
 }
 
 fn post_increment_decrement_expression<'a>(
-) -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+) -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
     parcel::left(parcel::join(
-        whitespace_wrapped(postfix_expression()),
-        expect_str("++"),
+        postfix_expression(),
+        expect_tokentype(TokenType::PlusPlus),
     ))
     .map(Box::new)
     .map(ExprNode::PostIncrement)
     .or(|| {
         parcel::left(parcel::join(
-            whitespace_wrapped(postfix_expression()),
-            whitespace_wrapped(expect_str("--")),
+            postfix_expression(),
+            expect_tokentype(TokenType::MinusMinus),
         ))
         .map(Box::new)
         .map(ExprNode::PostDecrement)
@@ -576,19 +563,19 @@ fn post_increment_decrement_expression<'a>(
     .or(postfix_expression)
 }
 
-fn postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+fn postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
     parcel::join(
         identifier(),
         parcel::left(parcel::join(
-            whitespace_wrapped(expect_character('[')).and_then(|_| expression()),
-            whitespace_wrapped(expect_character(']')),
+            expect_tokentype(TokenType::LBracket).and_then(|_| expression()),
+            expect_tokentype(TokenType::RBracket),
         )),
     )
     .map(|(id, expr)| ExprNode::Index(id, Box::new(expr)))
     .or(primary)
 }
 
-fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
+fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
     number()
         .map(ExprNode::Primary)
         .or(|| character_literal().map(ExprNode::Primary))
@@ -597,42 +584,43 @@ fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
         .or(grouping)
 }
 
-fn grouping<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], ExprNode> {
-    whitespace_wrapped(expect_character('('))
+fn grouping<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+    expect_tokentype(TokenType::LParen)
         .and_then(|_| {
             parcel::left(parcel::join(
                 expression(),
-                whitespace_wrapped(expect_character(')')),
+                expect_tokentype(TokenType::RParen),
             ))
         })
         .map(|expr| grouping_expr!(expr))
 }
 
-fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
-    character_wrapped(
-        '"',
-        '"',
-        parcel::zero_or_more(
-            ascii_alphanumeric()
-                .or(ascii_whitespace)
-                .or(ascii_control)
-                // escaped quote
-                .or(|| expect_character('\\').and_then(|_| expect_character('\"')))
-                .map(|c| c as u8),
-        ),
-    )
-    .map(ast::Primary::Str)
+fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Primary> {
+    expect_tokentype(TokenType::StrLiteral)
+        .map(|tok| match tok {
+            // guaranteed due to above constraint
+            Token::StrLiteral(lit) => lit,
+            _ => "".to_string(),
+        })
+        .map(|lit| lit.into_bytes())
+        .map(ast::Primary::Str)
 }
 
-fn character_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
-    character_wrapped('\'', '\'', ascii().map(|c| c as u8)).map(|num| Primary::Integer {
-        sign: Signed::Signed,
-        width: IntegerWidth::Eight,
-        value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
-    })
+fn character_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Primary> {
+    expect_tokentype(TokenType::CharLiteral)
+        .map(|tok| match tok {
+            // guaranteed due to above constraint
+            Token::CharLiteral(c) => c as u8,
+            _ => 0,
+        })
+        .map(|num| Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::Eight,
+            value: crate::util::pad_to_64bit_array(num.to_le_bytes()),
+        })
 }
 
-fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
+fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Primary> {
     parcel::one_of(vec![
         dec_i8().map(|num| Primary::Integer {
             sign: Signed::Signed,
@@ -677,7 +665,7 @@ fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
     ])
 }
 
-fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary> {
+fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Primary> {
     parcel::one_of(vec![
         dec_u8().map(|num| Primary::Integer {
             sign: Signed::Unsigned,
@@ -702,81 +690,81 @@ fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Primary
     ])
 }
 
-fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], String> {
-    parcel::one_or_more(ascii_alphanumeric().or(|| expect_character('_')))
-        .map(|chars| chars.into_iter().collect::<String>())
-        // guarantee the identifier is not a keyword.
-        .predicate(|str| !RESERVED_KEYWORDS.contains(&str.as_str()))
+fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], String> {
+    expect_tokentype(TokenType::Identifier).map(|t| {
+        match t {
+            Token::Identifier(id) => id,
+            // safe unpack due to expect_tokentype constraint
+            _ => unreachable!(),
+        }
+    })
 }
 
-fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
-    whitespace_wrapped(
-        parcel::join(
-            type_specifier(),
-            whitespace_wrapped(expect_character('*').one_or_more()),
-        )
-        .map(|(ty, pointer_depth)| {
-            let nested_pointers = pointer_depth.len() - 1;
-            (0..nested_pointers)
-                .into_iter()
-                .fold(Type::Pointer(Box::new(ty)), |acc, _| {
-                    Type::Pointer(Box::new(acc))
-                })
-        }),
+fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Type> {
+    parcel::join(
+        type_specifier(),
+        expect_tokentype(TokenType::Star).one_or_more(),
     )
+    .map(|(ty, pointer_depth)| {
+        let nested_pointers = pointer_depth.len() - 1;
+        (0..nested_pointers)
+            .into_iter()
+            .fold(Type::Pointer(Box::new(ty)), |acc, _| {
+                Type::Pointer(Box::new(acc))
+            })
+    })
     .or(type_specifier)
 }
 
-fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, char)], Type> {
+fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Type> {
     parcel::join(
-        whitespace_wrapped(parcel::one_of(vec![
-            expect_str("signed").map(|_| Signed::Signed),
-            expect_str("unsigned").map(|_| Signed::Unsigned),
-        ]))
+        parcel::one_of(vec![
+            expect_tokentype(TokenType::Signed).map(|_| Signed::Signed),
+            expect_tokentype(TokenType::Unsigned).map(|_| Signed::Unsigned),
+        ])
         .optional(),
-        whitespace_wrapped(parcel::one_of(vec![
+        parcel::one_of(vec![
             //
             // long parser
             //
             parcel::one_of(vec![
                 // long long int
-                whitespace_wrapped(expect_str("long"))
-                    .and_then(|_| whitespace_wrapped(expect_str("long")))
-                    .and_then(|_| whitespace_wrapped(expect_str("int"))),
+                expect_tokentype(TokenType::Long)
+                    .and_then(|_| expect_tokentype(TokenType::Long))
+                    .and_then(|_| expect_tokentype(TokenType::Int)),
                 // long long
-                whitespace_wrapped(expect_str("long"))
-                    .and_then(|_| whitespace_wrapped(expect_str("long"))),
+                expect_tokentype(TokenType::Long).and_then(|_| expect_tokentype(TokenType::Long)),
                 // long int
-                whitespace_wrapped(expect_str("long"))
-                    .and_then(|_| whitespace_wrapped(expect_str("int"))),
+                expect_tokentype(TokenType::Long).and_then(|_| expect_tokentype(TokenType::Int)),
                 // long
-                parcel::BoxedParser::new(expect_str("long")),
+                parcel::BoxedParser::new(expect_tokentype(TokenType::Long)),
             ])
             .map(|_| Type::Integer(Signed::Signed, IntegerWidth::SixtyFour)),
             //
             // int parser
             //
-            expect_str("int").map(|_| Type::Integer(Signed::Signed, IntegerWidth::ThirtyTwo)),
+            expect_tokentype(TokenType::Int)
+                .map(|_| Type::Integer(Signed::Signed, IntegerWidth::ThirtyTwo)),
             //
             // short parser
             //
             parcel::one_of(vec![
                 // short int
-                whitespace_wrapped(expect_str("short"))
-                    .and_then(|_| whitespace_wrapped(expect_str("int"))),
+                expect_tokentype(TokenType::Short).and_then(|_| expect_tokentype(TokenType::Int)),
                 // short
-                parcel::BoxedParser::new(expect_str("short")),
+                parcel::BoxedParser::new(expect_tokentype(TokenType::Short)),
             ])
             .map(|_| Type::Integer(Signed::Signed, IntegerWidth::Sixteen)),
             //
             // char parser
             //
-            expect_str("char").map(|_| Type::Integer(Signed::Signed, IntegerWidth::Eight)),
+            expect_tokentype(TokenType::Char)
+                .map(|_| Type::Integer(Signed::Signed, IntegerWidth::Eight)),
             //
             // void parser
             //
-            expect_str("void").map(|_| Type::Void),
-        ])),
+            expect_tokentype(TokenType::Void).map(|_| Type::Void),
+        ]),
     )
     .map(|(sign, ty)| match (sign, ty) {
         (Some(sign), Type::Integer(_, width)) => Type::Integer(sign, width),
@@ -788,13 +776,16 @@ macro_rules! numeric_type_parser {
     ($(unsigned, $parser_name:ident, $ret_type:ty,)*) => {
         $(
         #[allow(unused)]
-        fn $parser_name<'a>() -> impl Parser<'a, &'a [(usize, char)], $ret_type> {
-            move |input: &'a [(usize, char)]| {
+        fn $parser_name<'a>() -> impl Parser<'a, &'a [(usize, Token)], $ret_type> {
+            move |input: &'a [(usize, Token)]| {
                 let preparsed_input = input;
-                let res = parcel::one_or_more(digit(10))
-                    .map(|digits| {
-                        let vd: String = digits.into_iter().collect();
-                        vd.parse::<$ret_type>()
+                let res = expect_tokentype(TokenType::IntLiteral)
+                    .map(|digit_token| {
+                        if let Token::IntLiteral(i) = digit_token {
+                           Some(i as $ret_type)
+                        } else {
+                           None
+                        }
                     })
                     .parse(input);
 
@@ -802,7 +793,7 @@ macro_rules! numeric_type_parser {
                     Ok(MatchStatus::Match {
                         span,
                         remainder,
-                        inner: Ok(u),
+                        inner: Some(u),
                     }) => Ok(MatchStatus::Match {
                         span,
                         remainder,
@@ -812,7 +803,7 @@ macro_rules! numeric_type_parser {
                     Ok(MatchStatus::Match {
                         span: _,
                         remainder: _,
-                        inner: Err(_),
+                        inner: None,
                     }) => Ok(MatchStatus::NoMatch(preparsed_input)),
 
                     Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
@@ -825,17 +816,17 @@ macro_rules! numeric_type_parser {
     ($(signed, $parser_name:ident, $ret_type:ty,)*) => {
         $(
         #[allow(unused)]
-        fn $parser_name<'a>() -> impl Parser<'a, &'a [(usize, char)], $ret_type> {
-            move |input: &'a [(usize, char)]| {
+        fn $parser_name<'a>() -> impl Parser<'a, &'a [(usize, Token)], $ret_type> {
+            use std::convert::TryFrom;
+            move |input: &'a [(usize, Token)]| {
                 let preparsed_input = input;
-                let res = parcel::join(whitespace_wrapped(expect_character('-')).optional(), parcel::one_or_more(digit(10)))
+                let res = parcel::join(expect_tokentype(TokenType::Minus).optional(), expect_tokentype(TokenType::IntLiteral))
                     .map(|(negative, digits)| {
-                        let vd: String = if negative.is_some() {
-                            format!("-{}", digits.into_iter().collect::<String>())
-                        } else {
-                            digits.into_iter().collect()
-                        };
-                        vd.parse::<$ret_type>()
+                        match (negative, digits) {
+                            (Some(_), Token::IntLiteral(i)) => Some(-(i as $ret_type)),
+                            (None, Token::IntLiteral(i)) => Some(i as $ret_type),
+                            _ => None
+                        }
                     })
                     .parse(input);
 
@@ -843,7 +834,7 @@ macro_rules! numeric_type_parser {
                     Ok(MatchStatus::Match {
                         span,
                         remainder,
-                        inner: Ok(u),
+                        inner: Some(u),
                     }) => Ok(MatchStatus::Match {
                         span,
                         remainder,
@@ -853,7 +844,7 @@ macro_rules! numeric_type_parser {
                     Ok(MatchStatus::Match {
                         span: _,
                         remainder: _,
-                        inner: Err(_),
+                        inner: None,
                     }) => Ok(MatchStatus::NoMatch(preparsed_input)),
 
                     Ok(MatchStatus::NoMatch(remainder)) => Ok(MatchStatus::NoMatch(remainder)),
@@ -881,72 +872,30 @@ numeric_type_parser!(
     unsigned, dec_u64, u64,
 );
 
-fn ascii<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
-    parcel::right(parcel::join(
-        expect_character('\\'),
-        expect_character('\\')
-            .map(|_| '\\')
-            .or(|| expect_character('\'').map(|_| '\''))
-            .or(|| expect_character('"').map(|_| '"')),
-    ))
-    .or(ascii_alphanumeric)
-    .or(ascii_whitespace)
-    .or(ascii_control)
-    .or(|| any_character().predicate(|c| c.is_ascii()))
-}
-
-fn ascii_whitespace<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
-    parcel::right(parcel::join(
-        expect_character('\\'),
-        expect_character('n')
-            .map(|_| '\n')
-            .or(|| expect_character('t').map(|_| '\t')),
-    ))
-    .or(any_character)
-    .predicate(|c| c.is_ascii_whitespace())
-}
-
-fn ascii_alphanumeric<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
-    any_character().predicate(|c| c.is_ascii_alphanumeric())
-}
-
-fn ascii_control<'a>() -> impl Parser<'a, &'a [(usize, char)], char> {
-    parcel::right(parcel::join(
-        expect_character('\\'),
-        expect_character('r')
-            .map(|_| '\r')
-            .or(|| expect_character('0').map(|_| '\0')),
-    ))
-    .or(|| any_character().predicate(|c| c.is_ascii_control()))
-}
-
-fn whitespace_wrapped<'a, P, B>(parser: P) -> impl Parser<'a, &'a [(usize, char)], B>
-where
-    B: 'a,
-    P: Parser<'a, &'a [(usize, char)], B> + 'a,
-{
-    parcel::right(parcel::join(
-        parcel::zero_or_more(whitespace()),
-        parcel::left(parcel::join(parser, parcel::zero_or_more(whitespace()))),
-    ))
-}
-
-fn character_wrapped<'a, P, B>(
-    prefix: char,
-    suffix: char,
+fn tokentype_wrapped<'a, P, B>(
+    prefix: TokenType,
+    suffix: TokenType,
     parser: P,
-) -> impl Parser<'a, &'a [(usize, char)], B>
+) -> impl Parser<'a, &'a [(usize, Token)], B>
 where
     B: 'a,
-    P: Parser<'a, &'a [(usize, char)], B> + 'a,
+    P: Parser<'a, &'a [(usize, Token)], B> + 'a,
 {
     parcel::right(parcel::join(
-        whitespace_wrapped(expect_character(prefix)),
-        parcel::left(parcel::join(
-            parser,
-            whitespace_wrapped(expect_character(suffix)),
-        )),
+        expect_tokentype(prefix),
+        parcel::left(parcel::join(parser, expect_tokentype(suffix))),
     ))
+}
+
+pub fn expect_tokentype<'a>(expected: TokenType) -> impl Parser<'a, &'a [(usize, Token)], Token> {
+    move |input: &'a [(usize, Token)]| match input.get(0) {
+        Some(&(pos, ref next)) if next.to_token_type() == expected => Ok(MatchStatus::Match {
+            span: pos..pos + 1,
+            remainder: &input[1..],
+            inner: next.clone(),
+        }),
+        _ => Ok(MatchStatus::NoMatch(input)),
+    }
 }
 
 fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
@@ -955,16 +904,34 @@ fn unzip<A, B>(pair: Vec<(A, B)>) -> (Vec<A>, Vec<B>) {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::ast::*;
+    use super::*;
 
     #[test]
     fn should_parse_complex_arithmetic_expression() {
+        use crate::lexer::Token;
         use parcel::Parser;
 
-        let input: Vec<(usize, char)> = "{ 13 - 6 + 4 * 5 + 8 / 3; }".chars().enumerate().collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
+        // { 13 - 6 + 4 * 5 + 8 / 3; }
+        let input: Vec<(usize, Token)> = vec![
+            Token::LBrace,
+            Token::IntLiteral(13),
+            Token::Minus,
+            Token::IntLiteral(6),
+            Token::Plus,
+            Token::IntLiteral(4),
+            Token::Star,
+            Token::IntLiteral(5),
+            Token::Plus,
+            Token::IntLiteral(8),
+            Token::Slash,
+            Token::IntLiteral(3),
+            Token::SemiColon,
+            Token::RBrace,
+        ]
+        .into_iter()
+        .enumerate()
+        .collect();
+        let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         assert_eq!(
             Ok(CompoundStmts::new(vec![StmtNode::Expression(term_expr!(
@@ -984,10 +951,21 @@ mod tests {
     fn should_parse_unary_expressions() {
         use parcel::Parser;
 
-        let input: Vec<(usize, char)> = "{ !1 + -2; }".chars().enumerate().collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
+        // { !1 + -2; }
+        let input: Vec<(usize, Token)> = vec![
+            Token::LBrace,
+            Token::Bang,
+            Token::IntLiteral(1),
+            Token::Plus,
+            Token::Minus,
+            Token::IntLiteral(2),
+            Token::SemiColon,
+            Token::RBrace,
+        ]
+        .into_iter()
+        .enumerate()
+        .collect();
+        let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         assert_eq!(
             Ok(CompoundStmts::new(vec![StmtNode::Expression(term_expr!(
@@ -1003,10 +981,19 @@ mod tests {
     fn should_parse_a_keyword_from_a_dereferenced_identifier() {
         use parcel::Parser;
 
-        let input: Vec<(usize, char)> = "{ return *x; }".chars().enumerate().collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
+        // { return *x; }
+        let input: Vec<(usize, Token)> = vec![
+            Token::LBrace,
+            Token::Return,
+            Token::Star,
+            Token::Identifier("x".to_string()),
+            Token::SemiColon,
+            Token::RBrace,
+        ]
+        .into_iter()
+        .enumerate()
+        .collect();
+        let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Return(Some(
             ExprNode::Deref(Box::new(ExprNode::Primary(Primary::Identifier(
@@ -1016,8 +1003,18 @@ mod tests {
 
         assert_eq!(&expected_result, &res);
 
-        let input_with_arbitrary_whitespace: Vec<(usize, char)> =
-            "{ return *          \n\nx; }".chars().enumerate().collect();
+        // { return *          \n\nx; }
+        let input_with_arbitrary_whitespace: Vec<(usize, Token)> = vec![
+            Token::LBrace,
+            Token::Return,
+            Token::Star,
+            Token::Identifier("x".to_string()),
+            Token::SemiColon,
+            Token::RBrace,
+        ]
+        .into_iter()
+        .enumerate()
+        .collect();
         let res = crate::parser::compound_statements()
             .parse(&input_with_arbitrary_whitespace)
             .map(|ms| ms.unwrap());
@@ -1035,10 +1032,21 @@ mod tests {
     fn should_parse_multiple_nested_assignment_expressions() {
         use parcel::Parser;
 
-        let input: Vec<(usize, char)> = "{ x = y = 5; }".chars().enumerate().collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
+        // { x = y = 5; }
+        let input: Vec<(usize, Token)> = vec![
+            Token::LBrace,
+            Token::Identifier("x".to_string()),
+            Token::Equal,
+            Token::Identifier("y".to_string()),
+            Token::Equal,
+            Token::IntLiteral(5),
+            Token::SemiColon,
+            Token::RBrace,
+        ]
+        .into_iter()
+        .enumerate()
+        .collect();
+        let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
             assignment_expr!(
@@ -1057,15 +1065,23 @@ mod tests {
     fn should_parse_grouping_expressions_in_correct_precedence() {
         use parcel::Parser;
 
-        let input: Vec<(usize, char)> = "{
-    2 * (3 + 4);
-}"
-        .chars()
+        // { 2 * (3 + 4); }
+        let input: Vec<(usize, Token)> = vec![
+            Token::LBrace,
+            Token::IntLiteral(2),
+            Token::Star,
+            Token::LParen,
+            Token::IntLiteral(3),
+            Token::Plus,
+            Token::IntLiteral(4),
+            Token::RParen,
+            Token::SemiColon,
+            Token::RBrace,
+        ]
+        .into_iter()
         .enumerate()
         .collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
+        let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
             factor_expr!(
@@ -1082,13 +1098,17 @@ mod tests {
     fn should_parse_string_literals() {
         use parcel::Parser;
 
-        let input: Vec<(usize, char)> = "{ \"hello\n\t\\\"world\\\"\"; }"
-            .chars()
-            .enumerate()
-            .collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
+        // { "hello\n\t\"world\""; }
+        let input: Vec<(usize, Token)> = vec![
+            Token::LBrace,
+            Token::StrLiteral("hello\n\t\"world\"".to_string()),
+            Token::SemiColon,
+            Token::RBrace,
+        ]
+        .into_iter()
+        .enumerate()
+        .collect();
+        let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
             primary_expr!(str "hello\n\t\"world\""),
@@ -1101,10 +1121,17 @@ mod tests {
     fn should_parse_character_literals() {
         use parcel::Parser;
 
-        let input: Vec<(usize, char)> = "{ \'a\'; }".chars().enumerate().collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
+        // { \'a\'; }
+        let input: Vec<(usize, Token)> = vec![
+            Token::LBrace,
+            Token::CharLiteral('a'),
+            Token::SemiColon,
+            Token::RBrace,
+        ]
+        .into_iter()
+        .enumerate()
+        .collect();
+        let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
             primary_expr!(i8 97),
@@ -1117,15 +1144,20 @@ mod tests {
     fn should_parse_index_expressions_in_correct_precedence() {
         use parcel::Parser;
 
-        let input: Vec<(usize, char)> = "{
-    x[1];
-}"
-        .chars()
+        // "{ x[1]; }"
+        let input: Vec<(usize, Token)> = vec![
+            Token::LBrace,
+            Token::Identifier("x".to_string()),
+            Token::LBracket,
+            Token::IntLiteral(1),
+            Token::RBracket,
+            Token::SemiColon,
+            Token::RBrace,
+        ]
+        .into_iter()
         .enumerate()
         .collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
+        let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
             ExprNode::Index("x".to_string(), Box::new(primary_expr!(i8 1))),
@@ -1138,17 +1170,32 @@ mod tests {
     fn should_parse_for_statement() {
         use parcel::Parser;
 
-        let input: Vec<(usize, char)> = "{
-    for (i=0; i<5; i++) {
-        i;
-    }
-}"
-        .chars()
+        // { for (i=0; i<5; i++) { i; } }
+        let input: Vec<(usize, Token)> = vec![
+            Token::LBrace,
+            Token::For,
+            Token::LParen,
+            Token::Identifier("i".to_string()),
+            Token::Equal,
+            Token::IntLiteral(0),
+            Token::SemiColon,
+            Token::Identifier("i".to_string()),
+            Token::LessThan,
+            Token::IntLiteral(5),
+            Token::SemiColon,
+            Token::Identifier("i".to_string()),
+            Token::PlusPlus,
+            Token::RParen,
+            Token::LBrace,
+            Token::Identifier("i".to_string()),
+            Token::SemiColon,
+            Token::RBrace,
+            Token::RBrace,
+        ]
+        .into_iter()
         .enumerate()
         .collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input)
-            .map(|ms| ms.unwrap());
+        let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::For(
             Box::new(StmtNode::Expression(assignment_expr!(
@@ -1174,8 +1221,18 @@ mod tests {
     fn should_fail_to_parse_keyword_as_identifier() {
         use parcel::Parser;
 
-        let input: Vec<(usize, char)> = "{ return auto; }".chars().enumerate().collect();
-        let res = crate::parser::compound_statements()
+        // { return auto; }
+        let input: Vec<(usize, Token)> = vec![
+            Token::LBrace,
+            Token::Return,
+            Token::Auto,
+            Token::SemiColon,
+            Token::RBrace,
+        ]
+        .into_iter()
+        .enumerate()
+        .collect();
+        let res = compound_statements()
             .parse(&input)
             .ok()
             .and_then(|ms| match ms {
