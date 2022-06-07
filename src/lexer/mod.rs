@@ -1,3 +1,4 @@
+mod rewrite;
 mod stack;
 
 /// Defines the wrapper type for an error returned from Lexing
