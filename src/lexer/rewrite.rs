@@ -90,3 +90,34 @@ impl Token {
         }
     }
 }
+
+/// Provides input tracking.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Cursor {
+    index: usize,
+    col: usize,
+    line: usize,
+}
+
+impl Cursor {
+    pub const fn new(index: usize, col: usize, line: usize) -> Self {
+        Self { index, col, line }
+    }
+
+    pub fn increment_column_mut(&mut self) {
+        self.index += 1;
+        self.col += 1;
+    }
+
+    pub fn increment_line_mut(&mut self) {
+        self.index += 1;
+        self.line += 1;
+        self.col += 0;
+    }
+}
+
+impl Default for Cursor {
+    fn default() -> Self {
+        Self::new(0, 0, 1)
+    }
+}
