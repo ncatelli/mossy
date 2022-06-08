@@ -1242,7 +1242,7 @@ impl<'a> Iterator for ScannerIntoIterator<'a> {
 ///
 /// # Notes
 /// This requires a needless collect to prevent a stack error.
-#[allow(clippy::needless_collect)]
+#[allow(clippy::needless_collect, unused)]
 pub fn lex(src: &str) -> LexResult {
     let scanner = Scanner::new(src);
     let tokens: Vec<Result<Token, LexError>> = scanner.into_iter().collect();
