@@ -6,6 +6,7 @@ pub type LexResult<'a> = Result<Vec<Token<'a>>, LexError>;
 
 /// Provides metadata about the classification of a given Token.
 #[derive(Debug)]
+#[allow(unused)]
 pub enum TokenClass {
     Identifier,
     Keywords,
@@ -16,6 +17,7 @@ pub enum TokenClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(unused)]
 pub enum TokenKind {
     Identifier,
 
@@ -209,7 +211,7 @@ impl TokenKind {
 }
 
 /// Provides input tracking.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Cursor {
     index: usize,
     col: usize,
@@ -255,7 +257,7 @@ impl core::fmt::Display for Cursor {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Span {
     start: Cursor,
     end: Cursor,
@@ -282,7 +284,7 @@ impl core::fmt::Display for Span {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Token<'a> {
     span: Span,
     data: Option<&'a str>,
@@ -322,12 +324,12 @@ impl<'a> Token<'a> {
 
 use std::iter::Iterator;
 
-const STACK_SIZE: usize = 4096;
+const STACK_SIZE: usize = 2048;
 
 type LexerStack<'a, const N: usize> = super::stack::Stack<TokenOrLexeme<'a>, N>;
 
 const TOKEN_OR_LEXEME_INITIALIZER: TokenOrLexeme =
-    TokenOrLexeme::Lexeme(Cursor::new(0, 0, 0), '\x00');
+    TokenOrLexeme::Lexeme(Cursor::new(0, 0, 1), '\x00');
 
 #[derive(Debug, Clone)]
 enum TokenOrLexeme<'a> {
@@ -821,13 +823,17 @@ fn stack_eval_to_token<'a>(
         (
             [TokenOrLexeme::Lexeme(start, '\''), TokenOrLexeme::Lexeme(_, c), TokenOrLexeme::Lexeme(end, '\'')],
             _,
-        ) if c.is_ascii() => LexOperation::Reduce(
-            3,
-            token!(Token::new(
-                Span::new(*start, end.increment_column()),
-                TokenKind::CharacterConstant
-            )),
-        ),
+        ) if c.is_ascii() => {
+            let data = &source[start.index..end.index];
+            LexOperation::Reduce(
+                3,
+                token!(Token::with_data(
+                    Span::new(*start, end.increment_column()),
+                    data,
+                    TokenKind::CharacterConstant
+                )),
+            )
+        }
         ([TokenOrLexeme::Lexeme(_, '\'')], Some((cur, l))) if l.is_ascii() || l == '\\' => {
             LexOperation::Shift(lexeme!(cur, l))
         }
@@ -835,11 +841,13 @@ fn stack_eval_to_token<'a>(
             [TokenOrLexeme::Lexeme(start, '\''), TokenOrLexeme::Lexeme(_, '\\'), TokenOrLexeme::Lexeme(_, c)],
             Some((end, '\'')),
         ) if c.is_ascii() => {
-            let escaped = to_ascii_escaped_char(*c).unwrap();
+            let data = &source[start.index..end.index];
+
             LexOperation::ShiftReduce(
                 4,
-                token!(Token::new(
+                token!(Token::with_data(
                     Span::new(*start, end.increment_column()),
+                    data,
                     TokenKind::CharacterConstant
                 )),
             )
@@ -847,11 +855,13 @@ fn stack_eval_to_token<'a>(
         ([TokenOrLexeme::Lexeme(start, '\''), TokenOrLexeme::Lexeme(_, c)], Some((end, '\'')))
             if c.is_ascii() =>
         {
-            let escaped = to_ascii_escaped_char(*c).unwrap();
+            let data = &source[start.index..end.index];
+
             LexOperation::ShiftReduce(
                 3,
-                token!(Token::new(
+                token!(Token::with_data(
                     Span::new(*start, end.increment_column()),
+                    data,
                     TokenKind::CharacterConstant
                 )),
             )
@@ -916,14 +926,18 @@ fn stack_eval_to_token<'a>(
             let token_cnt = contents.len() + 1;
             // lookahead's cursor is the non-inclusive end.
             let end = cur;
+            let data = &source[start.index..end.index];
 
             LexOperation::Reduce(
                 token_cnt,
-                token!(Token::new(Span::new(*start, end), TokenKind::Identifier)),
+                token!(Token::with_data(
+                    Span::new(*start, end),
+                    data,
+                    TokenKind::Identifier
+                )),
             )
         }
-
-        // if lookahead doesn't match an identifier reduce
+        // end of input
         (
             [TokenOrLexeme::Lexeme(start, start_c), contents @ .., TokenOrLexeme::Lexeme(end, end_c)],
             None,
@@ -937,12 +951,19 @@ fn stack_eval_to_token<'a>(
                 lexeme_is_identifier_ascii(),
             ) =>
         {
+            // increment column to extend past the end of input.
+            let end = end.increment_column();
+            let data = &source[start.index..end.index];
             let token_cnt = contents.len() + 2;
             // lookahead's cursor is the non-inclusive end.
 
             LexOperation::Reduce(
                 token_cnt,
-                token!(Token::new(Span::new(*start, *end), TokenKind::Identifier)),
+                token!(Token::with_data(
+                    Span::new(*start, end),
+                    data,
+                    TokenKind::Identifier
+                )),
             )
         }
 
@@ -951,109 +972,99 @@ fn stack_eval_to_token<'a>(
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
-                data: Some(data),
+                data: Some("signed"),
             })],
             _,
-        ) if data == &"signed" => {
-            LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Signed)))
-        }
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Signed))),
         (
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
-                data: Some(data),
+                data: Some("unsigned"),
             })],
             _,
-        ) if data == &"unsigned" => {
-            LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Unsigned)))
-        }
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Unsigned))),
         (
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
-                data: Some(data),
+                data: Some("void"),
             })],
             _,
-        ) if data == &"void" => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Void))),
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Void))),
         (
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
-                data: Some(data),
+                data: Some("char"),
             })],
             _,
-        ) if data == &"char" => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Char))),
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Char))),
         (
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
-                data: Some(data),
+                data: Some("short"),
             })],
             _,
-        ) if data == &"short" => {
-            LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Short)))
-        }
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Short))),
         (
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
-                data: Some(data),
+                data: Some("int"),
             })],
             _,
-        ) if data == &"int" => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Int))),
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Int))),
 
         (
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
-                data: Some(data),
+                data: Some("long"),
             })],
             _,
-        ) if data == &"long" => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Long))),
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Long))),
         (
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
-                data: Some(data),
+                data: Some("if"),
             })],
             _,
-        ) if data == &"if" => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::If))),
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::If))),
         (
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
-                data: Some(data),
+                data: Some("else"),
             })],
             _,
-        ) if data == &"else" => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Else))),
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Else))),
         (
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
-                data: Some(data),
+                data: Some("for"),
             })],
             _,
-        ) if data == &"for" => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::For))),
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::For))),
         (
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
-                data: Some(data),
+                data: Some("while"),
             })],
             _,
-        ) if data == &"while" => {
-            LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::While)))
-        }
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::While))),
         (
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
-                data: Some(data),
+                data: Some("return"),
             })],
             _,
-        ) if data == &"return" => {
-            LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Return)))
-        }
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Return))),
 
         ([TokenOrLexeme::Token(_)], _) | ([.., TokenOrLexeme::Token(_)], _) => {
             LexOperation::NoFurtherRefinement
@@ -1113,7 +1124,7 @@ impl<'a> Scanner<'a> {
         use ScanState::*;
 
         if self.iter.peek().is_none() {
-            Done
+            ScanState::Done
         } else {
             let mut lookahead = self.iter.peek().copied();
             loop {
@@ -1166,7 +1177,6 @@ impl<'a> Scanner<'a> {
                         for _ in 0..by {
                             self.stack.pop_mut();
                         }
-                        self.cursor.increment_column_mut()
                     }
                     LexOperation::Advance(by, AdvanceOperation::NoOp) => {
                         for _ in 0..by {
@@ -1184,11 +1194,13 @@ impl<'a> Scanner<'a> {
                         self.stack.push_mut(tol);
                     }
                     LexOperation::NoFurtherRefinement => match self.stack.pop_mut() {
-                        Some(TokenOrLexeme::Token(tok)) => return Ok(tok),
+                        Some(TokenOrLexeme::Token(tok)) => return ScanState::Ok(tok),
                         _ => return Err(format!("invalid token at {}", &self.cursor)),
                     },
 
-                    LexOperation::Err(e) => return Err(format!("{} at {}", e, &self.cursor)),
+                    LexOperation::Err(e) => {
+                        return ScanState::Err(format!("{} at {}", e, &self.cursor))
+                    }
                 }
             }
         }
@@ -1235,6 +1247,7 @@ pub fn lex(src: &str) -> LexResult {
     let scanner = Scanner::new(src);
     let tokens: Vec<Result<Token, LexError>> = scanner.into_iter().collect();
     let collected_result: Result<Vec<Token>, String> = tokens.into_iter().collect();
+
     collected_result
 }
 
@@ -1250,6 +1263,27 @@ mod tests {
         let token = Token::new(span, TokenKind::Int);
 
         assert_eq!(Some("int"), token.str_from_input(input))
+    }
+
+    #[test]
+    fn should_lex_input() {
+        let input = "unsigned int";
+
+        let res = lex(input);
+
+        assert_eq!(
+            Ok(vec![
+                Token::new(
+                    Span::new(Cursor::new(0, 0, 1), Cursor::new(8, 8, 1)),
+                    TokenKind::Unsigned
+                ),
+                Token::new(
+                    Span::new(Cursor::new(9, 9, 1), Cursor::new(12, 12, 1)),
+                    TokenKind::Int
+                )
+            ]),
+            res
+        )
     }
 
     #[test]
