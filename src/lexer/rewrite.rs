@@ -24,7 +24,6 @@ pub enum TokenKind {
     FloatConstant,
     CharacterConstant,
     IntegerConstant,
-    EnumerationConstant,
 
     StringLiteral,
 
@@ -110,7 +109,6 @@ pub enum TokenKind {
 
     // Separators
     SemiColon,
-    WhiteSpace,
 }
 
 impl TokenKind {
@@ -151,8 +149,7 @@ impl TokenKind {
 
             TokenKind::FloatConstant
             | TokenKind::IntegerConstant
-            | TokenKind::CharacterConstant
-            | TokenKind::EnumerationConstant => TokenClass::Constant,
+            | TokenKind::CharacterConstant => TokenClass::Constant,
 
             TokenKind::StringLiteral => TokenClass::StringLiteral,
 
@@ -204,7 +201,7 @@ impl TokenKind {
             | TokenKind::Tilde => TokenClass::Operator,
 
             // Separator
-            TokenKind::SemiColon | TokenKind::WhiteSpace => TokenClass::Separator,
+            TokenKind::SemiColon => TokenClass::Separator,
         }
     }
 }
@@ -479,6 +476,13 @@ fn stack_eval_to_token<'a>(
                 TokenKind::SemiColon
             )),
         ),
+        ([TokenOrLexeme::Lexeme(cur, ':')], _) => LexOperation::Reduce(
+            1,
+            token!(Token::new(
+                Span::new(*cur, cur.increment_column()),
+                TokenKind::Colon
+            )),
+        ),
         ([TokenOrLexeme::Lexeme(cur, ',')], _) => LexOperation::Reduce(
             1,
             token!(Token::new(
@@ -486,7 +490,35 @@ fn stack_eval_to_token<'a>(
                 TokenKind::Comma
             )),
         ),
+        ([TokenOrLexeme::Lexeme(cur, '.')], _) => LexOperation::Reduce(
+            1,
+            token!(Token::new(
+                Span::new(*cur, cur.increment_column()),
+                TokenKind::Dot
+            )),
+        ),
+        ([TokenOrLexeme::Lexeme(cur, '?')], _) => LexOperation::Reduce(
+            1,
+            token!(Token::new(
+                Span::new(*cur, cur.increment_column()),
+                TokenKind::Question
+            )),
+        ),
 
+        (
+            [TokenOrLexeme::Token(Token {
+                span: start,
+                kind: TokenKind::Minus,
+                ..
+            })],
+            Some((end, '>')),
+        ) => LexOperation::ShiftReduce(
+            2,
+            token!(Token::new(
+                Span::new(start.start, end.increment_column()),
+                TokenKind::Arrow,
+            )),
+        ),
         (
             [TokenOrLexeme::Token(Token {
                 span: start,
@@ -547,6 +579,20 @@ fn stack_eval_to_token<'a>(
         (
             [TokenOrLexeme::Token(Token {
                 span: start,
+                kind: TokenKind::RightShift,
+                ..
+            })],
+            Some((end, '=')),
+        ) => LexOperation::ShiftReduce(
+            2,
+            token!(Token::new(
+                Span::new(start.start, end.increment_column()),
+                TokenKind::RightShiftEqual
+            )),
+        ),
+        (
+            [TokenOrLexeme::Token(Token {
+                span: start,
                 kind: TokenKind::GreaterThan,
                 ..
             })],
@@ -578,6 +624,20 @@ fn stack_eval_to_token<'a>(
             token!(Token::new(
                 Span::new(start.start, end.increment_column()),
                 TokenKind::LeftShift
+            )),
+        ),
+        (
+            [TokenOrLexeme::Token(Token {
+                span: start,
+                kind: TokenKind::LeftShift,
+                ..
+            })],
+            Some((end, '=')),
+        ) => LexOperation::ShiftReduce(
+            2,
+            token!(Token::new(
+                Span::new(start.start, end.increment_column()),
+                TokenKind::LeftShiftEqual
             )),
         ),
         (
@@ -820,10 +880,35 @@ fn stack_eval_to_token<'a>(
         ),
 
         (
+            [TokenOrLexeme::Token(Token {
+                span: start,
+                kind: TokenKind::PercentSign,
+                ..
+            })],
+            Some((end, '=')),
+        ) => LexOperation::ShiftReduce(
+            2,
+            token!(Token::new(
+                Span::new(start.start, end.increment_column()),
+                TokenKind::PercentEqual
+            )),
+        ),
+        ([TokenOrLexeme::Lexeme(cur, '%')], _) => LexOperation::Reduce(
+            1,
+            token!(Token::new(
+                Span::new(*cur, cur.increment_column()),
+                TokenKind::PercentSign
+            )),
+        ),
+
+        (
             [TokenOrLexeme::Lexeme(start, '\''), TokenOrLexeme::Lexeme(_, c), TokenOrLexeme::Lexeme(end, '\'')],
             _,
         ) if c.is_ascii() => {
-            let data = &source[start.index..end.index];
+            let start_idx = start.index + 1;
+            let end_idx = end.index;
+            let data = &source[start_idx..end_idx];
+
             LexOperation::Reduce(
                 3,
                 token!(Token::with_data(
@@ -840,7 +925,9 @@ fn stack_eval_to_token<'a>(
             [TokenOrLexeme::Lexeme(start, '\''), TokenOrLexeme::Lexeme(_, '\\'), TokenOrLexeme::Lexeme(_, c)],
             Some((end, '\'')),
         ) if c.is_ascii() => {
-            let data = &source[start.index..end.index];
+            let start_idx = start.index + 1;
+            let end_idx = end.index;
+            let data = &source[start_idx..end_idx];
 
             LexOperation::ShiftReduce(
                 4,
@@ -854,7 +941,9 @@ fn stack_eval_to_token<'a>(
         ([TokenOrLexeme::Lexeme(start, '\''), TokenOrLexeme::Lexeme(_, c)], Some((end, '\'')))
             if c.is_ascii() =>
         {
-            let data = &source[start.index..end.index];
+            let start_idx = start.index + 1;
+            let end_idx = end.index;
+            let data = &source[start_idx..end_idx];
 
             LexOperation::ShiftReduce(
                 3,
@@ -870,26 +959,42 @@ fn stack_eval_to_token<'a>(
             LexOperation::Shift(lexeme!(cur, '\"'))
         }
         ([TokenOrLexeme::Lexeme(_, '\"'), TokenOrLexeme::Lexeme(cur, '\\')], Some((_, c))) => {
-            LexOperation::ShiftReduce(1, lexeme!(*cur, to_ascii_escaped_char(c).unwrap()))
+            LexOperation::ShiftReduce(2, lexeme!(*cur, to_ascii_escaped_char(c).unwrap()))
         }
         ([TokenOrLexeme::Lexeme(start, '\"'), inner @ ..], Some((end, '\"'))) => {
             let token_cnt = inner.len() + 2;
+
+            let start_idx = start.index + 1;
+            let end_idx = end.index;
+            let data = &source[start_idx..end_idx];
+
             LexOperation::ShiftReduce(
                 token_cnt,
-                token!(Token::new(
+                token!(Token::with_data(
                     Span::new(*start, end.increment_column()),
+                    data,
                     TokenKind::StringLiteral
                 )),
             )
         }
+        ([TokenOrLexeme::Lexeme(_, '\"'), ..], Some((cur, c))) => {
+            LexOperation::Shift(lexeme!(cur, c))
+        }
 
-        ([TokenOrLexeme::Lexeme(cur, c)], _) if c.is_digit(10) => LexOperation::Reduce(
-            1,
-            token!(Token::new(
-                Span::new(*cur, cur.increment_column()),
-                TokenKind::IntegerConstant
-            )),
-        ),
+        ([TokenOrLexeme::Lexeme(cur, c)], _) if c.is_digit(10) => {
+            let start = cur.index;
+            let end = start + 1;
+            let data = &source[start..end];
+
+            LexOperation::Reduce(
+                1,
+                token!(Token::with_data(
+                    Span::new(*cur, cur.increment_column()),
+                    data,
+                    TokenKind::IntegerConstant
+                )),
+            )
+        }
         (
             [TokenOrLexeme::Token(Token {
                 span,
@@ -897,13 +1002,20 @@ fn stack_eval_to_token<'a>(
                 ..
             })],
             Some((cur, c)),
-        ) if c.is_digit(10) => LexOperation::ShiftReduce(
-            2,
-            token!(Token::new(
-                Span::new(span.start, cur.increment_column()),
-                TokenKind::IntegerConstant,
-            )),
-        ),
+        ) if c.is_digit(10) => {
+            let start = span.start.index;
+            let end = cur.index + 1;
+            let data = &source[start..end];
+
+            LexOperation::ShiftReduce(
+                2,
+                token!(Token::with_data(
+                    Span::new(span.start, cur.increment_column()),
+                    data,
+                    TokenKind::IntegerConstant,
+                )),
+            )
+        }
 
         // Identifiers
         ([contents @ ..], Some((cur, c)))
@@ -1212,6 +1324,14 @@ fn stack_eval_to_token<'a>(
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
+                data: Some("volatile"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Volatile))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
                 data: Some("while"),
             })],
             _,
@@ -1417,24 +1537,198 @@ mod tests {
     }
 
     #[test]
-    fn should_lex_input() {
-        let input = "unsigned int";
+    fn should_scan_single_token() {
+        let inputs = [(0, "{"), (1, " {"), (1, " { ")];
 
+        for (pos, input) in inputs.iter() {
+            let mut scanner = Scanner::new(input).into_iter();
+
+            let start = *pos;
+            let end = start + 1;
+
+            assert_eq!(
+                Some(Ok(Token::new(
+                    Span::new(Cursor::new(start, start, 1), Cursor::new(end, end, 1)),
+                    TokenKind::LeftBrace
+                ))),
+                scanner.next()
+            )
+        }
+    }
+
+    #[test]
+    fn should_scan_compound_token() {
+        let input_expected = [
+            (
+                [(0, 1, "<"), (1, 2, " <"), (1, 2, " < ")],
+                TokenKind::LessThan,
+            ),
+            (
+                [(0, 2, "<="), (1, 3, " <="), (1, 3, " <= ")],
+                TokenKind::LessEqual,
+            ),
+        ];
+
+        for (inputs, expected_kind) in input_expected {
+            for (start, end, input) in inputs {
+                let mut scanner = Scanner::new(input).into_iter();
+
+                assert_eq!(
+                    Some(Ok(Token::new(
+                        Span::new(Cursor::new(start, start, 1), Cursor::new(end, end, 1)),
+                        expected_kind
+                    ))),
+                    scanner.next()
+                )
+            }
+        }
+    }
+
+    #[test]
+    fn should_scan_digit_token() {
+        let input_expected = [
+            ([(0, 1, "1"), (1, 2, " 1"), (1, 2, " 1 ")], "1"),
+            ([(0, 3, "123"), (1, 4, " 123"), (1, 4, " 123 ")], "123"),
+        ];
+
+        for (inputs, data) in input_expected {
+            for (start, end, input) in inputs {
+                let mut scanner = Scanner::new(input).into_iter();
+
+                assert_eq!(
+                    Some(Ok(Token::with_data(
+                        Span::new(Cursor::new(start, start, 1), Cursor::new(end, end, 1)),
+                        data,
+                        TokenKind::IntegerConstant
+                    ))),
+                    scanner.next()
+                )
+            }
+        }
+    }
+
+    #[test]
+    fn should_scan_char_literals() {
+        let inputs = [
+            (0, 3, "\'a\'", "a"),
+            (1, 4, " \'a\'", "a"),
+            (1, 4, " \'a\' ", "a"),
+            (0, 3, "\'\t\'", "\t"),
+            (1, 4, " \'\t\'", "\t"),
+            (0, 3, "\'\t\' ", "\t"),
+        ];
+
+        for (start, end, input, data) in inputs {
+            let mut scanner = Scanner::new(input).into_iter();
+
+            assert_eq!(
+                Some(Ok(Token::with_data(
+                    Span::new(Cursor::new(start, start, 1), Cursor::new(end, end, 1)),
+                    data,
+                    TokenKind::CharacterConstant
+                ))),
+                scanner.next()
+            )
+        }
+    }
+
+    #[test]
+    fn should_scan_string_literals() {
+        let input_expected = [
+            (0, 7, "\"hello\"", "hello"),
+            (1, 8, " \"hello\"", "hello"),
+            (1, 8, " \"hello\" ", "hello"),
+            (0, 9, "\"hello\\n\"", "hello\\n"),
+        ];
+
+        for (start, end, input, expected_data) in input_expected {
+            let mut scanner = Scanner::new(input).into_iter();
+
+            assert_eq!(
+                Some(Ok(Token::with_data(
+                    Span::new(Cursor::new(start, start, 1), Cursor::new(end, end, 1)),
+                    expected_data,
+                    TokenKind::StringLiteral
+                ))),
+                scanner.next()
+            )
+        }
+    }
+
+    #[test]
+    fn should_scan_identifier() {
+        let input_expected = [
+            (0, 4, "test", "test"),
+            (1, 5, " test", "test"),
+            (1, 5, " test ", "test"),
+        ];
+
+        for (start, end, input, expected_data) in input_expected {
+            let mut scanner = Scanner::new(input).into_iter();
+
+            assert_eq!(
+                Some(Ok(Token::with_data(
+                    Span::new(Cursor::new(start, start, 1), Cursor::new(end, end, 1)),
+                    expected_data,
+                    TokenKind::Identifier
+                ))),
+                scanner.next()
+            )
+        }
+    }
+
+    #[test]
+    fn should_scan_keywords() {
+        let input_expected = [(0, 3, "for"), (1, 4, " for"), (1, 4, " for ")];
+
+        for (start, end, input) in input_expected {
+            let mut scanner = Scanner::new(input).into_iter();
+
+            assert_eq!(
+                Some(Ok(Token::new(
+                    Span::new(Cursor::new(start, start, 1), Cursor::new(end, end, 1)),
+                    TokenKind::For
+                ))),
+                scanner.next()
+            )
+        }
+    }
+
+    #[test]
+    fn should_scan_multiple_tokens() {
+        let input = "{ 1 + 2; }";
         let res = lex(input);
 
-        assert_eq!(
-            Ok(vec![
-                Token::new(
-                    Span::new(Cursor::new(0, 0, 1), Cursor::new(8, 8, 1)),
-                    TokenKind::Unsigned
-                ),
-                Token::new(
-                    Span::new(Cursor::new(9, 9, 1), Cursor::new(12, 12, 1)),
-                    TokenKind::Int
-                )
-            ]),
-            res
-        )
+        let expected: Result<Vec<_>, _> = Ok(vec![
+            Token::new(
+                Span::new(Cursor::new(0, 0, 1), Cursor::new(1, 1, 1)),
+                TokenKind::LeftBrace,
+            ),
+            Token::with_data(
+                Span::new(Cursor::new(2, 2, 1), Cursor::new(3, 3, 1)),
+                "1",
+                TokenKind::IntegerConstant,
+            ),
+            Token::new(
+                Span::new(Cursor::new(4, 4, 1), Cursor::new(5, 5, 1)),
+                TokenKind::Plus,
+            ),
+            Token::with_data(
+                Span::new(Cursor::new(6, 6, 1), Cursor::new(7, 7, 1)),
+                "2",
+                TokenKind::IntegerConstant,
+            ),
+            Token::new(
+                Span::new(Cursor::new(7, 7, 1), Cursor::new(8, 8, 1)),
+                TokenKind::SemiColon,
+            ),
+            Token::new(
+                Span::new(Cursor::new(9, 9, 1), Cursor::new(10, 10, 1)),
+                TokenKind::RightBrace,
+            ),
+        ]);
+
+        assert_eq!(expected, res)
     }
 
     #[test]
