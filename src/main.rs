@@ -71,11 +71,11 @@ fn compile(source: &str) -> RuntimeResult<String> {
         .map_err(|e| RuntimeError::Undefined(format!("{:?}", e)))?;
 
     let preprocessed: String = pre_processed_input.into_iter().map(|(_, c)| c).collect();
-    lexer::rewrite::lex(&preprocessed)
+    lexer::lex(&preprocessed)
         .map(|t| {
             t.into_iter()
                 .enumerate()
-                .collect::<Vec<(usize, lexer::rewrite::Token)>>()
+                .collect::<Vec<(usize, lexer::Token)>>()
         })
         .and_then(|tokens| {
             parser::parse(&tokens)

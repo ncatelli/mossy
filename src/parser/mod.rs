@@ -1,6 +1,6 @@
 use parcel::prelude::v1::*;
 
-use crate::lexer::rewrite::{Token, TokenKind};
+use crate::lexer::{Token, TokenKind};
 
 pub use crate::stage::type_check::ast::Type;
 use crate::stage::type_check::{
@@ -613,7 +613,7 @@ fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], Pri
             } => lit.to_string(),
             _ => "".to_string(),
         })
-        .map(|lit| crate::lexer::rewrite::to_ascii_escaped_string(&lit))
+        .map(|lit| crate::lexer::to_ascii_escaped_string(&lit))
         .map(|lit| lit.into_bytes())
         .map(ast::Primary::Str)
 }
@@ -934,7 +934,7 @@ mod tests {
 
     #[test]
     fn should_parse_complex_arithmetic_expression() {
-        use crate::lexer::rewrite::{Cursor, Span, Token, TokenKind};
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
 
         // just using empty spans for testing.
@@ -978,7 +978,7 @@ mod tests {
 
     #[test]
     fn should_parse_unary_expressions() {
-        use crate::lexer::rewrite::{Cursor, Span, Token, TokenKind};
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
 
         // just using empty spans for testing.
@@ -1012,7 +1012,7 @@ mod tests {
 
     #[test]
     fn should_parse_a_keyword_from_a_dereferenced_identifier() {
-        use crate::lexer::rewrite::{Cursor, Span, Token, TokenKind};
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
 
         // just using empty spans for testing.
@@ -1050,7 +1050,7 @@ mod tests {
 
     #[test]
     fn should_parse_multiple_nested_assignment_expressions() {
-        use crate::lexer::rewrite::{Cursor, Span, Token, TokenKind};
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
 
         // just using empty spans for testing.
@@ -1088,7 +1088,7 @@ mod tests {
 
     #[test]
     fn should_parse_grouping_expressions_in_correct_precedence() {
-        use crate::lexer::rewrite::{Cursor, Span, Token, TokenKind};
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
 
         // just using empty spans for testing.
@@ -1126,7 +1126,7 @@ mod tests {
 
     #[test]
     fn should_parse_string_literals() {
-        use crate::lexer::rewrite::{Cursor, Span, Token, TokenKind};
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
 
         // just using empty spans for testing.
@@ -1154,7 +1154,7 @@ mod tests {
 
     #[test]
     fn should_parse_character_literals() {
-        use crate::lexer::rewrite::{Cursor, Span, Token, TokenKind};
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
 
         // just using empty spans for testing.
@@ -1182,7 +1182,7 @@ mod tests {
 
     #[test]
     fn should_parse_index_expressions_in_correct_precedence() {
-        use crate::lexer::rewrite::{Cursor, Span, Token, TokenKind};
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
 
         // just using empty spans for testing.
@@ -1213,7 +1213,7 @@ mod tests {
 
     #[test]
     fn should_parse_for_statement() {
-        use crate::lexer::rewrite::{Cursor, Span, Token, TokenKind};
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
 
         // just using empty spans for testing.
@@ -1269,7 +1269,7 @@ mod tests {
 
     #[test]
     fn should_fail_to_parse_keyword_as_identifier() {
-        use crate::lexer::rewrite::{Cursor, Span, Token, TokenKind};
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
 
         // just using empty spans for testing.
