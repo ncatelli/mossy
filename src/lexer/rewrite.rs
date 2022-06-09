@@ -63,7 +63,7 @@ pub enum TokenKind {
 
     // Operators
     Ampersand,
-    AmpersandAmperand,
+    AmpersandAmpersand,
     AmpersandEqual,
     Arrow,
     Bang,
@@ -156,7 +156,7 @@ impl TokenKind {
             TokenKind::Identifier => TokenClass::Identifier,
 
             TokenKind::Ampersand
-            | TokenKind::AmpersandAmperand
+            | TokenKind::AmpersandAmpersand
             | TokenKind::AmpersandEqual
             | TokenKind::Arrow
             | TokenKind::Bang
@@ -673,7 +673,7 @@ fn stack_eval_to_token<'a>(
             2,
             token!(Token::new(
                 Span::new(start.start, end.increment_column()),
-                TokenKind::AmpersandAmperand
+                TokenKind::AmpersandAmpersand
             )),
         ),
         (
