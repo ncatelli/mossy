@@ -355,7 +355,7 @@ macro_rules! lexeme {
 }
 
 #[derive(Debug, Clone, Copy)]
-enum EscapedAscii {
+pub enum EscapedAscii {
     /// Character was escaped
     Escaped(char),
     /// Represents a standard character
@@ -363,14 +363,18 @@ enum EscapedAscii {
 }
 
 impl EscapedAscii {
-    fn unwrap(self) -> char {
+    pub fn as_char(&self) -> char {
         match self {
-            Self::Escaped(c) | Self::NonEscaped(c) => c,
+            Self::Escaped(c) | Self::NonEscaped(c) => *c,
         }
+    }
+
+    pub fn unwrap(self) -> char {
+        self.as_char()
     }
 }
 
-fn to_ascii_escaped_char(c: char) -> EscapedAscii {
+pub fn to_ascii_escaped_char(c: char) -> EscapedAscii {
     use EscapedAscii::*;
 
     match c {
@@ -379,6 +383,33 @@ fn to_ascii_escaped_char(c: char) -> EscapedAscii {
         'n' => Escaped('\n'),
         other => NonEscaped(other),
     }
+}
+
+pub fn to_ascii_escaped_string<S: AsRef<str>>(input: S) -> String {
+    let mut iter = input.as_ref().chars().peekable();
+    let mut chars = vec![];
+    let mut curr = iter.next();
+    let mut next = iter.peek();
+    while curr.is_some() {
+        match (curr, next) {
+            (None, Some(_)) | (None, None) => return String::new(),
+            (Some(c), None) => chars.push(EscapedAscii::NonEscaped(c)),
+            (Some('\\'), Some(next_c)) => match to_ascii_escaped_char(*next_c) {
+                EscapedAscii::Escaped(c) => {
+                    chars.push(EscapedAscii::Escaped(c));
+                    // consume one extra char.
+                    iter.next();
+                }
+                EscapedAscii::NonEscaped(_) => chars.push(EscapedAscii::NonEscaped('\\')),
+            },
+            (Some(c), Some(_)) => chars.push(EscapedAscii::NonEscaped(c)),
+        }
+
+        curr = iter.next();
+        next = iter.peek();
+    }
+
+    chars.into_iter().map(|ea| ea.as_char()).collect::<String>()
 }
 
 #[derive(Debug)]

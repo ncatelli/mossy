@@ -613,6 +613,7 @@ fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], Pri
             } => lit.to_string(),
             _ => "".to_string(),
         })
+        .map(|lit| crate::lexer::rewrite::to_ascii_escaped_string(&lit))
         .map(|lit| lit.into_bytes())
         .map(ast::Primary::Str)
 }
