@@ -1398,7 +1398,6 @@ impl<'a> Scanner<'a> {
                         // safe to unwrap due to is_some guarantee
                         self.stack.push_mut(lexeme!(cur, '\n'));
                         lookahead = consume_and_peek_from_iter(&mut self.iter);
-                        self.cursor.increment_line_mut();
                     }
                     LexOperation::Shift(next_val) => {
                         // safe to unwrap due to is_some guarantee
@@ -1431,7 +1430,8 @@ impl<'a> Scanner<'a> {
                         for _ in 0..by {
                             self.stack.pop_mut();
                         }
-                        self.cursor.increment_line_mut()
+
+                        self.cursor.increment_line_mut();
                     }
                     // this will only occur with whitespace
                     LexOperation::Advance(by, AdvanceOperation::IncrementColumn) => {
