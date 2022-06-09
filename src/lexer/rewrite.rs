@@ -208,7 +208,7 @@ impl TokenKind {
 
 /// Provides input tracking.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Cursor {
+pub struct Cursor {
     index: usize,
     col: usize,
     line: usize,
@@ -260,7 +260,7 @@ pub struct Span {
 }
 
 impl Span {
-    fn new(start: Cursor, end: Cursor) -> Self {
+    pub fn new(start: Cursor, end: Cursor) -> Self {
         Self { start, end }
     }
 }
@@ -282,9 +282,9 @@ impl core::fmt::Display for Span {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token<'a> {
-    span: Span,
-    data: Option<&'a str>,
-    kind: TokenKind,
+    pub span: Span,
+    pub data: Option<&'a str>,
+    pub kind: TokenKind,
 }
 
 impl<'a> Token<'a> {
@@ -331,15 +331,6 @@ const TOKEN_OR_LEXEME_INITIALIZER: TokenOrLexeme =
 enum TokenOrLexeme<'a> {
     Token(Token<'a>),
     Lexeme(Cursor, char),
-}
-
-impl<'a> TokenOrLexeme<'a> {
-    fn to_lexeme(&self) -> Option<char> {
-        match self {
-            TokenOrLexeme::Lexeme(_, ch) => Some(*ch),
-            TokenOrLexeme::Token(_) => None,
-        }
-    }
 }
 
 impl<'a> Default for TokenOrLexeme<'a> {
@@ -394,7 +385,6 @@ fn to_ascii_escaped_char(c: char) -> EscapedAscii {
 enum AdvanceOperation {
     IncrementLine,
     IncrementColumn,
-    NoOp,
 }
 
 #[derive(Debug)]
@@ -1445,11 +1435,6 @@ impl<'a> Scanner<'a> {
                     }
                     // this will only occur with whitespace
                     LexOperation::Advance(by, AdvanceOperation::IncrementColumn) => {
-                        for _ in 0..by {
-                            self.stack.pop_mut();
-                        }
-                    }
-                    LexOperation::Advance(by, AdvanceOperation::NoOp) => {
                         for _ in 0..by {
                             self.stack.pop_mut();
                         }
