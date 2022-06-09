@@ -1,6 +1,6 @@
 use parcel::prelude::v1::*;
 
-use crate::lexer::{Token, TokenType};
+use crate::lexer::{Token, TokenKind};
 
 pub use crate::stage::type_check::ast::Type;
 use crate::stage::type_check::{
@@ -28,7 +28,7 @@ pub fn parse(input: &[(usize, Token)]) -> Result<CompilationUnit, ParseErr> {
             .or(|| {
                 parcel::left(parcel::join(
                     function_prototype(),
-                    expect_tokentype(TokenType::SemiColon),
+                    expect_tokentype(TokenKind::SemiColon),
                 ))
                 .map(ast::GlobalDecls::FuncProto)
             })
@@ -56,10 +56,10 @@ pub fn parse(input: &[(usize, Token)]) -> Result<CompilationUnit, ParseErr> {
     .map(CompilationUnit::new)
 }
 
-fn function_prototype<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], FunctionProto> {
+fn function_prototype<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], FunctionProto> {
     parcel::join(
         parcel::join(type_declarator(), identifier()),
-        expect_tokentype(TokenType::LParen).and_then(|_| {
+        expect_tokentype(TokenKind::LeftParen).and_then(|_| {
             parcel::left(parcel::join(
                 parcel::join(
                     parcel::zero_or_more(
@@ -67,7 +67,7 @@ fn function_prototype<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Fun
                             type_declarator(),
                             parcel::left(parcel::join(
                                 identifier(),
-                                expect_tokentype(TokenType::Comma),
+                                expect_tokentype(TokenKind::Comma),
                             )),
                         )
                         .map(|(ty, id)| ast::Parameter::new(id, ty)),
@@ -85,28 +85,29 @@ fn function_prototype<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Fun
                             .map(|(ty, id)| ast::Parameter::new(id, ty)),
                     )
                 }),
-                expect_tokentype(TokenType::RParen),
+                expect_tokentype(TokenKind::RightParen),
             ))
         }),
     )
     .map(|((ty, id), params)| FunctionProto::new(id, ty, params))
 }
 
-fn function_definition<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], FunctionDefinition> {
+fn function_definition<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], FunctionDefinition>
+{
     parcel::join(function_prototype(), compound_statements())
         .map(|(proto, block)| FunctionDefinition::new(proto, block))
 }
 
-fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], CompoundStmts> {
+fn compound_statements<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], CompoundStmts> {
     tokentype_wrapped(
-        TokenType::LBrace,
-        TokenType::RBrace,
+        TokenKind::LeftBrace,
+        TokenKind::RightBrace,
         parcel::zero_or_more(statement()),
     )
     .map(CompoundStmts::new)
 }
 
-fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
+fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], StmtNode> {
     semicolon_terminated_statement(declaration())
         .or(if_statement)
         .or(while_statement)
@@ -117,19 +118,23 @@ fn statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
 
 fn semicolon_terminated_statement<'a, P>(
     term: P,
-) -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode>
+) -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], StmtNode>
 where
-    P: parcel::Parser<'a, &'a [(usize, Token)], StmtNode> + 'a,
+    P: parcel::Parser<'a, &'a [(usize, Token<'a>)], StmtNode> + 'a,
 {
-    parcel::left(parcel::join(term, expect_tokentype(TokenType::SemiColon)))
+    parcel::left(parcel::join(term, expect_tokentype(TokenKind::SemiColon)))
 }
 
-fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
+fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], StmtNode> {
     parcel::join(
         type_declarator(),
         parcel::join(
             identifier(),
-            tokentype_wrapped(TokenType::LBracket, TokenType::RBracket, unsigned_number()),
+            tokentype_wrapped(
+                TokenKind::LeftBracket,
+                TokenKind::RightBracket,
+                unsigned_number(),
+            ),
         ),
     )
     .map(|(ty, (id, size))| {
@@ -152,7 +157,7 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> 
             type_declarator(),
             parcel::one_or_more(parcel::left(parcel::join(
                 identifier(),
-                expect_tokentype(TokenType::Comma).optional(),
+                expect_tokentype(TokenKind::Comma).optional(),
             ))),
         )
         .map(|(ty, ids)| type_check::ast::Declaration::Scalar(ty, ids))
@@ -160,50 +165,50 @@ fn declaration<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> 
     })
 }
 
-fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
+fn if_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], StmtNode> {
     parcel::join(
         if_head(),
-        parcel::optional(expect_tokentype(TokenType::Else).and_then(|_| compound_statements())),
+        parcel::optional(expect_tokentype(TokenKind::Else).and_then(|_| compound_statements())),
     )
     .map(|((cond, cond_true), cond_false)| StmtNode::If(cond, cond_true, cond_false))
 }
 
-fn if_head<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], (ExprNode, CompoundStmts)> {
-    expect_tokentype(TokenType::If).and_then(|_| {
+fn if_head<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], (ExprNode, CompoundStmts)> {
+    expect_tokentype(TokenKind::If).and_then(|_| {
         parcel::join(
-            tokentype_wrapped(TokenType::LParen, TokenType::RParen, expression()),
+            tokentype_wrapped(TokenKind::LeftParen, TokenKind::RightParen, expression()),
             compound_statements(),
         )
     })
 }
 
-fn while_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
-    expect_tokentype(TokenType::While)
+fn while_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], StmtNode> {
+    expect_tokentype(TokenKind::While)
         .and_then(|_| {
             parcel::join(
-                tokentype_wrapped(TokenType::LParen, TokenType::RParen, expression()),
+                tokentype_wrapped(TokenKind::LeftParen, TokenKind::RightParen, expression()),
                 compound_statements(),
             )
         })
         .map(|(cond, block)| StmtNode::While(cond, block))
 }
 
-fn for_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
-    expect_tokentype(TokenType::For)
+fn for_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], StmtNode> {
+    expect_tokentype(TokenKind::For)
         .and_then(|_| {
             parcel::join(
                 tokentype_wrapped(
-                    TokenType::LParen,
-                    TokenType::RParen,
+                    TokenKind::LeftParen,
+                    TokenKind::RightParen,
                     parcel::join(
                         parcel::left(parcel::join(
                             preop_statement(),
-                            expect_tokentype(TokenType::SemiColon),
+                            expect_tokentype(TokenKind::SemiColon),
                         )),
                         parcel::join(
                             parcel::left(parcel::join(
                                 expression(),
-                                expect_tokentype(TokenType::SemiColon),
+                                expect_tokentype(TokenKind::SemiColon),
                             )),
                             postop_statement(),
                         ),
@@ -217,30 +222,30 @@ fn for_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode
         })
 }
 
-fn preop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
+fn preop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], StmtNode> {
     assignment().map(StmtNode::Expression)
 }
 
-fn postop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
+fn postop_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], StmtNode> {
     expression().map(StmtNode::Expression)
 }
 
-fn return_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], StmtNode> {
+fn return_statement<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], StmtNode> {
     parcel::right(parcel::join(
-        expect_tokentype(TokenType::Return),
+        expect_tokentype(TokenKind::Return),
         expression().optional(),
     ))
     .map(StmtNode::Return)
 }
 
-fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+fn expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
     assignment()
 }
 
-fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+fn assignment<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
     parcel::join(
         logical(),
-        expect_tokentype(TokenType::Equal).and_then(|_| assignment()),
+        expect_tokentype(TokenKind::Equal).and_then(|_| assignment()),
     )
     .map(|(lhs, rhs)| assignment_expr!(lhs, '=', rhs))
     .or(logical)
@@ -252,13 +257,13 @@ enum LogicalExprOp {
     And,
 }
 
-fn logical<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+fn logical<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
     parcel::join(
         bitwise(),
         parcel::zero_or_more(parcel::join(
-            expect_tokentype(TokenType::PipePipe)
+            expect_tokentype(TokenKind::PipePipe)
                 .map(|_| LogicalExprOp::Or)
-                .or(|| expect_tokentype(TokenType::AmpersandAmpersand).map(|_| LogicalExprOp::And)),
+                .or(|| expect_tokentype(TokenKind::AmpersandAmpersand).map(|_| LogicalExprOp::And)),
             bitwise(),
         ))
         .map(unzip),
@@ -281,14 +286,14 @@ enum BitwiseExprOp {
     And,
 }
 
-fn bitwise<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+fn bitwise<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
     parcel::join(
         equality(),
         parcel::zero_or_more(parcel::join(
-            expect_tokentype(TokenType::Pipe)
+            expect_tokentype(TokenKind::Pipe)
                 .map(|_| BitwiseExprOp::Or)
-                .or(|| expect_tokentype(TokenType::Carat).map(|_| BitwiseExprOp::Xor))
-                .or(|| expect_tokentype(TokenType::Ampersand).map(|_| BitwiseExprOp::And)),
+                .or(|| expect_tokentype(TokenKind::Caret).map(|_| BitwiseExprOp::Xor))
+                .or(|| expect_tokentype(TokenKind::Ampersand).map(|_| BitwiseExprOp::And)),
             equality(),
         ))
         .map(unzip),
@@ -311,13 +316,13 @@ enum EqualityExprOp {
     NotEqual,
 }
 
-fn equality<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+fn equality<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
     parcel::join(
         relational(),
         parcel::zero_or_more(parcel::join(
-            expect_tokentype(TokenType::EqualEqual)
+            expect_tokentype(TokenKind::EqualEqual)
                 .map(|_| EqualityExprOp::Equal)
-                .or(|| expect_tokentype(TokenType::BangEqual).map(|_| EqualityExprOp::NotEqual)),
+                .or(|| expect_tokentype(TokenKind::BangEqual).map(|_| EqualityExprOp::NotEqual)),
             relational(),
         ))
         .map(unzip),
@@ -341,19 +346,19 @@ enum RelationalExprOp {
     GreaterEqual,
 }
 
-fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+fn relational<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
     parcel::join(
         bitwise_shift(),
         parcel::zero_or_more(parcel::join(
-            expect_tokentype(TokenType::LessEqual)
+            expect_tokentype(TokenKind::LessEqual)
                 .map(|_| RelationalExprOp::LessEqual)
                 .or(|| {
-                    expect_tokentype(TokenType::GreaterEqual)
+                    expect_tokentype(TokenKind::GreaterEqual)
                         .map(|_| RelationalExprOp::GreaterEqual)
                 })
-                .or(|| expect_tokentype(TokenType::LessThan).map(|_| RelationalExprOp::LessThan))
+                .or(|| expect_tokentype(TokenKind::LessThan).map(|_| RelationalExprOp::LessThan))
                 .or(|| {
-                    expect_tokentype(TokenType::GreaterThan).map(|_| RelationalExprOp::GreaterThan)
+                    expect_tokentype(TokenKind::GreaterThan).map(|_| RelationalExprOp::GreaterThan)
                 }),
             bitwise_shift(),
         ))
@@ -381,13 +386,15 @@ enum BitwiseShiftExprOp {
     ShiftRight,
 }
 
-fn bitwise_shift<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+fn bitwise_shift<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
     parcel::join(
         addition(),
         parcel::zero_or_more(parcel::join(
-            expect_tokentype(TokenType::LShift)
+            expect_tokentype(TokenKind::LeftShift)
                 .map(|_| BitwiseShiftExprOp::ShiftLeft)
-                .or(|| expect_tokentype(TokenType::RShift).map(|_| BitwiseShiftExprOp::ShiftRight)),
+                .or(|| {
+                    expect_tokentype(TokenKind::RightShift).map(|_| BitwiseShiftExprOp::ShiftRight)
+                }),
             addition(),
         ))
         .map(unzip),
@@ -409,13 +416,13 @@ enum AdditionExprOp {
     Minus,
 }
 
-fn addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+fn addition<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
     parcel::join(
         multiplication(),
         parcel::zero_or_more(parcel::join(
-            expect_tokentype(TokenType::Plus)
+            expect_tokentype(TokenKind::Plus)
                 .map(|_| AdditionExprOp::Plus)
-                .or(|| expect_tokentype(TokenType::Minus).map(|_| AdditionExprOp::Minus)),
+                .or(|| expect_tokentype(TokenKind::Minus).map(|_| AdditionExprOp::Minus)),
             multiplication(),
         ))
         .map(unzip),
@@ -438,14 +445,14 @@ enum MultiplicationExprOp {
     Mod,
 }
 
-fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
     parcel::join(
         call(),
         parcel::zero_or_more(parcel::join(
-            expect_tokentype(TokenType::Star)
+            expect_tokentype(TokenKind::Star)
                 .map(|_| MultiplicationExprOp::Star)
-                .or(|| expect_tokentype(TokenType::Slash).map(|_| MultiplicationExprOp::Slash))
-                .or(|| expect_tokentype(TokenType::PercentSign).map(|_| MultiplicationExprOp::Mod)),
+                .or(|| expect_tokentype(TokenKind::Slash).map(|_| MultiplicationExprOp::Slash))
+                .or(|| expect_tokentype(TokenKind::PercentSign).map(|_| MultiplicationExprOp::Mod)),
             call(),
         ))
         .map(unzip),
@@ -464,15 +471,15 @@ fn multiplication<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNod
     })
 }
 
-fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
     parcel::join(
         identifier(),
-        expect_tokentype(TokenType::LParen).and_then(|_| {
+        expect_tokentype(TokenKind::LeftParen).and_then(|_| {
             parcel::left(parcel::join(
                 parcel::join(
                     parcel::zero_or_more(parcel::left(parcel::join(
                         expression(),
-                        expect_tokentype(TokenType::Comma),
+                        expect_tokentype(TokenKind::Comma),
                     ))),
                     expression(),
                 )
@@ -488,7 +495,7 @@ fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
                             None => vec![],
                         })
                 }),
-                expect_tokentype(TokenType::RParen),
+                expect_tokentype(TokenKind::RightParen),
             ))
         }),
     )
@@ -496,38 +503,38 @@ fn call<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
     .or(prefix_expression)
 }
 
-fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
-    expect_tokentype(TokenType::Star)
+fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
+    expect_tokentype(TokenKind::Star)
         .and_then(|_| prefix_expression())
         .map(Box::new)
         .map(ExprNode::Deref)
         .or(|| {
-            expect_tokentype(TokenType::Ampersand)
+            expect_tokentype(TokenKind::Ampersand)
                 .and_then(|_| identifier())
                 .map(ExprNode::Ref)
         })
         .or(|| {
-            expect_tokentype(TokenType::PlusPlus)
+            expect_tokentype(TokenKind::PlusPlus)
                 .and_then(|_| prefix_expression())
                 .map(Box::new)
                 .map(ExprNode::PreIncrement)
         })
         .or(|| {
-            expect_tokentype(TokenType::MinusMinus)
+            expect_tokentype(TokenKind::MinusMinus)
                 .and_then(|_| prefix_expression())
                 .map(Box::new)
                 .map(ExprNode::PreDecrement)
         })
         // unary logical not
         .or(|| {
-            expect_tokentype(TokenType::Bang)
+            expect_tokentype(TokenKind::Bang)
                 .and_then(|_| prefix_expression())
                 .map(Box::new)
                 .map(ExprNode::LogicalNot)
         })
         // unary negate
         .or(|| {
-            expect_tokentype(TokenType::Minus)
+            expect_tokentype(TokenKind::Minus)
                 .and_then(|_| prefix_expression())
                 // prevent negate from eating `-` on integer literals.
                 .predicate(|e| !matches!(e, ExprNode::Primary(Primary::Integer { .. })))
@@ -536,7 +543,7 @@ fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Expr
         })
         // unary inverse
         .or(|| {
-            expect_tokentype(TokenType::Tilde)
+            expect_tokentype(TokenKind::Tilde)
                 .and_then(|_| prefix_expression())
                 .map(Box::new)
                 .map(ExprNode::Invert)
@@ -545,17 +552,17 @@ fn prefix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Expr
 }
 
 fn post_increment_decrement_expression<'a>(
-) -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+) -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
     parcel::left(parcel::join(
         postfix_expression(),
-        expect_tokentype(TokenType::PlusPlus),
+        expect_tokentype(TokenKind::PlusPlus),
     ))
     .map(Box::new)
     .map(ExprNode::PostIncrement)
     .or(|| {
         parcel::left(parcel::join(
             postfix_expression(),
-            expect_tokentype(TokenType::MinusMinus),
+            expect_tokentype(TokenKind::MinusMinus),
         ))
         .map(Box::new)
         .map(ExprNode::PostDecrement)
@@ -563,19 +570,19 @@ fn post_increment_decrement_expression<'a>(
     .or(postfix_expression)
 }
 
-fn postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+fn postfix_expression<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
     parcel::join(
         identifier(),
         parcel::left(parcel::join(
-            expect_tokentype(TokenType::LBracket).and_then(|_| expression()),
-            expect_tokentype(TokenType::RBracket),
+            expect_tokentype(TokenKind::LeftBracket).and_then(|_| expression()),
+            expect_tokentype(TokenKind::RightBracket),
         )),
     )
     .map(|(id, expr)| ExprNode::Index(id, Box::new(expr)))
     .or(primary)
 }
 
-fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
+fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
     number()
         .map(ExprNode::Primary)
         .or(|| character_literal().map(ExprNode::Primary))
@@ -584,33 +591,42 @@ fn primary<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
         .or(grouping)
 }
 
-fn grouping<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], ExprNode> {
-    expect_tokentype(TokenType::LParen)
+fn grouping<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode> {
+    expect_tokentype(TokenKind::LeftParen)
         .and_then(|_| {
             parcel::left(parcel::join(
                 expression(),
-                expect_tokentype(TokenType::RParen),
+                expect_tokentype(TokenKind::RightParen),
             ))
         })
         .map(|expr| grouping_expr!(expr))
 }
 
-fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Primary> {
-    expect_tokentype(TokenType::StrLiteral)
+fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], Primary> {
+    expect_tokentype(TokenKind::StringLiteral)
         .map(|tok| match tok {
             // guaranteed due to above constraint
-            Token::StrLiteral(lit) => lit,
+            Token {
+                kind: TokenKind::StringLiteral,
+                data: Some(lit),
+                ..
+            } => lit.to_string(),
             _ => "".to_string(),
         })
+        .map(|lit| crate::lexer::to_ascii_escaped_string(&lit))
         .map(|lit| lit.into_bytes())
         .map(ast::Primary::Str)
 }
 
-fn character_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Primary> {
-    expect_tokentype(TokenType::CharLiteral)
+fn character_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], Primary> {
+    expect_tokentype(TokenKind::CharacterConstant)
         .map(|tok| match tok {
             // guaranteed due to above constraint
-            Token::CharLiteral(c) => c as u8,
+            Token {
+                kind: TokenKind::CharacterConstant,
+                data: Some(c),
+                ..
+            } => c.chars().next().map(|c| c as u8).unwrap_or(0),
             _ => 0,
         })
         .map(|num| Primary::Integer {
@@ -620,7 +636,7 @@ fn character_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Prim
         })
 }
 
-fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Primary> {
+fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], Primary> {
     parcel::one_of(vec![
         dec_i8().map(|num| Primary::Integer {
             sign: Signed::Signed,
@@ -665,7 +681,7 @@ fn number<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Primary> {
     ])
 }
 
-fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Primary> {
+fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], Primary> {
     parcel::one_of(vec![
         dec_u8().map(|num| Primary::Integer {
             sign: Signed::Unsigned,
@@ -690,20 +706,24 @@ fn unsigned_number<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Primar
     ])
 }
 
-fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], String> {
-    expect_tokentype(TokenType::Identifier).map(|t| {
+fn identifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], String> {
+    expect_tokentype(TokenKind::Identifier).map(|t| {
         match t {
-            Token::Identifier(id) => id,
+            Token {
+                kind: TokenKind::Identifier,
+                data: Some(id),
+                ..
+            } => id.to_string(),
             // safe unpack due to expect_tokentype constraint
             _ => unreachable!(),
         }
     })
 }
 
-fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Type> {
+fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], Type> {
     parcel::join(
         type_specifier(),
-        expect_tokentype(TokenType::Star).one_or_more(),
+        expect_tokentype(TokenKind::Star).one_or_more(),
     )
     .map(|(ty, pointer_depth)| {
         let nested_pointers = pointer_depth.len() - 1;
@@ -716,11 +736,11 @@ fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Type> 
     .or(type_specifier)
 }
 
-fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Type> {
+fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], Type> {
     parcel::join(
         parcel::one_of(vec![
-            expect_tokentype(TokenType::Signed).map(|_| Signed::Signed),
-            expect_tokentype(TokenType::Unsigned).map(|_| Signed::Unsigned),
+            expect_tokentype(TokenKind::Signed).map(|_| Signed::Signed),
+            expect_tokentype(TokenKind::Unsigned).map(|_| Signed::Unsigned),
         ])
         .optional(),
         parcel::one_of(vec![
@@ -729,41 +749,41 @@ fn type_specifier<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token)], Type> {
             //
             parcel::one_of(vec![
                 // long long int
-                expect_tokentype(TokenType::Long)
-                    .and_then(|_| expect_tokentype(TokenType::Long))
-                    .and_then(|_| expect_tokentype(TokenType::Int)),
+                expect_tokentype(TokenKind::Long)
+                    .and_then(|_| expect_tokentype(TokenKind::Long))
+                    .and_then(|_| expect_tokentype(TokenKind::Int)),
                 // long long
-                expect_tokentype(TokenType::Long).and_then(|_| expect_tokentype(TokenType::Long)),
+                expect_tokentype(TokenKind::Long).and_then(|_| expect_tokentype(TokenKind::Long)),
                 // long int
-                expect_tokentype(TokenType::Long).and_then(|_| expect_tokentype(TokenType::Int)),
+                expect_tokentype(TokenKind::Long).and_then(|_| expect_tokentype(TokenKind::Int)),
                 // long
-                parcel::BoxedParser::new(expect_tokentype(TokenType::Long)),
+                parcel::BoxedParser::new(expect_tokentype(TokenKind::Long)),
             ])
             .map(|_| Type::Integer(Signed::Signed, IntegerWidth::SixtyFour)),
             //
             // int parser
             //
-            expect_tokentype(TokenType::Int)
+            expect_tokentype(TokenKind::Int)
                 .map(|_| Type::Integer(Signed::Signed, IntegerWidth::ThirtyTwo)),
             //
             // short parser
             //
             parcel::one_of(vec![
                 // short int
-                expect_tokentype(TokenType::Short).and_then(|_| expect_tokentype(TokenType::Int)),
+                expect_tokentype(TokenKind::Short).and_then(|_| expect_tokentype(TokenKind::Int)),
                 // short
-                parcel::BoxedParser::new(expect_tokentype(TokenType::Short)),
+                parcel::BoxedParser::new(expect_tokentype(TokenKind::Short)),
             ])
             .map(|_| Type::Integer(Signed::Signed, IntegerWidth::Sixteen)),
             //
             // char parser
             //
-            expect_tokentype(TokenType::Char)
+            expect_tokentype(TokenKind::Char)
                 .map(|_| Type::Integer(Signed::Signed, IntegerWidth::Eight)),
             //
             // void parser
             //
-            expect_tokentype(TokenType::Void).map(|_| Type::Void),
+            expect_tokentype(TokenKind::Void).map(|_| Type::Void),
         ]),
     )
     .map(|(sign, ty)| match (sign, ty) {
@@ -776,13 +796,13 @@ macro_rules! numeric_type_parser {
     ($(unsigned, $parser_name:ident, $ret_type:ty,)*) => {
         $(
         #[allow(unused)]
-        fn $parser_name<'a>() -> impl Parser<'a, &'a [(usize, Token)], $ret_type> {
-            move |input: &'a [(usize, Token)]| {
+        fn $parser_name<'a>() -> impl Parser<'a, &'a [(usize, Token<'a>)], $ret_type> {
+            move |input: &'a [(usize, Token<'a>)]| {
                 let preparsed_input = input;
-                let res = expect_tokentype(TokenType::IntLiteral)
+                let res = expect_tokentype(TokenKind::IntegerConstant)
                     .map(|digit_token| {
-                        if let Token::IntLiteral(i) = digit_token {
-                           Some(i as $ret_type)
+                        if let Token {kind: TokenKind::IntegerConstant, data: Some(d),..} = digit_token {
+                          d.parse::<$ret_type>().ok()
                         } else {
                            None
                         }
@@ -816,15 +836,19 @@ macro_rules! numeric_type_parser {
     ($(signed, $parser_name:ident, $ret_type:ty,)*) => {
         $(
         #[allow(unused)]
-        fn $parser_name<'a>() -> impl Parser<'a, &'a [(usize, Token)], $ret_type> {
+        fn $parser_name<'a>() -> impl Parser<'a, &'a [(usize, Token<'a>)], $ret_type> {
             use std::convert::TryFrom;
-            move |input: &'a [(usize, Token)]| {
+            move |input: &'a [(usize, Token<'a>)]| {
                 let preparsed_input = input;
-                let res = parcel::join(expect_tokentype(TokenType::Minus).optional(), expect_tokentype(TokenType::IntLiteral))
+                let res = parcel::join(expect_tokentype(TokenKind::Minus).optional(), expect_tokentype(TokenKind::IntegerConstant))
                     .map(|(negative, digits)| {
-                        match (negative, digits) {
-                            (Some(_), Token::IntLiteral(i)) => Some(-(i as $ret_type)),
-                            (None, Token::IntLiteral(i)) => Some(i as $ret_type),
+                        match (negative, digits  ) {
+                            (Some(_), Token {kind: TokenKind::IntegerConstant, data: Some(d),..}) => {
+                                d.parse::<$ret_type>().ok().map(|d| -d)
+                            },
+                            (None, Token {kind: TokenKind::IntegerConstant, data: Some(d),..}) => {
+                                d.parse::<$ret_type>().ok()
+                            },
                             _ => None
                         }
                     })
@@ -873,13 +897,13 @@ numeric_type_parser!(
 );
 
 fn tokentype_wrapped<'a, P, B>(
-    prefix: TokenType,
-    suffix: TokenType,
+    prefix: TokenKind,
+    suffix: TokenKind,
     parser: P,
-) -> impl Parser<'a, &'a [(usize, Token)], B>
+) -> impl Parser<'a, &'a [(usize, Token<'a>)], B>
 where
     B: 'a,
-    P: Parser<'a, &'a [(usize, Token)], B> + 'a,
+    P: Parser<'a, &'a [(usize, Token<'a>)], B> + 'a,
 {
     parcel::right(parcel::join(
         expect_tokentype(prefix),
@@ -887,9 +911,11 @@ where
     ))
 }
 
-pub fn expect_tokentype<'a>(expected: TokenType) -> impl Parser<'a, &'a [(usize, Token)], Token> {
-    move |input: &'a [(usize, Token)]| match input.get(0) {
-        Some(&(pos, ref next)) if next.to_token_type() == expected => Ok(MatchStatus::Match {
+pub fn expect_tokentype<'a>(
+    expected: TokenKind,
+) -> impl Parser<'a, &'a [(usize, Token<'a>)], Token<'a>> {
+    move |input: &'a [(usize, Token<'a>)]| match input.get(0) {
+        Some(&(pos, ref next)) if next.as_kind() == expected => Ok(MatchStatus::Match {
             span: pos..pos + 1,
             remainder: &input[1..],
             inner: next.clone(),
@@ -908,25 +934,28 @@ mod tests {
 
     #[test]
     fn should_parse_complex_arithmetic_expression() {
-        use crate::lexer::Token;
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
+
+        // just using empty spans for testing.
+        let span = Span::new(Cursor::default(), Cursor::default());
 
         // { 13 - 6 + 4 * 5 + 8 / 3; }
         let input: Vec<(usize, Token)> = vec![
-            Token::LBrace,
-            Token::IntLiteral(13),
-            Token::Minus,
-            Token::IntLiteral(6),
-            Token::Plus,
-            Token::IntLiteral(4),
-            Token::Star,
-            Token::IntLiteral(5),
-            Token::Plus,
-            Token::IntLiteral(8),
-            Token::Slash,
-            Token::IntLiteral(3),
-            Token::SemiColon,
-            Token::RBrace,
+            Token::new(span, TokenKind::LeftBrace),
+            Token::with_data(span, "13", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::Minus),
+            Token::with_data(span, "6", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::Plus),
+            Token::with_data(span, "4", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::Star),
+            Token::with_data(span, "5", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::Plus),
+            Token::with_data(span, "8", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::Slash),
+            Token::with_data(span, "3", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::SemiColon),
+            Token::new(span, TokenKind::RightBrace),
         ]
         .into_iter()
         .enumerate()
@@ -949,18 +978,22 @@ mod tests {
 
     #[test]
     fn should_parse_unary_expressions() {
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
+
+        // just using empty spans for testing.
+        let span = Span::new(Cursor::default(), Cursor::default());
 
         // { !1 + -2; }
         let input: Vec<(usize, Token)> = vec![
-            Token::LBrace,
-            Token::Bang,
-            Token::IntLiteral(1),
-            Token::Plus,
-            Token::Minus,
-            Token::IntLiteral(2),
-            Token::SemiColon,
-            Token::RBrace,
+            Token::new(span, TokenKind::LeftBrace),
+            Token::new(span, TokenKind::Bang),
+            Token::with_data(span, "1", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::Plus),
+            Token::new(span, TokenKind::Minus),
+            Token::with_data(span, "2", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::SemiColon),
+            Token::new(span, TokenKind::RightBrace),
         ]
         .into_iter()
         .enumerate()
@@ -979,20 +1012,25 @@ mod tests {
 
     #[test]
     fn should_parse_a_keyword_from_a_dereferenced_identifier() {
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
+
+        // just using empty spans for testing.
+        let span = Span::new(Cursor::default(), Cursor::default());
 
         // { return *x; }
         let input: Vec<(usize, Token)> = vec![
-            Token::LBrace,
-            Token::Return,
-            Token::Star,
-            Token::Identifier("x".to_string()),
-            Token::SemiColon,
-            Token::RBrace,
+            Token::new(span, TokenKind::LeftBrace),
+            Token::new(span, TokenKind::Return),
+            Token::new(span, TokenKind::Star),
+            Token::with_data(span, "x", TokenKind::Identifier),
+            Token::new(span, TokenKind::SemiColon),
+            Token::new(span, TokenKind::RightBrace),
         ]
         .into_iter()
         .enumerate()
         .collect();
+
         let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Return(Some(
@@ -1002,24 +1040,6 @@ mod tests {
         ))]));
 
         assert_eq!(&expected_result, &res);
-
-        // { return *          \n\nx; }
-        let input_with_arbitrary_whitespace: Vec<(usize, Token)> = vec![
-            Token::LBrace,
-            Token::Return,
-            Token::Star,
-            Token::Identifier("x".to_string()),
-            Token::SemiColon,
-            Token::RBrace,
-        ]
-        .into_iter()
-        .enumerate()
-        .collect();
-        let res = crate::parser::compound_statements()
-            .parse(&input_with_arbitrary_whitespace)
-            .map(|ms| ms.unwrap());
-
-        assert_eq!(&expected_result, &res)
     }
 
     macro_rules! assignment_expr {
@@ -1030,22 +1050,27 @@ mod tests {
 
     #[test]
     fn should_parse_multiple_nested_assignment_expressions() {
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
+
+        // just using empty spans for testing.
+        let span = Span::new(Cursor::default(), Cursor::default());
 
         // { x = y = 5; }
         let input: Vec<(usize, Token)> = vec![
-            Token::LBrace,
-            Token::Identifier("x".to_string()),
-            Token::Equal,
-            Token::Identifier("y".to_string()),
-            Token::Equal,
-            Token::IntLiteral(5),
-            Token::SemiColon,
-            Token::RBrace,
+            Token::new(span, TokenKind::LeftBrace),
+            Token::with_data(span, "x", TokenKind::Identifier),
+            Token::new(span, TokenKind::Equal),
+            Token::with_data(span, "y", TokenKind::Identifier),
+            Token::new(span, TokenKind::Equal),
+            Token::with_data(span, "5", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::SemiColon),
+            Token::new(span, TokenKind::RightBrace),
         ]
         .into_iter()
         .enumerate()
         .collect();
+
         let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
@@ -1063,24 +1088,29 @@ mod tests {
 
     #[test]
     fn should_parse_grouping_expressions_in_correct_precedence() {
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
+
+        // just using empty spans for testing.
+        let span = Span::new(Cursor::default(), Cursor::default());
 
         // { 2 * (3 + 4); }
         let input: Vec<(usize, Token)> = vec![
-            Token::LBrace,
-            Token::IntLiteral(2),
-            Token::Star,
-            Token::LParen,
-            Token::IntLiteral(3),
-            Token::Plus,
-            Token::IntLiteral(4),
-            Token::RParen,
-            Token::SemiColon,
-            Token::RBrace,
+            Token::new(span, TokenKind::LeftBrace),
+            Token::with_data(span, "2", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::Star),
+            Token::new(span, TokenKind::LeftParen),
+            Token::with_data(span, "3", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::Plus),
+            Token::with_data(span, "4", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::RightParen),
+            Token::new(span, TokenKind::SemiColon),
+            Token::new(span, TokenKind::RightBrace),
         ]
         .into_iter()
         .enumerate()
         .collect();
+
         let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
@@ -1096,18 +1126,23 @@ mod tests {
 
     #[test]
     fn should_parse_string_literals() {
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
+
+        // just using empty spans for testing.
+        let span = Span::new(Cursor::default(), Cursor::default());
 
         // { "hello\n\t\"world\""; }
         let input: Vec<(usize, Token)> = vec![
-            Token::LBrace,
-            Token::StrLiteral("hello\n\t\"world\"".to_string()),
-            Token::SemiColon,
-            Token::RBrace,
+            Token::new(span, TokenKind::LeftBrace),
+            Token::with_data(span, "hello\n\t\"world\"", TokenKind::StringLiteral),
+            Token::new(span, TokenKind::SemiColon),
+            Token::new(span, TokenKind::RightBrace),
         ]
         .into_iter()
         .enumerate()
         .collect();
+
         let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
@@ -1119,18 +1154,23 @@ mod tests {
 
     #[test]
     fn should_parse_character_literals() {
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
+
+        // just using empty spans for testing.
+        let span = Span::new(Cursor::default(), Cursor::default());
 
         // { \'a\'; }
         let input: Vec<(usize, Token)> = vec![
-            Token::LBrace,
-            Token::CharLiteral('a'),
-            Token::SemiColon,
-            Token::RBrace,
+            Token::new(span, TokenKind::LeftBrace),
+            Token::with_data(span, "a", TokenKind::CharacterConstant),
+            Token::new(span, TokenKind::SemiColon),
+            Token::new(span, TokenKind::RightBrace),
         ]
         .into_iter()
         .enumerate()
         .collect();
+
         let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
@@ -1142,21 +1182,26 @@ mod tests {
 
     #[test]
     fn should_parse_index_expressions_in_correct_precedence() {
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
+
+        // just using empty spans for testing.
+        let span = Span::new(Cursor::default(), Cursor::default());
 
         // "{ x[1]; }"
         let input: Vec<(usize, Token)> = vec![
-            Token::LBrace,
-            Token::Identifier("x".to_string()),
-            Token::LBracket,
-            Token::IntLiteral(1),
-            Token::RBracket,
-            Token::SemiColon,
-            Token::RBrace,
+            Token::new(span, TokenKind::LeftBrace),
+            Token::with_data(span, "x", TokenKind::Identifier),
+            Token::new(span, TokenKind::LeftBracket),
+            Token::with_data(span, "1", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::RightBracket),
+            Token::new(span, TokenKind::SemiColon),
+            Token::new(span, TokenKind::RightBrace),
         ]
         .into_iter()
         .enumerate()
         .collect();
+
         let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::Expression(
@@ -1168,33 +1213,38 @@ mod tests {
 
     #[test]
     fn should_parse_for_statement() {
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
+
+        // just using empty spans for testing.
+        let span = Span::new(Cursor::default(), Cursor::default());
 
         // { for (i=0; i<5; i++) { i; } }
         let input: Vec<(usize, Token)> = vec![
-            Token::LBrace,
-            Token::For,
-            Token::LParen,
-            Token::Identifier("i".to_string()),
-            Token::Equal,
-            Token::IntLiteral(0),
-            Token::SemiColon,
-            Token::Identifier("i".to_string()),
-            Token::LessThan,
-            Token::IntLiteral(5),
-            Token::SemiColon,
-            Token::Identifier("i".to_string()),
-            Token::PlusPlus,
-            Token::RParen,
-            Token::LBrace,
-            Token::Identifier("i".to_string()),
-            Token::SemiColon,
-            Token::RBrace,
-            Token::RBrace,
+            Token::new(span, TokenKind::LeftBrace),
+            Token::new(span, TokenKind::For),
+            Token::new(span, TokenKind::LeftParen),
+            Token::with_data(span, "i", TokenKind::Identifier),
+            Token::new(span, TokenKind::Equal),
+            Token::with_data(span, "0", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::SemiColon),
+            Token::with_data(span, "i", TokenKind::Identifier),
+            Token::new(span, TokenKind::LessThan),
+            Token::with_data(span, "5", TokenKind::IntegerConstant),
+            Token::new(span, TokenKind::SemiColon),
+            Token::with_data(span, "i", TokenKind::Identifier),
+            Token::new(span, TokenKind::PlusPlus),
+            Token::new(span, TokenKind::RightParen),
+            Token::new(span, TokenKind::LeftBrace),
+            Token::with_data(span, "i", TokenKind::Identifier),
+            Token::new(span, TokenKind::SemiColon),
+            Token::new(span, TokenKind::RightBrace),
+            Token::new(span, TokenKind::RightBrace),
         ]
         .into_iter()
         .enumerate()
         .collect();
+
         let res = compound_statements().parse(&input).map(|ms| ms.unwrap());
 
         let expected_result = Ok(CompoundStmts::new(vec![StmtNode::For(
@@ -1219,19 +1269,24 @@ mod tests {
 
     #[test]
     fn should_fail_to_parse_keyword_as_identifier() {
+        use crate::lexer::{Cursor, Span, Token, TokenKind};
         use parcel::Parser;
+
+        // just using empty spans for testing.
+        let span = Span::new(Cursor::default(), Cursor::default());
 
         // { return auto; }
         let input: Vec<(usize, Token)> = vec![
-            Token::LBrace,
-            Token::Return,
-            Token::Auto,
-            Token::SemiColon,
-            Token::RBrace,
+            Token::new(span, TokenKind::LeftBrace),
+            Token::new(span, TokenKind::Return),
+            Token::new(span, TokenKind::Auto),
+            Token::new(span, TokenKind::SemiColon),
+            Token::new(span, TokenKind::RightBrace),
         ]
         .into_iter()
         .enumerate()
         .collect();
+
         let res = compound_statements()
             .parse(&input)
             .ok()
