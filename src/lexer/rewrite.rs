@@ -17,7 +17,6 @@ pub enum TokenClass {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(unused)]
 pub enum TokenKind {
     Identifier,
 
@@ -972,10 +971,227 @@ fn stack_eval_to_token<'a>(
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
+                data: Some("auto"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Auto))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("break"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Break))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("case"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Case))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("char"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Char))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("const"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Const))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("continue"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Continue))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("default"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Default))),
+
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("do"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Do))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("double"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Double))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("else"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Else))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("enum"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Enum))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("extern"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Extern))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("float"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Float))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("for"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::For))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("goto"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Goto))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("if"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::If))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("int"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Int))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("long"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Long))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("register"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Register))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("return"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Return))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("short"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Short))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
                 data: Some("signed"),
             })],
             _,
         ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Signed))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("sizeof"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::SizeOf))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("static"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Static))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("struct"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Struct))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("switch"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Switch))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("typedef"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::TypeDef))),
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::Identifier,
+                data: Some("union"),
+            })],
+            _,
+        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Union))),
         (
             [TokenOrLexeme::Token(Token {
                 span,
@@ -996,75 +1212,10 @@ fn stack_eval_to_token<'a>(
             [TokenOrLexeme::Token(Token {
                 span,
                 kind: TokenKind::Identifier,
-                data: Some("char"),
-            })],
-            _,
-        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Char))),
-        (
-            [TokenOrLexeme::Token(Token {
-                span,
-                kind: TokenKind::Identifier,
-                data: Some("short"),
-            })],
-            _,
-        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Short))),
-        (
-            [TokenOrLexeme::Token(Token {
-                span,
-                kind: TokenKind::Identifier,
-                data: Some("int"),
-            })],
-            _,
-        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Int))),
-
-        (
-            [TokenOrLexeme::Token(Token {
-                span,
-                kind: TokenKind::Identifier,
-                data: Some("long"),
-            })],
-            _,
-        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Long))),
-        (
-            [TokenOrLexeme::Token(Token {
-                span,
-                kind: TokenKind::Identifier,
-                data: Some("if"),
-            })],
-            _,
-        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::If))),
-        (
-            [TokenOrLexeme::Token(Token {
-                span,
-                kind: TokenKind::Identifier,
-                data: Some("else"),
-            })],
-            _,
-        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Else))),
-        (
-            [TokenOrLexeme::Token(Token {
-                span,
-                kind: TokenKind::Identifier,
-                data: Some("for"),
-            })],
-            _,
-        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::For))),
-        (
-            [TokenOrLexeme::Token(Token {
-                span,
-                kind: TokenKind::Identifier,
                 data: Some("while"),
             })],
             _,
         ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::While))),
-        (
-            [TokenOrLexeme::Token(Token {
-                span,
-                kind: TokenKind::Identifier,
-                data: Some("return"),
-            })],
-            _,
-        ) => LexOperation::Reduce(1, token!(Token::new(*span, TokenKind::Return))),
 
         ([TokenOrLexeme::Token(_)], _) | ([.., TokenOrLexeme::Token(_)], _) => {
             LexOperation::NoFurtherRefinement
