@@ -1395,12 +1395,10 @@ impl<'a> Scanner<'a> {
 
                 match op {
                     LexOperation::Shift(TokenOrLexeme::Lexeme(cur, '\n')) => {
-                        // safe to unwrap due to is_some guarantee
                         self.stack.push_mut(lexeme!(cur, '\n'));
                         lookahead = consume_and_peek_from_iter(&mut self.iter);
                     }
                     LexOperation::Shift(next_val) => {
-                        // safe to unwrap due to is_some guarantee
                         self.stack.push_mut(next_val);
                         lookahead = consume_and_peek_from_iter(&mut self.iter);
                         self.cursor.increment_column_mut();
@@ -1413,7 +1411,6 @@ impl<'a> Scanner<'a> {
                         }
 
                         self.stack.push_mut(TokenOrLexeme::Token(to_token));
-                        // safe to unwrap due to is_some guarantee
                         self.cursor.increment_column_mut();
                     }
 
