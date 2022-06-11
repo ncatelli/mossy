@@ -1040,6 +1040,49 @@ fn stack_eval_to_token<'a>(
             )
         }
 
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::IntegerConstant,
+                ..
+            })],
+            Some((cur, '.')),
+        ) => {
+            let start = span.start.index;
+            let end = cur.index + 1;
+            let data = &source[start..end];
+
+            LexOperation::ShiftReduce(
+                2,
+                token!(Token::with_data(
+                    Span::new(span.start, cur.increment_column()),
+                    data,
+                    TokenKind::FloatConstant,
+                )),
+            )
+        }
+        (
+            [TokenOrLexeme::Token(Token {
+                span,
+                kind: TokenKind::FloatConstant,
+                ..
+            })],
+            Some((cur, c)),
+        ) if c.is_digit(10) => {
+            let start = span.start.index;
+            let end = cur.index + 1;
+            let data = &source[start..end];
+
+            LexOperation::ShiftReduce(
+                2,
+                token!(Token::with_data(
+                    Span::new(span.start, cur.increment_column()),
+                    data,
+                    TokenKind::FloatConstant,
+                )),
+            )
+        }
+
         // Identifiers
         ([contents @ ..], Some((cur, c)))
             if matches_rules(contents, lexeme_is_identifier_ascii())
@@ -1600,7 +1643,7 @@ mod tests {
     }
 
     #[test]
-    fn should_scan_digit_token() {
+    fn should_scan_digit_lexemes_into_integer_constant() {
         let input_expected = [
             ([(0, 1, "1"), (1, 2, " 1"), (1, 2, " 1 ")], "1"),
             ([(0, 3, "123"), (1, 4, " 123"), (1, 4, " 123 ")], "123"),
@@ -1615,6 +1658,33 @@ mod tests {
                         Span::new(Cursor::new(start, start, 1), Cursor::new(end, end, 1)),
                         data,
                         TokenKind::IntegerConstant
+                    ))),
+                    scanner.next()
+                )
+            }
+        }
+    }
+
+    #[test]
+    fn should_upgrade_integer_constant_into_float_constant() {
+        let input_expected = [
+            ([(0, 3, "1.0"), (1, 4, " 1.0"), (1, 4, " 1.0 ")], "1.0"),
+            ([(0, 2, "1."), (1, 3, " 1."), (1, 3, " 1. ")], "1."),
+            (
+                [(0, 7, "123.123"), (1, 8, " 123.123"), (1, 8, " 123.123 ")],
+                "123.123",
+            ),
+        ];
+
+        for (inputs, data) in input_expected {
+            for (start, end, input) in inputs {
+                let mut scanner = Scanner::new(input).into_iter();
+
+                assert_eq!(
+                    Some(Ok(Token::with_data(
+                        Span::new(Cursor::new(start, start, 1), Cursor::new(end, end, 1)),
+                        data,
+                        TokenKind::FloatConstant
                     ))),
                     scanner.next()
                 )
