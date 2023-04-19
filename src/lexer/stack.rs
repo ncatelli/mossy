@@ -1,44 +1,50 @@
-#[derive(Debug, Clone)]
-pub struct Stack<T, const N: usize> {
+#[derive(Debug)]
+pub(crate) struct Stack<'a, T> {
     head: usize,
-    data: [T; N],
+    capacity: usize,
+    data: &'a mut [T],
 }
 
-// Generic constants
-impl<T, const N: usize> Stack<T, N> {
-    /// Represents the minimum index of the stack.
+impl<'a, T> Stack<'a, T> {
     const MIN: usize = 0;
-
-    /// Represents the maximum index of the stack.
-    const MAX: usize = N - 1;
 }
 
-impl<T, const N: usize> Stack<T, N> {
+impl<'a, T> Stack<'a, T> {
     /// Stack initializer type.
-    pub fn new(data: [T; N]) -> Self {
-        Self { head: 0, data }
+    pub fn new(data: &'a mut [T]) -> Self {
+        Self {
+            head: 0,
+            capacity: usize::MAX,
+            data,
+        }
     }
-}
 
-impl<T: Default, const N: usize> Stack<T, N> {
+    #[allow(unused)]
+    pub fn with_capacity(mut self, capacity: usize) -> Self {
+        self.capacity = capacity;
+        self
+    }
+
+    pub fn full(&self) -> bool {
+        self.capacity <= self.head
+    }
+
     pub fn empty(&self) -> bool {
         self.head == Self::MIN
     }
 
-    pub fn full(&self) -> bool {
-        self.head == Self::MAX
-    }
-
     pub fn push_mut(&mut self, val: T) {
         if self.full() {
-            panic!("stack overflow...")
+            panic!("stack overflow")
         } else {
             let idx = self.head;
             self.data[idx] = val;
             self.head = idx + 1
         }
     }
+}
 
+impl<'a, T: Default> Stack<'a, T> {
     pub fn pop_mut(&mut self) -> Option<T> {
         use core::mem;
 
@@ -53,35 +59,26 @@ impl<T: Default, const N: usize> Stack<T, N> {
     }
 }
 
-impl<T, const N: usize> AsRef<[T]> for Stack<T, N> {
+impl<'a, T> AsRef<[T]> for Stack<'a, T> {
     fn as_ref(&self) -> &[T] {
         &self.data[0..self.head]
     }
 }
 
-impl<T, const N: usize, const M: usize> PartialEq<[T; M]> for Stack<T, N>
+impl<'a, T, const N: usize> PartialEq<[T; N]> for Stack<'a, T>
 where
     T: PartialEq,
 {
-    fn eq(&self, other: &[T; M]) -> bool {
+    fn eq(&self, other: &[T; N]) -> bool {
         self.data.iter().eq(other.iter())
     }
 }
 
-impl<T, const N: usize> PartialEq<&[T]> for Stack<T, N>
+impl<'a, T> PartialEq<&[T]> for Stack<'a, T>
 where
     T: PartialEq,
 {
     fn eq(&self, other: &&[T]) -> bool {
         self.data.iter().eq(other.iter())
-    }
-}
-
-impl<T: Copy + Default, const N: usize> Default for Stack<T, N> {
-    fn default() -> Self {
-        Self {
-            head: 0,
-            data: [T::default(); N],
-        }
     }
 }

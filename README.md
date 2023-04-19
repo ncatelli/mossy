@@ -199,3 +199,6 @@ ascii_control: *DEVNOTE: ascii check spec*
 
 space: ' '
 ```
+
+#### Replacement-Grammar
+The grammar for the rewrite can be found at [grammar.ebnf](./docs/grammar.ebnf). Additionally this includes an [xhtml version](./docs/grammar.xhtml) for viewing in a browser. This was directly generated from [grammar.ebnf](./docs/grammar.ebnf) with [rr](https://githug.com/ncatelli/rr-docker.git).

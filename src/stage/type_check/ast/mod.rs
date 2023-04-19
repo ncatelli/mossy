@@ -321,6 +321,24 @@ pub enum Signed {
     Unsigned,
 }
 
+
+/// Represents a classifier for float types
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+pub enum FloatClass {
+    Float,
+    Double,
+    LongDouble,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+pub enum IntegerClass {
+    Char,
+    Short,
+    Int,
+    Long,
+    LongLong,
+}
+
 /// Represents valid integer bit widths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub enum IntegerWidth {
@@ -338,6 +356,17 @@ impl ByteSized for IntegerWidth {
             Self::Sixteen => 2,
             Self::ThirtyTwo => 4,
             Self::SixtyFour => 8,
+        }
+    }
+}
+
+impl From<IntegerClass> for IntegerWidth {
+    fn from(ic: IntegerClass) -> Self {
+        match ic {
+            IntegerClass::Char => IntegerWidth::Eight,
+            IntegerClass::Short => IntegerWidth::Sixteen,
+            IntegerClass::Int | IntegerClass::Long => IntegerWidth::ThirtyTwo,
+            IntegerClass::LongLong => IntegerWidth::SixtyFour,
         }
     }
 }

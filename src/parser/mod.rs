@@ -602,6 +602,36 @@ fn grouping<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], ExprNode>
         .map(|expr| grouping_expr!(expr))
 }
 
+fn to_ascii_escaped_string<S: AsRef<str>>(input: S) -> String {
+    use crate::lexer::{to_ascii_escaped_char, EscapedAscii};
+
+    let mut iter = input.as_ref().chars().peekable();
+    let mut chars = vec![];
+    let mut curr = iter.next();
+    let mut next = iter.peek();
+    while curr.is_some() {
+        match (curr, next) {
+            (None, Some(_)) | (None, None) => return String::new(),
+            (Some(c), None) => chars.push(EscapedAscii::NonEscaped(c)),
+            (Some('\\'), Some(next_c)) => match to_ascii_escaped_char(&['\\', *next_c]) {
+                Some(EscapedAscii::Escaped(c)) => {
+                    chars.push(EscapedAscii::Escaped(c));
+                    // consume one extra char.
+                    iter.next();
+                }
+                Some(EscapedAscii::NonEscaped(_)) => chars.push(EscapedAscii::NonEscaped('\\')),
+                None => todo!(),
+            },
+            (Some(c), Some(_)) => chars.push(EscapedAscii::NonEscaped(c)),
+        }
+
+        curr = iter.next();
+        next = iter.peek();
+    }
+
+    chars.into_iter().map(|ea| ea.as_char()).collect::<String>()
+}
+
 fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], Primary> {
     expect_tokentype(TokenKind::StringLiteral)
         .map(|tok| match tok {
@@ -613,7 +643,7 @@ fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], Pri
             } => lit.to_string(),
             _ => "".to_string(),
         })
-        .map(|lit| crate::lexer::to_ascii_escaped_string(&lit))
+        .map(|lit| to_ascii_escaped_string(&lit))
         .map(|lit| lit.into_bytes())
         .map(ast::Primary::Str)
 }
@@ -918,7 +948,7 @@ pub fn expect_tokentype<'a>(
         Some(&(pos, ref next)) if next.as_kind() == expected => Ok(MatchStatus::Match {
             span: pos..pos + 1,
             remainder: &input[1..],
-            inner: next.clone(),
+            inner: *next,
         }),
         _ => Ok(MatchStatus::NoMatch(input)),
     }
