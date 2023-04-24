@@ -1,0 +1,13 @@
+[package]
+name = "mossy_cli"
+version = "0.1.0"
+authors = ["Nate Catelli <ncatelli@packetfire.org>"]
+edition = "2018"
+
+[[bin]]
+name = "mossy"
+path = "./src/main.rs"
+
+[dependencies]
+scrap = { git = "https://github.com/ncatelli/scrap", tag = "v1.0.0" }
+mossy_core = { path = "../core" }
