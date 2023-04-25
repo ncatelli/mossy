@@ -73,12 +73,21 @@ impl TypedProgram {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parameter {
     pub id: String,
-    pub r#type: Type,
+    pub ty: Type,
 }
 
 impl Parameter {
-    pub fn new(id: String, r#type: Type) -> Self {
-        Self { id, r#type }
+    pub fn new(id: String, ty: Type) -> Self {
+        Self { id, ty }
+    }
+}
+
+impl From<mossy_parser::parser::ast::Parameter> for Parameter {
+    fn from(value: mossy_parser::parser::ast::Parameter) -> Self {
+        Self {
+            id: value.id,
+            ty: value.ty.into(),
+        }
     }
 }
 
@@ -321,6 +330,14 @@ pub enum Signed {
     Unsigned,
 }
 
+impl From<mossy_parser::parser::ast::Signed> for Signed {
+    fn from(value: mossy_parser::parser::ast::Signed) -> Self {
+        match value {
+            mossy_parser::parser::ast::Signed::Signed => Self::Signed,
+            mossy_parser::parser::ast::Signed::Unsigned => Self::Unsigned,
+        }
+    }
+}
 
 /// Represents a classifier for float types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
@@ -371,6 +388,18 @@ impl From<IntegerClass> for IntegerWidth {
     }
 }
 
+impl From<mossy_parser::parser::ast::IntegerWidth> for IntegerWidth {
+    fn from(value: mossy_parser::parser::ast::IntegerWidth) -> Self {
+        match value {
+            mossy_parser::parser::ast::IntegerWidth::One => Self::One,
+            mossy_parser::parser::ast::IntegerWidth::Eight => Self::Eight,
+            mossy_parser::parser::ast::IntegerWidth::Sixteen => Self::Sixteen,
+            mossy_parser::parser::ast::IntegerWidth::ThirtyTwo => Self::ThirtyTwo,
+            mossy_parser::parser::ast::IntegerWidth::SixtyFour => Self::SixtyFour,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DefinitionState {
     Declared,
@@ -411,7 +440,7 @@ const POINTER_BYTE_WIDTH: usize = (usize::BITS / 8) as usize;
 pub enum Type {
     Integer(Signed, IntegerWidth),
     Void,
-    Func(DefinitionState, FunctionSignature),
+    Func(FunctionSignature),
     Pointer(Box<Type>),
 }
 
@@ -448,6 +477,32 @@ impl Type {
         match self {
             Type::Pointer(ty) => Some(*(ty.clone())),
             _ => None,
+        }
+    }
+}
+
+impl From<mossy_parser::parser::ast::Type> for Type {
+    fn from(value: mossy_parser::parser::ast::Type) -> Self {
+        match value {
+            mossy_parser::parser::ast::Type::Integer(sign, width) => {
+                Type::Integer(sign.into(), width.into())
+            }
+            mossy_parser::parser::ast::Type::Void => Type::Void,
+            mossy_parser::parser::ast::Type::Func(
+                mossy_parser::parser::ast::FunctionSignature {
+                    return_type,
+                    parameters,
+                },
+            ) => {
+                let return_type = Box::new((*return_type).into());
+                let parameters = parameters.into_iter().map(Into::into).collect::<Vec<_>>();
+
+                Self::Func(FunctionSignature {
+                    return_type,
+                    parameters,
+                })
+            }
+            mossy_parser::parser::ast::Type::Pointer(ty) => Type::Pointer(Box::new((*ty).into())),
         }
     }
 }

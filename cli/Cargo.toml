@@ -10,4 +10,5 @@ path = "./src/main.rs"
 
 [dependencies]
 scrap = { git = "https://github.com/ncatelli/scrap", tag = "v1.0.0" }
-mossy_core = { path = "../core" }
+mossy_codegen = { path = "../codegen" }
+mossy_parser = { path = "../parser" }

@@ -1,6 +1,8 @@
 //! The Type Pass module handles walking the raw parser ADT, performing
 //! additional type checking and enrichment.
 
+use crate::stage::type_check::ast::DefinitionState;
+
 use super::CompilationStage;
 
 #[macro_use]
@@ -215,12 +217,12 @@ impl Default for TypeAnalysis {
     }
 }
 
-impl CompilationStage<crate::parser::ast::CompilationUnit, ast::TypedProgram, String>
+impl CompilationStage<mossy_parser::parser::ast::CompilationUnit, ast::TypedProgram, String>
     for TypeAnalysis
 {
     fn apply(
         &mut self,
-        input: crate::parser::ast::CompilationUnit,
+        input: mossy_parser::parser::ast::CompilationUnit,
     ) -> Result<ast::TypedProgram, String> {
         input
             .defs
@@ -231,31 +233,26 @@ impl CompilationStage<crate::parser::ast::CompilationUnit, ast::TypedProgram, St
     }
 }
 
-impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, String>
+impl CompilationStage<mossy_parser::parser::ast::GlobalDecls, ast::TypedGlobalDecls, String>
     for TypeAnalysis
 {
     fn apply(
         &mut self,
-        input: crate::parser::ast::GlobalDecls,
+        input: mossy_parser::parser::ast::GlobalDecls,
     ) -> Result<ast::TypedGlobalDecls, String> {
+        use mossy_parser::parser;
         use scopes::DeclarationMetadata;
 
         match input {
-            crate::parser::ast::GlobalDecls::FuncDefinition(fd) => {
+            mossy_parser::parser::ast::GlobalDecls::FuncDefinition(fd) => {
                 let (id, return_ty, block) = (fd.proto.id, fd.proto.return_type, fd.block);
-                let params = fd
-                    .proto
-                    .params
-                    .into_iter()
-                    .map(|p| ast::Parameter::new(p.id, p.r#type))
-                    .collect();
-
-                let new_sig = FunctionSignature::new(Box::new(return_ty), params);
+                let params = fd.proto.params.into_iter().map(Into::into).collect();
+                let new_sig = FunctionSignature::new(Box::new(return_ty.into()), params);
 
                 match self.scopes.lookup(&id) {
                     // clobbers non-existent function.
-                    Some(DeclarationMetadata { r#type: ty, .. })
-                        if !matches!(ty.clone(), Type::Func(_, _)) =>
+                    Some(DeclarationMetadata { ty, .. })
+                        if !matches!(ty.clone(), Type::Func(_)) =>
                     {
                         Err(format!(
                             "function {} redefines conflicting type: {:?}",
@@ -263,13 +260,16 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                         ))
                     }
                     // clobbers already defined function.
-                    Some(DeclarationMetadata { r#type: ty, .. })
-                        if matches!(ty.clone(), Type::Func(ast::DefinitionState::Defined, _)) =>
-                    {
+                    Some(DeclarationMetadata {
+                        definition_state: DefinitionState::Defined,
+                        ty,
+                        ..
+                    }) if matches!(ty.clone(), Type::Func(_)) => {
                         Err(format!("function {} defined multiple times", &id))
                     }
                     Some(DeclarationMetadata {
-                        r#type: Type::Func(ast::DefinitionState::Declared, previous_sig),
+                        definition_state: DefinitionState::Declared,
+                        ty: Type::Func(previous_sig),
                         ..
                     }) if previous_sig != new_sig => Err(format!(
                         "function {} conflicts with previous declaration: {:?}",
@@ -277,23 +277,22 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                     )),
                     // declared previously and matching the signature
                     Some(DeclarationMetadata {
-                        r#type: Type::Func(ast::DefinitionState::Declared, previous_sig),
+                        definition_state: DefinitionState::Declared,
+                        ty: Type::Func(previous_sig),
                         ..
                     }) if previous_sig == new_sig => {
-                        let type_proto =
-                            ast::Type::Func(ast::DefinitionState::Defined, new_sig.clone());
+                        let type_proto = ast::Type::Func(new_sig.clone());
                         self.scopes
-                            .declare_global_mut(&id, type_proto, scopes::Kind::Basic);
+                            .define_global_mut(&id, type_proto, scopes::Kind::Basic);
 
                         self.analyze_function_body(id.clone(), new_sig, block)
                             .map(ast::TypedGlobalDecls::Func)
                     }
                     // undeclared/undefined safe to redefine.
                     None => {
-                        let type_proto =
-                            ast::Type::Func(ast::DefinitionState::Defined, new_sig.clone());
+                        let type_proto = ast::Type::Func(new_sig.clone());
                         self.scopes
-                            .declare_global_mut(&id, type_proto, scopes::Kind::Basic);
+                            .define_global_mut(&id, type_proto, scopes::Kind::Basic);
 
                         self.analyze_function_body(id.clone(), new_sig, block)
                             .map(ast::TypedGlobalDecls::Func)
@@ -302,7 +301,9 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                     _ => unreachable!(),
                 }
             }
-            crate::parser::ast::GlobalDecls::Var(ast::Declaration::Scalar(ty, ids)) => {
+            parser::ast::GlobalDecls::Var(parser::ast::Declaration::Scalar(ty, ids)) => {
+                let ty = ast::Type::from(ty);
+
                 for id in ids.iter() {
                     self.scopes
                         .declare_global_mut(id, ty.clone(), scopes::Kind::Basic);
@@ -312,9 +313,11 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                     ty, ids,
                 )))
             }
-            crate::parser::ast::GlobalDecls::Var(ast::Declaration::Array { ty, id, size }) => {
+            parser::ast::GlobalDecls::Var(parser::ast::Declaration::Array { ty, id, size }) => {
+                let ty = ast::Type::from(ty);
+
                 self.scopes
-                    .declare_global_mut(&id, ty.pointer_to(), scopes::Kind::Array(size));
+                    .declare_global_mut(&id,ty.pointer_to(), scopes::Kind::Array(size));
 
                 Ok(ast::TypedGlobalDecls::Var(ast::Declaration::Array {
                     ty,
@@ -322,20 +325,20 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                     size,
                 }))
             }
-            crate::parser::ast::GlobalDecls::FuncProto(proto) => {
-                let (id, return_ty) = (proto.id, proto.return_type);
+            parser::ast::GlobalDecls::FuncProto(proto) => {
+                let (id, return_ty) = (proto.id, proto.return_type.into());
                 let params = proto
                     .params
                     .into_iter()
-                    .map(|p| ast::Parameter::new(p.id, p.r#type))
+                    .map(ast::Parameter::from)
                     .collect();
 
                 let new_sig = FunctionSignature::new(Box::new(return_ty), params);
 
                 match self.scopes.lookup(&id) {
                     // clobbers non-existent function.
-                    Some(DeclarationMetadata { r#type: ty, .. })
-                        if !(matches!(ty.clone(), Type::Func(_, _))) =>
+                    Some(DeclarationMetadata { ty, .. })
+                        if !(matches!(ty.clone(), Type::Func(_))) =>
                     {
                         Err(format!(
                             "function {} redefines conflicting type: {:?}",
@@ -343,25 +346,27 @@ impl CompilationStage<crate::parser::ast::GlobalDecls, ast::TypedGlobalDecls, St
                         ))
                     }
                     // clobbers already defined function.
-                    Some(DeclarationMetadata { r#type: ty, .. })
-                        if matches!(ty.clone(), Type::Func(ast::DefinitionState::Defined, _)) =>
+                    Some(DeclarationMetadata { definition_state:ast::DefinitionState::Defined ,ty, .. })
+                        if matches!(ty.clone(), Type::Func( _)) =>
                     {
                         Err(format!("function {} already defined", &id))
                     }
                     Some(DeclarationMetadata {
-                        r#type: Type::Func(ast::DefinitionState::Declared, previous_sig),
+                        definition_state:ast::DefinitionState::Declared, 
+                        ty: Type::Func( previous_sig),
                         ..
                     }) if previous_sig != new_sig => {
                         Err(format!("declaration of function signature {:?} conflicts with previous declaration: {:?}", &new_sig, &previous_sig))
                     }
                     // if already declared, do nothing.
                     Some(DeclarationMetadata {
-                        r#type: Type::Func(ast::DefinitionState::Declared, previous_sig),
+                        definition_state: ast::DefinitionState::Declared,
+                        ty: Type::Func( previous_sig),
                         ..
                     }) if previous_sig == new_sig => Ok(ast::TypedGlobalDecls::FuncProto),
                     // if undeclared/undefined, declare the function.
                     None => {
-                        let type_proto = ast::Type::Func(ast::DefinitionState::Declared, new_sig);
+                        let type_proto = ast::Type::Func(new_sig);
                         self.scopes
                             .declare_global_mut(&id, type_proto, scopes::Kind::Basic);
 
@@ -380,7 +385,7 @@ impl TypeAnalysis {
         &mut self,
         id: String,
         func_proto: FunctionSignature,
-        block: crate::parser::ast::CompoundStmts,
+        block: mossy_parser::parser::ast::CompoundStmts,
     ) -> Result<ast::TypedFunctionDeclaration, String> {
         let old_body = self.in_func.replace((id.clone(), func_proto.clone()));
         self.scopes.push_new_scope_mut();
@@ -390,7 +395,7 @@ impl TypeAnalysis {
         // Declare global parameters prior to statement analysis
         for param in func_proto.parameters.iter() {
             self.scopes
-                .declare_parameter_mut(&param.id, param.r#type.clone(), scopes::Kind::Basic);
+                .declare_parameter_mut(&param.id, param.ty.clone(), scopes::Kind::Basic);
         }
 
         for stmt in stmts {
@@ -434,7 +439,7 @@ impl TypeAnalysis {
 
     fn analyze_block(
         &mut self,
-        block: crate::parser::ast::CompoundStmts,
+        block: mossy_parser::parser::ast::CompoundStmts,
     ) -> Result<ast::TypedCompoundStmts, String> {
         self.scopes.push_new_scope_mut();
         let stmts = Vec::from(block);
@@ -451,37 +456,51 @@ impl TypeAnalysis {
 
     fn analyze_statement(
         &mut self,
-        input: crate::parser::ast::StmtNode,
+        input: mossy_parser::parser::ast::StmtNode,
     ) -> Result<ast::TypedStmtNode, String> {
+        use mossy_parser::parser;
+
         match input {
-            crate::parser::ast::StmtNode::Expression(expr) => self
+            parser::ast::StmtNode::Expression(expr) => self
                 .analyze_expression(expr)
                 .map(ast::TypedStmtNode::Expression),
-            crate::parser::ast::StmtNode::Declaration(ast::Declaration::Scalar(ty, ids)) => {
+            parser::ast::StmtNode::Declaration(parser::ast::Declaration::Scalar(ty, ids)) => {
                 let slot_ids = ids
                     .iter()
                     .map(|id| {
                         self.scopes
-                            .declare_local_mut(id, ty.clone(), scopes::Kind::Basic)
+                            .declare_local_mut(id, ty.clone().into(), scopes::Kind::Basic)
                     })
                     .collect();
 
                 Ok(ast::TypedStmtNode::LocalDeclaration(
-                    ast::Declaration::Scalar(ty, ids),
+                    ast::Declaration::Scalar(ty.into(), ids),
                     slot_ids,
                 ))
             }
-            crate::parser::ast::StmtNode::Declaration(ast::Declaration::Array { ty, id, size }) => {
-                let slot_ids =
-                    self.scopes
-                        .declare_local_mut(&id, ty.pointer_to(), scopes::Kind::Array(size));
+            parser::ast::StmtNode::Declaration(parser::ast::Declaration::Array {
+                ty,
+                id,
+                size,
+            }) => {
+let ty = ast::Type::from(ty);
+
+                let slot_ids = self.scopes.declare_local_mut(
+                    &id,
+                    ty.pointer_to(),
+                    scopes::Kind::Array(size),
+                );
 
                 Ok(ast::TypedStmtNode::LocalDeclaration(
-                    ast::Declaration::Array { ty, id, size },
+                    ast::Declaration::Array {
+                        ty,
+                        id,
+                        size,
+                    },
                     vec![slot_ids],
                 ))
             }
-            crate::parser::ast::StmtNode::Return(Some(rt_expr)) => {
+            mossy_parser::parser::ast::StmtNode::Return(Some(rt_expr)) => {
                 if let Some((id, proto)) = self.in_func.as_ref() {
                     let typed_expr = self.analyze_expression(rt_expr)?;
                     let expr_t = typed_expr.r#type();
@@ -507,7 +526,7 @@ impl TypeAnalysis {
                     Err("invalid use of return: not in function".to_string())
                 }
             }
-            crate::parser::ast::StmtNode::Return(None) => {
+            mossy_parser::parser::ast::StmtNode::Return(None) => {
                 if let Some((id, _)) = self.in_func.as_ref() {
                     Ok(ast::TypedStmtNode::Return(
                         ast::Type::Void,
@@ -519,7 +538,7 @@ impl TypeAnalysis {
                 }
             }
 
-            crate::parser::ast::StmtNode::If(cond, t_case, f_case) => {
+            mossy_parser::parser::ast::StmtNode::If(cond, t_case, f_case) => {
                 let typed_cond = self.analyze_expression(cond)?;
                 let typed_t_case = self.analyze_block(t_case)?;
                 let typed_f_case = if let Some(block) = f_case {
@@ -535,13 +554,13 @@ impl TypeAnalysis {
                     typed_f_case,
                 ))
             }
-            crate::parser::ast::StmtNode::While(cond, block) => {
+            mossy_parser::parser::ast::StmtNode::While(cond, block) => {
                 let typed_cond = self.analyze_expression(cond)?;
                 let typed_block = self.analyze_block(block)?;
 
                 Ok(ast::TypedStmtNode::While(typed_cond, typed_block))
             }
-            crate::parser::ast::StmtNode::For(preop, cond, postop, block) => {
+            mossy_parser::parser::ast::StmtNode::For(preop, cond, postop, block) => {
                 let typed_cond = self.analyze_expression(cond)?;
                 let typed_preop = self.analyze_statement(*preop)?;
                 let typed_postop = self.analyze_statement(*postop)?;
@@ -559,17 +578,21 @@ impl TypeAnalysis {
 
     fn analyze_expression(
         &self,
-        expr: crate::parser::ast::ExprNode,
+        expr: mossy_parser::parser::ast::ExprNode,
     ) -> Result<ast::TypedExprNode, String> {
-        use crate::parser::ast::ExprNode;
-        use crate::parser::ast::Primary;
+        use mossy_parser::parser::ast::ExprNode;
+        use mossy_parser::parser::ast::Primary;
 
         match expr {
             ExprNode::Primary(Primary::Integer { sign, width, value }) => {
-                let (sign, width) = (sign, width);
+                let (sign, width) = (sign.into(), width.into());
                 Ok(ast::TypedExprNode::Primary(
                     ast::Type::Integer(sign, width),
-                    ast::Primary::Integer { sign, width, value },
+                    ast::Primary::Integer {
+                        sign: sign.into(),
+                        width: width.into(),
+                        value,
+                    },
                 ))
             }
             ExprNode::Primary(Primary::Identifier(identifier)) => self
@@ -577,33 +600,29 @@ impl TypeAnalysis {
                 .lookup(&identifier)
                 .ok_or_else(|| format!("identifier ({}) undefined", &identifier))
                 .map(|dm| match (dm.is_array(), dm.locality) {
-                    (true, scopes::Locality::Global) => ast::TypedExprNode::Ref(
-                        dm.r#type,
-                        ast::IdentifierLocality::Global(identifier),
-                    ),
+                    (true, scopes::Locality::Global) => {
+                        ast::TypedExprNode::Ref(dm.ty, ast::IdentifierLocality::Global(identifier))
+                    }
                     (false, scopes::Locality::Global) => ast::TypedExprNode::Primary(
-                        dm.r#type.clone(),
+                        dm.ty.clone(),
                         ast::Primary::Identifier(
-                            dm.r#type,
+                            dm.ty,
                             ast::IdentifierLocality::Global(identifier),
                         ),
                     ),
                     (true, scopes::Locality::Local(slot)) => {
-                        ast::TypedExprNode::Ref(dm.r#type, ast::IdentifierLocality::Local(slot))
+                        ast::TypedExprNode::Ref(dm.ty, ast::IdentifierLocality::Local(slot))
                     }
                     (false, scopes::Locality::Local(slot)) => ast::TypedExprNode::Primary(
-                        dm.r#type.clone(),
-                        ast::Primary::Identifier(dm.r#type, ast::IdentifierLocality::Local(slot)),
+                        dm.ty.clone(),
+                        ast::Primary::Identifier(dm.ty, ast::IdentifierLocality::Local(slot)),
                     ),
                     (true, scopes::Locality::Parameter(slot)) => {
-                        ast::TypedExprNode::Ref(dm.r#type, ast::IdentifierLocality::Parameter(slot))
+                        ast::TypedExprNode::Ref(dm.ty, ast::IdentifierLocality::Parameter(slot))
                     }
                     (false, scopes::Locality::Parameter(slot)) => ast::TypedExprNode::Primary(
-                        dm.r#type.clone(),
-                        ast::Primary::Identifier(
-                            dm.r#type,
-                            ast::IdentifierLocality::Parameter(slot),
-                        ),
+                        dm.ty.clone(),
+                        ast::Primary::Identifier(dm.ty, ast::IdentifierLocality::Parameter(slot)),
                     ),
                 }),
             ExprNode::Primary(Primary::Str(elems)) => Ok(ast::TypedExprNode::Primary(
@@ -627,12 +646,12 @@ impl TypeAnalysis {
                 self.scopes
                     .lookup(&identifier)
                     .ok_or_else(|| format!("undefined_function: {}", &identifier))
-                    .and_then(|dm| match dm.r#type.clone() {
-                        ast::Type::Func(_, FunctionSignature {
+                    .and_then(|dm| match dm.ty.clone() {
+                        ast::Type::Func(FunctionSignature {
                             return_type,
                             parameters: params,
                         }) => {
-                            let params_type_sig = params.iter().map(|arg| arg.r#type.clone());
+                            let params_type_sig = params.iter().map(|arg| arg.ty.clone());
 
                             if params_type_sig.len() == args_type_sig.len() {
                                 let adjusted_arg_types = params_type_sig
@@ -663,13 +682,13 @@ impl TypeAnalysis {
                             } else {
                                 Err(format!(
                                     "type mismatch, cannot call non-function type: {:?} with: {:?}",
-                                    &dm.r#type, args_type_sig
+                                    &dm.ty, args_type_sig
                                 ))
                             }
                         }
                         _ => Err(format!(
                             "type mismatch, cannot call non-function type: {:?}",
-                            &dm.r#type
+                            &dm.ty
                         )),
                     })
             }
@@ -684,7 +703,7 @@ impl TypeAnalysis {
                     TypedExprNode::Primary(lhs_ty, Primary::Identifier(_, ast::IdentifierLocality::Global(id))) => self
                         .scopes
                         .lookup(&id)
-                        .map(|dm| LeftFlowing.type_compatible(&dm.r#type, &rhs.r#type()))
+                        .map(|dm| LeftFlowing.type_compatible(&dm.ty, &rhs.r#type()))
                         .ok_or(format!("symbol {} undefined", &id))
                         .and_then(|type_compat| match type_compat {
                             CompatibilityResult::Equivalent => Ok(lhs_ty),
@@ -906,15 +925,15 @@ impl TypeAnalysis {
                 .lookup(&identifier)
                 .map(|dm| match dm.locality {
                     scopes::Locality::Global => ast::TypedExprNode::Ref(
-                        dm.r#type.pointer_to(),
+                        dm.ty.pointer_to(),
                         ast::IdentifierLocality::Global(identifier),
                     ),
                     scopes::Locality::Local(slot) => ast::TypedExprNode::Ref(
-                        dm.r#type.pointer_to(),
+                        dm.ty.pointer_to(),
                         ast::IdentifierLocality::Local(slot),
                     ),
                     scopes::Locality::Parameter(slot) => ast::TypedExprNode::Ref(
-                        dm.r#type.pointer_to(),
+                        dm.ty.pointer_to(),
                         ast::IdentifierLocality::Parameter(slot),
                     ),
                 })
@@ -955,7 +974,7 @@ impl TypeAnalysis {
                     .lookup(&identifier)
                     // validate that the reference is a pointer type
                     .and_then(|reference| {
-                        reference.r#type.value_at().map(|value_of_ref| {
+                        reference.ty.value_at().map(|value_of_ref| {
                             (
                                 reference,
                                 ast::TypedExprNode::ScaleBy(value_of_ref, Box::new(index_expr)),
@@ -963,7 +982,7 @@ impl TypeAnalysis {
                         })
                     })
                     .map(|(dm, scale)| {
-                        let ref_ty = dm.r#type.clone();
+                        let ref_ty = dm.ty.clone();
 
                         let l_value_access = match (dm.is_array(), dm.locality) {
                             (true, scopes::Locality::Global) => Box::new(ast::TypedExprNode::Ref(
@@ -1021,8 +1040,8 @@ impl TypeAnalysis {
 
     fn analyze_binary_expr(
         &self,
-        lhs: crate::parser::ast::ExprNode,
-        rhs: crate::parser::ast::ExprNode,
+        lhs: mossy_parser::parser::ast::ExprNode,
+        rhs: mossy_parser::parser::ast::ExprNode,
     ) -> Option<(ast::Type, ast::TypedExprNode, ast::TypedExprNode)> {
         let lhs = self.analyze_expression(lhs).unwrap();
         let rhs = self.analyze_expression(rhs).unwrap();
@@ -1042,7 +1061,7 @@ impl TypeAnalysis {
     fn analyze_inc_dec_expr(
         &self,
         variant: IncDecExpr,
-        expr: crate::parser::ast::ExprNode,
+        expr: mossy_parser::parser::ast::ExprNode,
     ) -> Result<ast::TypedExprNode, String> {
         use ast::TypedExprNode;
         self.analyze_expression(expr)
@@ -1095,7 +1114,9 @@ enum IncDecExpr {
 #[cfg(test)]
 mod tests {
     use super::ast::{IdentifierLocality, IntegerWidth, Signed, Type, TypedExprNode};
-    use crate::parser::ast;
+    use mossy_parser::parser;
+
+    use mossy_parser::{assignment_expr, primary_expr};
 
     macro_rules! pad_to_le_64bit_array {
         ($val:literal) => {
@@ -1106,12 +1127,13 @@ mod tests {
     #[test]
     fn test_grouping_assigns_correct_type() {
         let analyzer = super::TypeAnalysis::default();
-        let pre_typed_ast =
-            ast::ExprNode::Grouping(Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Eight,
+        let pre_typed_ast = parser::ast::ExprNode::Grouping(Box::new(
+            parser::ast::ExprNode::Primary(parser::ast::Primary::Integer {
+                sign: parser::ast::Signed::Unsigned,
+                width: parser::ast::IntegerWidth::Eight,
                 value: pad_to_le_64bit_array!(1u8),
-            })));
+            }),
+        ));
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
         let expected = TypedExprNode::Grouping(
@@ -1130,25 +1152,32 @@ mod tests {
 
         // Preserves complex order
 
-        let pre_typed_ast = ast::ExprNode::Grouping(Box::new(ast::ExprNode::Multiplication(
-            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Eight,
-                value: pad_to_le_64bit_array!(2u8),
-            })),
-            Box::new(ast::ExprNode::Addition(
-                Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                    sign: Signed::Unsigned,
-                    width: IntegerWidth::Eight,
-                    value: pad_to_le_64bit_array!(3u8),
-                })),
-                Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                    sign: Signed::Unsigned,
-                    width: IntegerWidth::Eight,
-                    value: pad_to_le_64bit_array!(4u8),
-                })),
-            )),
-        )));
+        let pre_typed_ast =
+            parser::ast::ExprNode::Grouping(Box::new(parser::ast::ExprNode::Multiplication(
+                Box::new(parser::ast::ExprNode::Primary(
+                    parser::ast::Primary::Integer {
+                        sign: parser::ast::Signed::Unsigned,
+                        width: parser::ast::IntegerWidth::Eight,
+                        value: pad_to_le_64bit_array!(2u8),
+                    },
+                )),
+                Box::new(parser::ast::ExprNode::Addition(
+                    Box::new(parser::ast::ExprNode::Primary(
+                        parser::ast::Primary::Integer {
+                            sign: parser::ast::Signed::Unsigned,
+                            width: parser::ast::IntegerWidth::Eight,
+                            value: pad_to_le_64bit_array!(3u8),
+                        },
+                    )),
+                    Box::new(parser::ast::ExprNode::Primary(
+                        parser::ast::Primary::Integer {
+                            sign: parser::ast::Signed::Unsigned,
+                            width: parser::ast::IntegerWidth::Eight,
+                            value: pad_to_le_64bit_array!(4u8),
+                        },
+                    )),
+                )),
+            )));
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
         let expected = TypedExprNode::Grouping(
@@ -1194,7 +1223,7 @@ mod tests {
 
         let mut analyzer = super::TypeAnalysis::default();
         let pre_typed_ast = assignment_expr!(
-            ast::ExprNode::Primary(ast::Primary::Identifier("x".to_string())),
+            parser::ast::ExprNode::Primary(parser::ast::Primary::Identifier("x".to_string())),
             '=',
             primary_expr!(str "hello")
         );
@@ -1226,17 +1255,21 @@ mod tests {
 
         // promotion of integer size
 
-        let pre_typed_ast = ast::ExprNode::Addition(
-            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Eight,
-                value: pad_to_le_64bit_array!(1u8),
-            })),
-            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Signed,
-                width: IntegerWidth::Eight,
-                value: pad_to_le_64bit_array!(1u8),
-            })),
+        let pre_typed_ast = parser::ast::ExprNode::Addition(
+            Box::new(parser::ast::ExprNode::Primary(
+                parser::ast::Primary::Integer {
+                    sign: parser::ast::Signed::Unsigned,
+                    width: parser::ast::IntegerWidth::Eight,
+                    value: pad_to_le_64bit_array!(1u8),
+                },
+            )),
+            Box::new(parser::ast::ExprNode::Primary(
+                parser::ast::Primary::Integer {
+                    sign: parser::ast::Signed::Signed,
+                    width: parser::ast::IntegerWidth::Eight,
+                    value: pad_to_le_64bit_array!(1u8),
+                },
+            )),
         );
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
@@ -1264,17 +1297,21 @@ mod tests {
 
         // equivalent size
 
-        let pre_typed_ast = ast::ExprNode::Addition(
-            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Eight,
-                value: pad_to_le_64bit_array!(1u8),
-            })),
-            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::Eight,
-                value: pad_to_le_64bit_array!(1u8),
-            })),
+        let pre_typed_ast = parser::ast::ExprNode::Addition(
+            Box::new(parser::ast::ExprNode::Primary(
+                parser::ast::Primary::Integer {
+                    sign: parser::ast::Signed::Unsigned,
+                    width: parser::ast::IntegerWidth::Eight,
+                    value: pad_to_le_64bit_array!(1u8),
+                },
+            )),
+            Box::new(parser::ast::ExprNode::Primary(
+                parser::ast::Primary::Integer {
+                    sign: parser::ast::Signed::Unsigned,
+                    width: parser::ast::IntegerWidth::Eight,
+                    value: pad_to_le_64bit_array!(1u8),
+                },
+            )),
         );
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);
@@ -1305,17 +1342,21 @@ mod tests {
     fn should_promote_a_larger_unsigned_int_to_signed_if_one_is_signed() {
         let analyzer = super::TypeAnalysis::default();
 
-        let pre_typed_ast = ast::ExprNode::Addition(
-            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Unsigned,
-                width: IntegerWidth::ThirtyTwo,
-                value: pad_to_le_64bit_array!(1u32),
-            })),
-            Box::new(ast::ExprNode::Primary(ast::Primary::Integer {
-                sign: Signed::Signed,
-                width: IntegerWidth::Eight,
-                value: pad_to_le_64bit_array!(1u8),
-            })),
+        let pre_typed_ast = parser::ast::ExprNode::Addition(
+            Box::new(parser::ast::ExprNode::Primary(
+                parser::ast::Primary::Integer {
+                    sign: parser::ast::Signed::Unsigned,
+                    width: parser::ast::IntegerWidth::ThirtyTwo,
+                    value: pad_to_le_64bit_array!(1u32),
+                },
+            )),
+            Box::new(parser::ast::ExprNode::Primary(
+                parser::ast::Primary::Integer {
+                    sign: parser::ast::Signed::Signed,
+                    width: parser::ast::IntegerWidth::Eight,
+                    value: pad_to_le_64bit_array!(1u8),
+                },
+            )),
         );
 
         let typed_ast = analyzer.analyze_expression(pre_typed_ast);

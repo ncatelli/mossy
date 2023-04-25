@@ -1,8 +1,8 @@
 [package]
-name = "mossy_core"
+name = "mossy_codegen"
 version = "0.1.0"
 authors = ["Nate Catelli <ncatelli@packetfire.org>"]
 edition = "2018"
 
 [dependencies]
-parcel = { git = "https://github.com/ncatelli/parcel", tag = "v2.0.1" }
+mossy_parser = { path = "../parser" }

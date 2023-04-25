@@ -60,11 +60,11 @@ fn write_dest_file<P: AsRef<Path>>(filename: P, data: &[u8]) -> RuntimeResult<()
 }
 
 fn compile(source: &str) -> RuntimeResult<String> {
-    use mossy_core::lexer;
-    use mossy_core::parser;
-    use mossy_core::preprocessor;
-    use mossy_core::stage::codegen::machine::arch::x86_64;
-    use mossy_core::stage::{type_check, CompilationStage};
+    use mossy_codegen::stage::codegen::machine::arch::x86_64;
+    use mossy_codegen::stage::{type_check, CompilationStage};
+    use mossy_parser::lexer;
+    use mossy_parser::parser;
+    use mossy_parser::preprocessor;
 
     let input: Vec<(usize, char)> = source.chars().enumerate().collect();
     let pre_processed_input = preprocessor::pre_process(&input)

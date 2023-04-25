@@ -206,6 +206,7 @@ pub enum Primary {
     Str(Vec<u8>),
 }
 
+#[macro_export]
 macro_rules! assignment_expr {
     ($lhs:expr, '=', $rhs:expr) => {
         $crate::parser::ast::ExprNode::Assignment(Box::new($lhs), Box::new($rhs))
@@ -272,17 +273,18 @@ macro_rules! factor_expr {
     };
 }
 
+#[macro_export]
 #[allow(unused)]
 macro_rules! primary_expr {
     (i8 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
             sign: Signed::Signed,
             width: IntegerWidth::Eight,
             value: $crate::util::pad_to_64bit_array(($value as i8).to_le_bytes()),
         })
     };
     (u8 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
             sign: Signed::Unsigned,
             width: IntegerWidth::Eight,
             value: $crate::util::pad_to_64bit_array(($value as u8).to_le_bytes()),
@@ -290,14 +292,14 @@ macro_rules! primary_expr {
     };
 
     (i16 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
             sign: Signed::Signed,
             width: IntegerWidth::Sixteen,
             value: $crate::util::pad_to_64bit_array(($value as i16).to_le_bytes()),
         })
     };
     (u16 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
             sign: Signed::Unsigned,
             width: IntegerWidth::Sixteen,
             value: $crate::util::pad_to_64bit_array(($value as u16).to_le_bytes()),
@@ -305,14 +307,14 @@ macro_rules! primary_expr {
     };
 
     (i32 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
             sign: Signed::Signed,
             width: IntegerWidth::ThirtyTwo,
             value: $crate::util::pad_to_64bit_array(($value as i32).to_le_bytes()),
         })
     };
     (u32 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
             sign: Signed::Unsigned,
             width: IntegerWidth::ThirtyTwo,
             value: $crate::util::pad_to_64bit_array(($value as u32).to_le_bytes()),
@@ -320,14 +322,14 @@ macro_rules! primary_expr {
     };
 
     (i64 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
             sign: Signed::Signed,
             width: IntegerWidth::SixtyFour,
             value: $crate::util::pad_to_64bit_array(($value as i64).to_le_bytes()),
         })
     };
     (u64 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
             sign: Signed::Unsigned,
             width: IntegerWidth::SixtyFour,
             value: $crate::util::pad_to_64bit_array(($value as u64).to_le_bytes()),
@@ -335,7 +337,7 @@ macro_rules! primary_expr {
     };
 
     (str $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Str(
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Str(
             $value.chars().map(|c| c as u8).collect(),
         ))
     };
