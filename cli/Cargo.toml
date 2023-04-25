@@ -2,7 +2,7 @@
 name = "mossy_cli"
 version = "0.1.0"
 authors = ["Nate Catelli <ncatelli@packetfire.org>"]
-edition = "2018"
+edition = "2021"
 
 [[bin]]
 name = "mossy"
