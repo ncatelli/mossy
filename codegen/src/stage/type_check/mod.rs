@@ -1,6 +1,8 @@
 //! The Type Pass module handles walking the raw parser ADT, performing
 //! additional type checking and enrichment.
 
+use mossy_parser::parser;
+
 use crate::stage::type_check::ast::DefinitionState;
 
 use super::CompilationStage;
@@ -217,12 +219,12 @@ impl Default for TypeAnalysis {
     }
 }
 
-impl CompilationStage<mossy_parser::parser::ast::CompilationUnit, ast::TypedProgram, String>
+impl CompilationStage<parser::ast::CompilationUnit, ast::TypedProgram, String>
     for TypeAnalysis
 {
     fn apply(
         &mut self,
-        input: mossy_parser::parser::ast::CompilationUnit,
+        input: parser::ast::CompilationUnit,
     ) -> Result<ast::TypedProgram, String> {
         input
             .defs
@@ -233,18 +235,17 @@ impl CompilationStage<mossy_parser::parser::ast::CompilationUnit, ast::TypedProg
     }
 }
 
-impl CompilationStage<mossy_parser::parser::ast::GlobalDecls, ast::TypedGlobalDecls, String>
+impl CompilationStage<parser::ast::GlobalDecls, ast::TypedGlobalDecls, String>
     for TypeAnalysis
 {
     fn apply(
         &mut self,
-        input: mossy_parser::parser::ast::GlobalDecls,
+        input: parser::ast::GlobalDecls,
     ) -> Result<ast::TypedGlobalDecls, String> {
-        use mossy_parser::parser;
         use scopes::DeclarationMetadata;
 
         match input {
-            mossy_parser::parser::ast::GlobalDecls::FuncDefinition(fd) => {
+            parser::ast::GlobalDecls::FuncDefinition(fd) => {
                 let (id, return_ty, block) = (fd.proto.id, fd.proto.return_type, fd.block);
                 let params = fd.proto.params.into_iter().map(Into::into).collect();
                 let new_sig = FunctionSignature::new(Box::new(return_ty.into()), params);
@@ -385,7 +386,7 @@ impl TypeAnalysis {
         &mut self,
         id: String,
         func_proto: FunctionSignature,
-        block: mossy_parser::parser::ast::CompoundStmts,
+        block: parser::ast::CompoundStmts,
     ) -> Result<ast::TypedFunctionDeclaration, String> {
         let old_body = self.in_func.replace((id.clone(), func_proto.clone()));
         self.scopes.push_new_scope_mut();
@@ -439,7 +440,7 @@ impl TypeAnalysis {
 
     fn analyze_block(
         &mut self,
-        block: mossy_parser::parser::ast::CompoundStmts,
+        block: parser::ast::CompoundStmts,
     ) -> Result<ast::TypedCompoundStmts, String> {
         self.scopes.push_new_scope_mut();
         let stmts = Vec::from(block);
@@ -456,10 +457,8 @@ impl TypeAnalysis {
 
     fn analyze_statement(
         &mut self,
-        input: mossy_parser::parser::ast::StmtNode,
+        input: parser::ast::StmtNode,
     ) -> Result<ast::TypedStmtNode, String> {
-        use mossy_parser::parser;
-
         match input {
             parser::ast::StmtNode::Expression(expr) => self
                 .analyze_expression(expr)
@@ -500,7 +499,7 @@ let ty = ast::Type::from(ty);
                     vec![slot_ids],
                 ))
             }
-            mossy_parser::parser::ast::StmtNode::Return(Some(rt_expr)) => {
+            parser::ast::StmtNode::Return(Some(rt_expr)) => {
                 if let Some((id, proto)) = self.in_func.as_ref() {
                     let typed_expr = self.analyze_expression(rt_expr)?;
                     let expr_t = typed_expr.r#type();
@@ -526,7 +525,7 @@ let ty = ast::Type::from(ty);
                     Err("invalid use of return: not in function".to_string())
                 }
             }
-            mossy_parser::parser::ast::StmtNode::Return(None) => {
+            parser::ast::StmtNode::Return(None) => {
                 if let Some((id, _)) = self.in_func.as_ref() {
                     Ok(ast::TypedStmtNode::Return(
                         ast::Type::Void,
@@ -538,7 +537,7 @@ let ty = ast::Type::from(ty);
                 }
             }
 
-            mossy_parser::parser::ast::StmtNode::If(cond, t_case, f_case) => {
+            parser::ast::StmtNode::If(cond, t_case, f_case) => {
                 let typed_cond = self.analyze_expression(cond)?;
                 let typed_t_case = self.analyze_block(t_case)?;
                 let typed_f_case = if let Some(block) = f_case {
@@ -554,13 +553,13 @@ let ty = ast::Type::from(ty);
                     typed_f_case,
                 ))
             }
-            mossy_parser::parser::ast::StmtNode::While(cond, block) => {
+            parser::ast::StmtNode::While(cond, block) => {
                 let typed_cond = self.analyze_expression(cond)?;
                 let typed_block = self.analyze_block(block)?;
 
                 Ok(ast::TypedStmtNode::While(typed_cond, typed_block))
             }
-            mossy_parser::parser::ast::StmtNode::For(preop, cond, postop, block) => {
+            parser::ast::StmtNode::For(preop, cond, postop, block) => {
                 let typed_cond = self.analyze_expression(cond)?;
                 let typed_preop = self.analyze_statement(*preop)?;
                 let typed_postop = self.analyze_statement(*postop)?;
@@ -578,10 +577,10 @@ let ty = ast::Type::from(ty);
 
     fn analyze_expression(
         &self,
-        expr: mossy_parser::parser::ast::ExprNode,
+        expr: parser::ast::ExprNode,
     ) -> Result<ast::TypedExprNode, String> {
-        use mossy_parser::parser::ast::ExprNode;
-        use mossy_parser::parser::ast::Primary;
+        use parser::ast::ExprNode;
+        use parser::ast::Primary;
 
         match expr {
             ExprNode::Primary(Primary::Integer { sign, width, value }) => {
@@ -1040,8 +1039,8 @@ let ty = ast::Type::from(ty);
 
     fn analyze_binary_expr(
         &self,
-        lhs: mossy_parser::parser::ast::ExprNode,
-        rhs: mossy_parser::parser::ast::ExprNode,
+        lhs: parser::ast::ExprNode,
+        rhs: parser::ast::ExprNode,
     ) -> Option<(ast::Type, ast::TypedExprNode, ast::TypedExprNode)> {
         let lhs = self.analyze_expression(lhs).unwrap();
         let rhs = self.analyze_expression(rhs).unwrap();
@@ -1061,7 +1060,7 @@ let ty = ast::Type::from(ty);
     fn analyze_inc_dec_expr(
         &self,
         variant: IncDecExpr,
-        expr: mossy_parser::parser::ast::ExprNode,
+        expr: parser::ast::ExprNode,
     ) -> Result<ast::TypedExprNode, String> {
         use ast::TypedExprNode;
         self.analyze_expression(expr)

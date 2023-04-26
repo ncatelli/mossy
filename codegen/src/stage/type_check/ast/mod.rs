@@ -1,3 +1,5 @@
+use mossy_parser::parser;
+
 macro_rules! generate_type_specifier {
     (integer, $sign:expr, $width:expr) => {
         $crate::stage::type_check::ast::Type::Integer($sign, $width)
@@ -82,8 +84,8 @@ impl Parameter {
     }
 }
 
-impl From<mossy_parser::parser::ast::Parameter> for Parameter {
-    fn from(value: mossy_parser::parser::ast::Parameter) -> Self {
+impl From<parser::ast::Parameter> for Parameter {
+    fn from(value: parser::ast::Parameter) -> Self {
         Self {
             id: value.id,
             ty: value.ty.into(),
@@ -330,11 +332,11 @@ pub enum Signed {
     Unsigned,
 }
 
-impl From<mossy_parser::parser::ast::Signed> for Signed {
-    fn from(value: mossy_parser::parser::ast::Signed) -> Self {
+impl From<parser::ast::Signed> for Signed {
+    fn from(value: parser::ast::Signed) -> Self {
         match value {
-            mossy_parser::parser::ast::Signed::Signed => Self::Signed,
-            mossy_parser::parser::ast::Signed::Unsigned => Self::Unsigned,
+            parser::ast::Signed::Signed => Self::Signed,
+            parser::ast::Signed::Unsigned => Self::Unsigned,
         }
     }
 }
@@ -388,14 +390,14 @@ impl From<IntegerClass> for IntegerWidth {
     }
 }
 
-impl From<mossy_parser::parser::ast::IntegerWidth> for IntegerWidth {
-    fn from(value: mossy_parser::parser::ast::IntegerWidth) -> Self {
+impl From<parser::ast::IntegerWidth> for IntegerWidth {
+    fn from(value: parser::ast::IntegerWidth) -> Self {
         match value {
-            mossy_parser::parser::ast::IntegerWidth::One => Self::One,
-            mossy_parser::parser::ast::IntegerWidth::Eight => Self::Eight,
-            mossy_parser::parser::ast::IntegerWidth::Sixteen => Self::Sixteen,
-            mossy_parser::parser::ast::IntegerWidth::ThirtyTwo => Self::ThirtyTwo,
-            mossy_parser::parser::ast::IntegerWidth::SixtyFour => Self::SixtyFour,
+            parser::ast::IntegerWidth::One => Self::One,
+            parser::ast::IntegerWidth::Eight => Self::Eight,
+            parser::ast::IntegerWidth::Sixteen => Self::Sixteen,
+            parser::ast::IntegerWidth::ThirtyTwo => Self::ThirtyTwo,
+            parser::ast::IntegerWidth::SixtyFour => Self::SixtyFour,
         }
     }
 }
@@ -481,19 +483,15 @@ impl Type {
     }
 }
 
-impl From<mossy_parser::parser::ast::Type> for Type {
-    fn from(value: mossy_parser::parser::ast::Type) -> Self {
+impl From<parser::ast::Type> for Type {
+    fn from(value: parser::ast::Type) -> Self {
         match value {
-            mossy_parser::parser::ast::Type::Integer(sign, width) => {
-                Type::Integer(sign.into(), width.into())
-            }
-            mossy_parser::parser::ast::Type::Void => Type::Void,
-            mossy_parser::parser::ast::Type::Func(
-                mossy_parser::parser::ast::FunctionSignature {
-                    return_type,
-                    parameters,
-                },
-            ) => {
+            parser::ast::Type::Integer(sign, width) => Type::Integer(sign.into(), width.into()),
+            parser::ast::Type::Void => Type::Void,
+            parser::ast::Type::Func(parser::ast::FunctionSignature {
+                return_type,
+                parameters,
+            }) => {
                 let return_type = Box::new((*return_type).into());
                 let parameters = parameters.into_iter().map(Into::into).collect::<Vec<_>>();
 
@@ -502,7 +500,7 @@ impl From<mossy_parser::parser::ast::Type> for Type {
                     parameters,
                 })
             }
-            mossy_parser::parser::ast::Type::Pointer(ty) => Type::Pointer(Box::new((*ty).into())),
+            parser::ast::Type::Pointer(ty) => Type::Pointer(Box::new((*ty).into())),
         }
     }
 }
