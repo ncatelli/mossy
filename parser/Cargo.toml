@@ -1,8 +1,10 @@
 [package]
-name = "mossy_parser"
+name = "mossy-parser"
 version = "0.1.0"
 authors = ["Nate Catelli <ncatelli@packetfire.org>"]
 edition = "2021"
+
+workspace = ".."
 
 [dependencies]
 parcel = { git = "https://github.com/ncatelli/parcel", tag = "v2.0.1" }

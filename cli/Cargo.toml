@@ -4,11 +4,13 @@ version = "0.1.0"
 authors = ["Nate Catelli <ncatelli@packetfire.org>"]
 edition = "2021"
 
+workspace = ".."
+
 [[bin]]
 name = "mossy"
 path = "./src/main.rs"
 
 [dependencies]
 scrap = { git = "https://github.com/ncatelli/scrap", tag = "v1.0.0" }
-mossy_codegen = { path = "../codegen" }
-mossy_parser = { path = "../parser" }
+mossy-codegen = { path = "../codegen" }
+mossy-parser = { path = "../parser" }

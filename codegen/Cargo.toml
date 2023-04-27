@@ -1,8 +1,10 @@
 [package]
-name = "mossy_codegen"
+name = "mossy-codegen"
 version = "0.1.0"
 authors = ["Nate Catelli <ncatelli@packetfire.org>"]
 edition = "2021"
 
+workspace = ".."
+
 [dependencies]
-mossy_parser = { path = "../parser" }
+mossy-parser = { path = "../parser" }
