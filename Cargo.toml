@@ -1,5 +1,5 @@
 [workspace]
-members = ["cli", "parser", "codegen"]
+members = ["cli", "parser", "lr_parser", "codegen"]
 
 [profile.release]
 lto = true
