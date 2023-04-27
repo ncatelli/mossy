@@ -1,4 +1,4 @@
-use crate::stage::type_check::ast::Type;
+use crate::stage::type_check::ast::{DefinitionState, Type};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Kind {
@@ -33,7 +33,8 @@ pub enum Locality {
 /// This information currenntly includes defined size and type.
 #[derive(Debug, Clone)]
 pub struct DeclarationMetadata {
-    pub r#type: Type,
+    pub definition_state: DefinitionState,
+    pub ty: Type,
     // if Some, implies that this is a fixed size array of a known size.
     // Otherwise it is a singular type be it a known value or pointer to a
     // value.
@@ -42,9 +43,10 @@ pub struct DeclarationMetadata {
 }
 
 impl DeclarationMetadata {
-    fn new(ty: Type, kind: Kind, locality: Locality) -> Self {
+    fn new(definition_state: DefinitionState, ty: Type, kind: Kind, locality: Locality) -> Self {
         Self {
-            r#type: ty,
+            definition_state,
+            ty,
             elems: kind.array_elems(),
             locality,
         }
@@ -52,14 +54,14 @@ impl DeclarationMetadata {
 
     /// Returns a boolean signifying a type is a fixed size array.
     pub fn is_array(&self) -> bool {
-        (matches!(self.r#type, Type::Pointer(_)) && self.elems.is_some())
+        (matches!(self.ty, Type::Pointer(_)) && self.elems.is_some())
     }
 
     /// Returns a boolean signifying a type is a direct refence type.
     /// i.e. not a pointer.
     #[allow(unused)]
     pub fn is_direct_reference(&self) -> bool {
-        self.is_array() || !matches!(self.r#type, Type::Pointer(_))
+        self.is_array() || !matches!(self.ty, Type::Pointer(_))
     }
 }
 
@@ -78,7 +80,7 @@ impl Scope {
             .flat_map(|id| {
                 self.symbols
                     .get(id.as_str())
-                    .map(|dm| (dm.r#type.clone(), dm.elems.unwrap_or(1)))
+                    .map(|dm| (dm.ty.clone(), dm.elems.unwrap_or(1)))
             })
             .collect()
     }
@@ -86,7 +88,7 @@ impl Scope {
     pub fn ordered_parameter_declarations(&self) -> Vec<Type> {
         self.parameter_slots
             .iter()
-            .flat_map(|id| self.symbols.get(id.as_str()).map(|dm| (dm.r#type.clone())))
+            .flat_map(|id| self.symbols.get(id.as_str()).map(|dm| (dm.ty.clone())))
             .collect()
     }
 }
@@ -117,7 +119,7 @@ impl ScopeStack {
         self.scopes.first_mut().map(|scope| {
             scope.symbols.insert(
                 id.to_string(),
-                DeclarationMetadata::new(ty, kind, Locality::Global),
+                DeclarationMetadata::new(DefinitionState::Declared, ty, kind, Locality::Global),
             )
         });
     }
@@ -131,7 +133,12 @@ impl ScopeStack {
                 scope.parameter_slots.push(id.to_string());
                 scope.symbols.insert(
                     id.to_string(),
-                    DeclarationMetadata::new(ty, kind, Locality::Parameter(slot_id)),
+                    DeclarationMetadata::new(
+                        DefinitionState::Declared,
+                        ty,
+                        kind,
+                        Locality::Parameter(slot_id),
+                    ),
                 );
 
                 slot_id
@@ -148,7 +155,67 @@ impl ScopeStack {
                 scope.local_slots.push(id.to_string());
                 scope.symbols.insert(
                     id.to_string(),
-                    DeclarationMetadata::new(ty, kind, Locality::Local(slot_id)),
+                    DeclarationMetadata::new(
+                        DefinitionState::Declared,
+                        ty,
+                        kind,
+                        Locality::Local(slot_id),
+                    ),
+                );
+
+                slot_id
+            })
+            .expect("attempted to allocate local variable on non-local scope")
+    }
+
+    pub fn define_global_mut(&mut self, id: &str, ty: Type, kind: Kind) {
+        self.scopes.first_mut().map(|scope| {
+            scope.symbols.insert(
+                id.to_string(),
+                DeclarationMetadata::new(DefinitionState::Defined, ty, kind, Locality::Global),
+            )
+        });
+    }
+
+    #[allow(unused)]
+    pub fn define_parameter_mut(&mut self, id: &str, ty: Type, kind: Kind) -> usize {
+        self.scopes
+            .last_mut()
+            .map(|scope| {
+                let slot_id = scope.parameter_slots.len();
+
+                scope.parameter_slots.push(id.to_string());
+                scope.symbols.insert(
+                    id.to_string(),
+                    DeclarationMetadata::new(
+                        DefinitionState::Defined,
+                        ty,
+                        kind,
+                        Locality::Parameter(slot_id),
+                    ),
+                );
+
+                slot_id
+            })
+            .expect("attempted to allocate local variable on non-local scope")
+    }
+
+    #[allow(unused)]
+    pub fn define_local_mut(&mut self, id: &str, ty: Type, kind: Kind) -> usize {
+        self.scopes
+            .last_mut()
+            .map(|scope| {
+                let slot_id = scope.local_slots.len();
+
+                scope.local_slots.push(id.to_string());
+                scope.symbols.insert(
+                    id.to_string(),
+                    DeclarationMetadata::new(
+                        DefinitionState::Defined,
+                        ty,
+                        kind,
+                        Locality::Local(slot_id),
+                    ),
                 );
 
                 slot_id

@@ -1857,7 +1857,7 @@ fn operand_width_of_type(ty: ast::Type) -> OperandWidth {
             ast::IntegerWidth::ThirtyTwo => OperandWidth::DoubleWord,
             ast::IntegerWidth::SixtyFour => OperandWidth::QuadWord,
         },
-        Type::Void | Type::Func(_, _) | Type::Pointer(_) => OperandWidth::QuadWord,
+        Type::Void | Type::Func(_) | Type::Pointer(_) => OperandWidth::QuadWord,
     }
 }
 

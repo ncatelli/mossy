@@ -1,12 +1,5 @@
-[package]
-name = "mossy"
-version = "0.1.0"
-authors = ["Nate Catelli <ncatelli@packetfire.org>"]
-edition = "2018"
+[workspace]
+members = ["cli", "parser", "codegen"]
 
 [profile.release]
 lto = true
-
-[dependencies]
-parcel = { git = "https://github.com/ncatelli/parcel", tag = "v2.0.1" }
-scrap = { git = "https://github.com/ncatelli/scrap", tag = "v1.0.0" }

@@ -1,5 +1,3 @@
-use crate::stage::type_check::ast::{self, Declaration, IntegerWidth, Signed};
-
 #[derive(Debug)]
 pub struct CompilationUnit {
     pub defs: Vec<GlobalDecls>,
@@ -11,6 +9,47 @@ impl CompilationUnit {
     }
 }
 
+/// Represents valid integer bit widths.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+pub enum IntegerWidth {
+    One,
+    Eight,
+    Sixteen,
+    ThirtyTwo,
+    SixtyFour,
+}
+
+/// Marks signed/unsigned integers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Signed {
+    Signed,
+    Unsigned,
+}
+
+/// Represents valid primitive types.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Type {
+    Integer(Signed, IntegerWidth),
+    Void,
+    Func(FunctionSignature),
+    Pointer(Box<Type>),
+}
+
+/// Declaration represents a declaration statement with the enclosed type and
+/// one or more IDs.
+#[derive(PartialEq, Debug, Clone)]
+pub enum Declaration {
+    Scalar(Type, Vec<String>),
+    Array { ty: Type, id: String, size: usize },
+}
+
+/// A concrete type for function prototypes
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionSignature {
+    pub return_type: Box<Type>,
+    pub parameters: Vec<Parameter>,
+}
+
 #[derive(PartialEq, Debug, Clone)]
 pub enum GlobalDecls {
     FuncDefinition(FunctionDefinition),
@@ -18,27 +57,27 @@ pub enum GlobalDecls {
     Var(Declaration),
 }
 
-#[derive(PartialEq, Debug, Clone)]
+#[derive(PartialEq, Debug, Clone, Eq)]
 pub struct Parameter {
     pub id: String,
-    pub r#type: ast::Type,
+    pub ty: Type,
 }
 
 impl Parameter {
-    pub fn new(id: String, r#type: ast::Type) -> Self {
-        Self { id, r#type }
+    pub fn new(id: String, ty: Type) -> Self {
+        Self { id, ty }
     }
 }
 
 #[derive(PartialEq, Debug, Clone)]
 pub struct FunctionProto {
     pub id: String,
-    pub return_type: ast::Type,
+    pub return_type: Type,
     pub params: Vec<Parameter>,
 }
 
 impl FunctionProto {
-    pub fn new(id: String, return_type: ast::Type, params: Vec<Parameter>) -> Self {
+    pub fn new(id: String, return_type: Type, params: Vec<Parameter>) -> Self {
         Self {
             id,
             return_type,
@@ -167,6 +206,7 @@ pub enum Primary {
     Str(Vec<u8>),
 }
 
+#[macro_export]
 macro_rules! assignment_expr {
     ($lhs:expr, '=', $rhs:expr) => {
         $crate::parser::ast::ExprNode::Assignment(Box::new($lhs), Box::new($rhs))
@@ -233,70 +273,71 @@ macro_rules! factor_expr {
     };
 }
 
+#[macro_export]
 #[allow(unused)]
 macro_rules! primary_expr {
     (i8 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::type_check::ast::Signed::Signed,
-            width: $crate::stage::type_check::ast::IntegerWidth::Eight,
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::Eight,
             value: $crate::util::pad_to_64bit_array(($value as i8).to_le_bytes()),
         })
     };
     (u8 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::type_check::ast::Signed::Unsigned,
-            width: $crate::stage::type_check::ast::IntegerWidth::Eight,
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::Eight,
             value: $crate::util::pad_to_64bit_array(($value as u8).to_le_bytes()),
         })
     };
 
     (i16 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::type_check::ast::Signed::Signed,
-            width: $crate::stage::type_check::ast::IntegerWidth::Sixteen,
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::Sixteen,
             value: $crate::util::pad_to_64bit_array(($value as i16).to_le_bytes()),
         })
     };
     (u16 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::type_check::ast::Signed::Unsigned,
-            width: $crate::stage::type_check::ast::IntegerWidth::Sixteen,
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::Sixteen,
             value: $crate::util::pad_to_64bit_array(($value as u16).to_le_bytes()),
         })
     };
 
     (i32 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::type_check::ast::Signed::Signed,
-            width: $crate::stage::type_check::ast::IntegerWidth::ThirtyTwo,
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::ThirtyTwo,
             value: $crate::util::pad_to_64bit_array(($value as i32).to_le_bytes()),
         })
     };
     (u32 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::type_check::ast::Signed::Unsigned,
-            width: $crate::stage::type_check::ast::IntegerWidth::ThirtyTwo,
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::ThirtyTwo,
             value: $crate::util::pad_to_64bit_array(($value as u32).to_le_bytes()),
         })
     };
 
     (i64 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::type_check::ast::Signed::Signed,
-            width: $crate::stage::type_check::ast::IntegerWidth::SixtyFour,
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
+            sign: Signed::Signed,
+            width: IntegerWidth::SixtyFour,
             value: $crate::util::pad_to_64bit_array(($value as i64).to_le_bytes()),
         })
     };
     (u64 $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Integer {
-            sign: $crate::stage::type_check::ast::Signed::Unsigned,
-            width: $crate::stage::type_check::ast::IntegerWidth::SixtyFour,
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Integer {
+            sign: Signed::Unsigned,
+            width: IntegerWidth::SixtyFour,
             value: $crate::util::pad_to_64bit_array(($value as u64).to_le_bytes()),
         })
     };
 
     (str $value:expr) => {
-        $crate::parser::ast::ExprNode::Primary(crate::parser::ast::Primary::Str(
+        $crate::parser::ast::ExprNode::Primary($crate::parser::ast::Primary::Str(
             $value.chars().map(|c| c as u8).collect(),
         ))
     };

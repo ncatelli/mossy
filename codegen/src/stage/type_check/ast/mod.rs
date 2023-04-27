@@ -1,3 +1,5 @@
+use mossy_parser::parser;
+
 macro_rules! generate_type_specifier {
     (integer, $sign:expr, $width:expr) => {
         $crate::stage::type_check::ast::Type::Integer($sign, $width)
@@ -73,12 +75,21 @@ impl TypedProgram {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parameter {
     pub id: String,
-    pub r#type: Type,
+    pub ty: Type,
 }
 
 impl Parameter {
-    pub fn new(id: String, r#type: Type) -> Self {
-        Self { id, r#type }
+    pub fn new(id: String, ty: Type) -> Self {
+        Self { id, ty }
+    }
+}
+
+impl From<parser::ast::Parameter> for Parameter {
+    fn from(value: parser::ast::Parameter) -> Self {
+        Self {
+            id: value.id,
+            ty: value.ty.into(),
+        }
     }
 }
 
@@ -321,6 +332,32 @@ pub enum Signed {
     Unsigned,
 }
 
+impl From<parser::ast::Signed> for Signed {
+    fn from(value: parser::ast::Signed) -> Self {
+        match value {
+            parser::ast::Signed::Signed => Self::Signed,
+            parser::ast::Signed::Unsigned => Self::Unsigned,
+        }
+    }
+}
+
+/// Represents a classifier for float types
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+pub enum FloatClass {
+    Float,
+    Double,
+    LongDouble,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
+pub enum IntegerClass {
+    Char,
+    Short,
+    Int,
+    Long,
+    LongLong,
+}
+
 /// Represents valid integer bit widths.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
 pub enum IntegerWidth {
@@ -338,6 +375,29 @@ impl ByteSized for IntegerWidth {
             Self::Sixteen => 2,
             Self::ThirtyTwo => 4,
             Self::SixtyFour => 8,
+        }
+    }
+}
+
+impl From<IntegerClass> for IntegerWidth {
+    fn from(ic: IntegerClass) -> Self {
+        match ic {
+            IntegerClass::Char => IntegerWidth::Eight,
+            IntegerClass::Short => IntegerWidth::Sixteen,
+            IntegerClass::Int | IntegerClass::Long => IntegerWidth::ThirtyTwo,
+            IntegerClass::LongLong => IntegerWidth::SixtyFour,
+        }
+    }
+}
+
+impl From<parser::ast::IntegerWidth> for IntegerWidth {
+    fn from(value: parser::ast::IntegerWidth) -> Self {
+        match value {
+            parser::ast::IntegerWidth::One => Self::One,
+            parser::ast::IntegerWidth::Eight => Self::Eight,
+            parser::ast::IntegerWidth::Sixteen => Self::Sixteen,
+            parser::ast::IntegerWidth::ThirtyTwo => Self::ThirtyTwo,
+            parser::ast::IntegerWidth::SixtyFour => Self::SixtyFour,
         }
     }
 }
@@ -382,7 +442,7 @@ const POINTER_BYTE_WIDTH: usize = (usize::BITS / 8) as usize;
 pub enum Type {
     Integer(Signed, IntegerWidth),
     Void,
-    Func(DefinitionState, FunctionSignature),
+    Func(FunctionSignature),
     Pointer(Box<Type>),
 }
 
@@ -419,6 +479,28 @@ impl Type {
         match self {
             Type::Pointer(ty) => Some(*(ty.clone())),
             _ => None,
+        }
+    }
+}
+
+impl From<parser::ast::Type> for Type {
+    fn from(value: parser::ast::Type) -> Self {
+        match value {
+            parser::ast::Type::Integer(sign, width) => Type::Integer(sign.into(), width.into()),
+            parser::ast::Type::Void => Type::Void,
+            parser::ast::Type::Func(parser::ast::FunctionSignature {
+                return_type,
+                parameters,
+            }) => {
+                let return_type = Box::new((*return_type).into());
+                let parameters = parameters.into_iter().map(Into::into).collect::<Vec<_>>();
+
+                Self::Func(FunctionSignature {
+                    return_type,
+                    parameters,
+                })
+            }
+            parser::ast::Type::Pointer(ty) => Type::Pointer(Box::new((*ty).into())),
         }
     }
 }
