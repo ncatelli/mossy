@@ -1,5 +1,5 @@
 [package]
-name = "mossy_cli"
+name = "mossy-cli"
 version = "0.1.0"
 authors = ["Nate Catelli <ncatelli@packetfire.org>"]
 edition = "2021"
