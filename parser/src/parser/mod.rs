@@ -939,7 +939,7 @@ pub fn expect_tokentype<'a>(
     expected: TokenKind,
 ) -> impl Parser<'a, &'a [(usize, Token<'a>)], Token<'a>> {
     move |input: &'a [(usize, Token<'a>)]| match input.get(0) {
-        Some(&(pos, ref next)) if next.as_kind() == expected => Ok(MatchStatus::Match {
+        Some(&(pos, ref next)) if next.to_kind() == expected => Ok(MatchStatus::Match {
             span: pos..pos + 1,
             remainder: &input[1..],
             inner: *next,

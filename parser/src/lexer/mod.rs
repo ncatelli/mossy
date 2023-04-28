@@ -326,7 +326,7 @@ impl<'a> Token<'a> {
     }
 
     /// Returns the token's kind.
-    pub fn as_kind(&self) -> TokenKind {
+    pub fn to_kind(&self) -> TokenKind {
         self.kind
     }
 
