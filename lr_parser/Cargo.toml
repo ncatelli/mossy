@@ -6,4 +6,5 @@ edition = "2021"
 workspace = ".."
 
 [dependencies]
+lr-core = { git = "https://github.com/ncatelli/lr", branch = "main" }
 lr-derive = { git = "https://github.com/ncatelli/lr", branch = "main" }
