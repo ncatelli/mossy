@@ -42,18 +42,23 @@ fn reduce_constant<'a>(elems: &mut Vec<TermOrNonTerm<'a>>) -> Result<NonTerminal
     match elems.pop() {
         Some(TermOrNonTerm::Terminal(
             term @ Token {
-                span,
-                data,
                 kind: TokenKind::IntegerConstant,
+                ..
             },
-        )) => Ok(NonTerminal::Constant(term)),
-        Some(TermOrNonTerm::Terminal(
+        ))
+        | Some(TermOrNonTerm::Terminal(
             term @ Token {
-                span,
-                data,
+                kind: TokenKind::CharacterConstant,
+                ..
+            },
+        ))
+        | Some(TermOrNonTerm::Terminal(
+            term @ Token {
                 kind: TokenKind::FloatingConstant,
+                ..
             },
         )) => Ok(NonTerminal::Constant(term)),
+
         _ => Err("expected constant terminal at top of stack".to_string()),
     }
 }
@@ -64,6 +69,7 @@ pub enum NonTerminal<'a> {
     #[production(r"<Constant>", reduce_unary_expression)]
     Expression(Box<ExprInner<'a>>),
     #[production(r"Token::IntegerConstant", reduce_constant)]
+    #[production(r"Token::CharacterConstant", reduce_constant)]
     #[production(r"Token::FloatingConstant", reduce_constant)]
     Constant(Token<'a>),
 }
@@ -99,6 +105,7 @@ mod tests {
     fn should_parse_standalone_constants() {
         let inputs = [
             "5",   // integer constant
+            "'c'", // character constant
             "5.0", // floating constant
         ];
 
