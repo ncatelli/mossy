@@ -1,4 +1,5 @@
-use lr_core::{NonTerminalRepresentable, TerminalOrNonTerminal, TerminalRepresentable};
+use lr_core::prelude::v1::*;
+use lr_core::TerminalOrNonTerminal;
 pub use lr_derive::Lr1;
 
 mod lexer;
@@ -94,7 +95,7 @@ pub fn parse<'a>(input: &'a str) -> Result<NonTerminal<'a>, String> {
         .chain([Ok(eof_terminator_token)].into_iter())
         .flatten();
 
-    lr_parse_input(tokenizer)
+    LrParseable::parse_input(tokenizer)
 }
 
 #[cfg(test)]
