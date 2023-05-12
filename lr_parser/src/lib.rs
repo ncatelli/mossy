@@ -45,7 +45,7 @@ type TermOrNonTerm<'a> = TerminalOrNonTerminal<Token<'a>, NonTerminal<'a>>;
 /// Caller assumes
 #[allow(unused)]
 fn reduce_constant<'a>(
-    state: &mut State<'a>,
+    state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
     match elems.pop() {
@@ -79,7 +79,7 @@ fn reduce_constant<'a>(
 
 #[allow(unused)]
 fn reduce_unary_expression<'a>(
-    state: &mut State<'a>,
+    state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
     // the only top level expr is an additive expr.
@@ -96,7 +96,7 @@ fn reduce_unary_expression<'a>(
 
 #[allow(unused)]
 fn reduce_goal<'a>(
-    state: &mut State<'a>,
+    state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
     // the only top level expr is an additive expr.
@@ -108,16 +108,16 @@ fn reduce_goal<'a>(
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct State<'a> {
+pub struct ParseCtx<'a> {
     _lifetime: std::marker::PhantomData<&'a ()>,
     arena: Vec<ParseTreeNode<'a>>,
 }
 
-impl<'a> State<'a> {
+impl<'a> ParseCtx<'a> {
     const DEFAULT_CAPACITY: usize = 64;
 }
 
-impl<'a> State<'a> {
+impl<'a> ParseCtx<'a> {
     pub fn nodes(&self) -> usize {
         self.arena.len()
     }
@@ -136,7 +136,7 @@ impl<'a> State<'a> {
     }
 }
 
-impl<'a> Default for State<'a> {
+impl<'a> Default for ParseCtx<'a> {
     fn default() -> Self {
         Self {
             _lifetime: std::marker::PhantomData,
@@ -147,7 +147,7 @@ impl<'a> Default for State<'a> {
 
 #[derive(Debug, Lr1, PartialEq)]
 pub enum NonTerminal<'a> {
-    #[state(State<'a>)]
+    #[state(ParseCtx<'a>)]
     #[goal(r"<Expression>", reduce_goal)]
     #[production(r"<Constant>", reduce_unary_expression)]
     Expression(NodeRef<'a>),
@@ -167,7 +167,7 @@ pub enum ParseTreeNode<'a> {
     Constant(Token<'a>),
 }
 
-pub fn parse<'a>(state: &mut State<'a>, input: &'a str) -> Result<NonTerminal<'a>, String> {
+pub fn parse<'a>(state: &mut ParseCtx<'a>, input: &'a str) -> Result<NonTerminal<'a>, String> {
     let eof_terminator_token = {
         let eof_terminator = Token::eof();
         let end_idx = input.len();
@@ -200,7 +200,7 @@ mod tests {
         ];
 
         for input in inputs {
-            let mut state = State::default();
+            let mut state = ParseCtx::default();
             let maybe_parse_tree = parse(&mut state, &input);
 
             assert!(maybe_parse_tree.is_ok());
