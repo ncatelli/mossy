@@ -64,9 +64,19 @@ fn reduce_constant<'a>(elems: &mut Vec<TermOrNonTerm<'a>>) -> Result<NonTerminal
     }
 }
 
+#[allow(unused)]
+fn reduce_goal<'a>(elems: &mut Vec<TermOrNonTerm<'a>>) -> Result<NonTerminal<'a>, String> {
+    // the only top level expr is an additive expr.
+    if let Some(TermOrNonTerm::NonTerminal(inner)) = elems.pop() {
+        Ok(inner)
+    } else {
+        Err("expected non-terminal at top of stack".to_string())
+    }
+}
+
 #[derive(Debug, Lr1, PartialEq)]
 pub enum NonTerminal<'a> {
-    #[goal(r"<Expression>", reduce_unary_expression)]
+    #[goal(r"<Expression>", reduce_goal)]
     #[production(r"<Constant>", reduce_unary_expression)]
     Expression(Box<ExprInner<'a>>),
     #[production(r"Token::IntegerConstant", reduce_constant)]
