@@ -5,41 +5,49 @@ pub use lr_derive::Lr1;
 mod lexer;
 use lexer::{Token, TokenKind};
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub struct NodeRef<'a> {
+    _lifetime: std::marker::PhantomData<&'a ()>,
+    idx: usize,
+}
+
+impl<'a> NodeRef<'a> {
+    pub fn new(idx: usize) -> Self {
+        Self {
+            _lifetime: std::marker::PhantomData,
+            idx,
+        }
+    }
+
+    pub fn as_usize(&self) -> usize {
+        self.idx
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnaryExpr<'a> {
-    pub lhs: NonTerminal<'a>,
+    pub lhs: NodeRef<'a>,
 }
 
 impl<'a> UnaryExpr<'a> {
-    pub fn new(lhs: NonTerminal<'a>) -> Self {
+    pub fn new(lhs: NodeRef<'a>) -> Self {
         Self { lhs }
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExprInner<'a> {
     Unary(UnaryExpr<'a>),
 }
 
 type TermOrNonTerm<'a> = TerminalOrNonTerminal<Token<'a>, NonTerminal<'a>>;
 
-#[allow(unused)]
-fn reduce_unary_expression<'a>(
-    elems: &mut Vec<TermOrNonTerm<'a>>,
-) -> Result<NonTerminal<'a>, String> {
-    // the only top level expr is an additive expr.
-    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Constant(inner))) = elems.pop() {
-        let inner = ExprInner::Unary(UnaryExpr::new(NonTerminal::Constant(inner)));
-
-        Ok(NonTerminal::<'a>::Expression(Box::new(inner)))
-    } else {
-        Err("expected non-terminal at top of stack".to_string())
-    }
-}
-
 /// Caller assumes
 #[allow(unused)]
-fn reduce_constant<'a>(elems: &mut Vec<TermOrNonTerm<'a>>) -> Result<NonTerminal<'a>, String> {
+fn reduce_constant<'a>(
+    state: &mut State<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
     match elems.pop() {
         Some(TermOrNonTerm::Terminal(
             term @ Token {
@@ -58,14 +66,39 @@ fn reduce_constant<'a>(elems: &mut Vec<TermOrNonTerm<'a>>) -> Result<NonTerminal
                 kind: TokenKind::FloatingConstant,
                 ..
             },
-        )) => Ok(NonTerminal::Constant(term)),
+        )) => {
+            let node = ParseTreeNode::Constant(term);
+            let nt_ref = state.add_node_mut(node);
+
+            Ok(NonTerminal::Constant(nt_ref))
+        }
 
         _ => Err("expected constant terminal at top of stack".to_string()),
     }
 }
 
 #[allow(unused)]
-fn reduce_goal<'a>(elems: &mut Vec<TermOrNonTerm<'a>>) -> Result<NonTerminal<'a>, String> {
+fn reduce_unary_expression<'a>(
+    state: &mut State<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    // the only top level expr is an additive expr.
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Constant(inner))) = elems.pop() {
+        let inner = ExprInner::Unary(UnaryExpr::new(inner));
+        let node = ParseTreeNode::Expression(inner);
+        let nt_ref = state.add_node_mut(node);
+
+        Ok(NonTerminal::Expression(nt_ref))
+    } else {
+        Err("expected non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_goal<'a>(
+    state: &mut State<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
     // the only top level expr is an additive expr.
     if let Some(TermOrNonTerm::NonTerminal(inner)) = elems.pop() {
         Ok(inner)
@@ -74,22 +107,67 @@ fn reduce_goal<'a>(elems: &mut Vec<TermOrNonTerm<'a>>) -> Result<NonTerminal<'a>
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct State<'a> {
+    _lifetime: std::marker::PhantomData<&'a ()>,
+    arena: Vec<ParseTreeNode<'a>>,
+}
+
+impl<'a> State<'a> {
+    const DEFAULT_CAPACITY: usize = 64;
+}
+
+impl<'a> State<'a> {
+    pub fn nodes(&self) -> usize {
+        self.arena.len()
+    }
+
+    fn next_nonterminal_ref(&self) -> NodeRef<'a> {
+        let idx = self.arena.len();
+
+        NodeRef::new(idx)
+    }
+
+    fn add_node_mut(&mut self, node: ParseTreeNode<'a>) -> NodeRef<'a> {
+        let nt_ref = self.next_nonterminal_ref();
+        self.arena.push(node);
+
+        nt_ref
+    }
+}
+
+impl<'a> Default for State<'a> {
+    fn default() -> Self {
+        Self {
+            _lifetime: std::marker::PhantomData,
+            arena: Vec::with_capacity(Self::DEFAULT_CAPACITY),
+        }
+    }
+}
+
 #[derive(Debug, Lr1, PartialEq)]
 pub enum NonTerminal<'a> {
+    #[state(State<'a>)]
     #[goal(r"<Expression>", reduce_goal)]
     #[production(r"<Constant>", reduce_unary_expression)]
-    Expression(Box<ExprInner<'a>>),
+    Expression(NodeRef<'a>),
     #[production(r"Token::IntegerConstant", reduce_constant)]
     #[production(r"Token::CharacterConstant", reduce_constant)]
     #[production(r"Token::FloatingConstant", reduce_constant)]
-    Constant(Token<'a>),
+    Constant(NodeRef<'a>),
 }
 
 impl<'a> NonTerminalRepresentable for NonTerminal<'a> {
     type Terminal = Token<'a>;
 }
 
-pub fn parse<'a>(input: &'a str) -> Result<NonTerminal<'a>, String> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseTreeNode<'a> {
+    Expression(ExprInner<'a>),
+    Constant(Token<'a>),
+}
+
+pub fn parse<'a>(state: &mut State<'a>, input: &'a str) -> Result<NonTerminal<'a>, String> {
     let eof_terminator_token = {
         let eof_terminator = Token::eof();
         let end_idx = input.len();
@@ -105,7 +183,8 @@ pub fn parse<'a>(input: &'a str) -> Result<NonTerminal<'a>, String> {
         .chain([Ok(eof_terminator_token)].into_iter())
         .flatten();
 
-    LrParseable::parse_input(tokenizer)
+    let maybe_nonterm = LrStatefulParseable::parse_input(state, tokenizer);
+    maybe_nonterm
 }
 
 #[cfg(test)]
@@ -121,9 +200,11 @@ mod tests {
         ];
 
         for input in inputs {
-            let maybe_parse_tree = parse(&input);
+            let mut state = State::default();
+            let maybe_parse_tree = parse(&mut state, &input);
 
             assert!(maybe_parse_tree.is_ok());
+            assert_eq!(state.nodes(), 2);
         }
     }
 }
