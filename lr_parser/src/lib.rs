@@ -78,12 +78,27 @@ fn reduce_constant<'a>(
 }
 
 #[allow(unused)]
+fn reduce_primary_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Constant(inner))) = elems.pop() {
+        let inner = ExprInner::Unary(UnaryExpr::new(inner));
+        let node = ParseTreeNode::Expression(inner);
+        let nt_ref = state.add_node_mut(node);
+
+        Ok(NonTerminal::Primary(nt_ref))
+    } else {
+        Err("expected non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
 fn reduce_unary_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
-    // the only top level expr is an additive expr.
-    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Constant(inner))) = elems.pop() {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Primary(inner))) = elems.pop() {
         let inner = ExprInner::Unary(UnaryExpr::new(inner));
         let node = ParseTreeNode::Expression(inner);
         let nt_ref = state.add_node_mut(node);
@@ -149,8 +164,10 @@ impl<'a> Default for ParseCtx<'a> {
 pub enum NonTerminal<'a> {
     #[state(ParseCtx<'a>)]
     #[goal(r"<Expression>", reduce_goal)]
-    #[production(r"<Constant>", reduce_unary_expression)]
+    #[production(r"<Primary>", reduce_unary_expression)]
     Expression(NodeRef<'a>),
+    #[production(r"<Constant>", reduce_primary_expression)]
+    Primary(NodeRef<'a>),
     #[production(r"Token::IntegerConstant", reduce_constant)]
     #[production(r"Token::CharacterConstant", reduce_constant)]
     #[production(r"Token::FloatingConstant", reduce_constant)]
@@ -164,6 +181,7 @@ impl<'a> NonTerminalRepresentable for NonTerminal<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseTreeNode<'a> {
     Expression(ExprInner<'a>),
+    Primary(ExprInner<'a>),
     Constant(Token<'a>),
 }
 
@@ -204,7 +222,13 @@ mod tests {
             let maybe_parse_tree = parse(&mut state, &input);
 
             assert!(maybe_parse_tree.is_ok());
-            assert_eq!(state.nodes(), 2);
+            assert_eq!(state.nodes(), 3);
         }
+    }
+
+    #[test]
+    fn should_retain_expected_parse_tree_component_sizes() {
+        assert_eq!(std::mem::size_of::<NonTerminal>(), 16);
+        assert_eq!(std::mem::size_of::<ParseTreeNode>(), 72);
     }
 }
