@@ -82,14 +82,25 @@ fn reduce_primary_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
-    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Constant(inner))) = elems.pop() {
-        let inner = ExprInner::Unary(UnaryExpr::new(inner));
-        let node = ParseTreeNode::Expression(inner);
-        let nt_ref = state.add_node_mut(node);
+    match elems.pop() {
+        Some(TermOrNonTerm::NonTerminal(NonTerminal::Constant(inner))) => {
+            let node = ParseTreeNode::Unary(UnaryExpr::new(inner));
+            let nt_ref = state.add_node_mut(node);
 
-        Ok(NonTerminal::Primary(nt_ref))
-    } else {
-        Err("expected non-terminal at top of stack".to_string())
+            Ok(NonTerminal::Primary(nt_ref))
+        }
+        Some(TerminalOrNonTerminal::Terminal(
+            term @ Token {
+                kind: TokenKind::StringLiteral,
+                ..
+            },
+        )) => {
+            let node = ParseTreeNode::Constant(term);
+            let nt_ref = state.add_node_mut(node);
+
+            Ok(NonTerminal::Primary(nt_ref))
+        }
+        _ => Err("expected non-terminal at top of stack".to_string()),
     }
 }
 
@@ -99,8 +110,7 @@ fn reduce_unary_expression<'a>(
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
     if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Primary(inner))) = elems.pop() {
-        let inner = ExprInner::Unary(UnaryExpr::new(inner));
-        let node = ParseTreeNode::Expression(inner);
+        let node = ParseTreeNode::Unary(UnaryExpr::new(inner));
         let nt_ref = state.add_node_mut(node);
 
         Ok(NonTerminal::Expression(nt_ref))
@@ -167,6 +177,7 @@ pub enum NonTerminal<'a> {
     #[production(r"<Primary>", reduce_unary_expression)]
     Expression(NodeRef<'a>),
     #[production(r"<Constant>", reduce_primary_expression)]
+    #[production(r"Token::StringLiteral", reduce_primary_expression)]
     Primary(NodeRef<'a>),
     #[production(r"Token::IntegerConstant", reduce_constant)]
     #[production(r"Token::CharacterConstant", reduce_constant)]
@@ -180,8 +191,7 @@ impl<'a> NonTerminalRepresentable for NonTerminal<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseTreeNode<'a> {
-    Expression(ExprInner<'a>),
-    Primary(ExprInner<'a>),
+    Unary(UnaryExpr<'a>),
     Constant(Token<'a>),
 }
 
@@ -208,6 +218,39 @@ pub fn parse<'a>(state: &mut ParseCtx<'a>, input: &'a str) -> Result<NonTerminal
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn should_parse_primary_expr() {
+        let input = "\"hello world\""; // string literal
+
+        let mut state = ParseCtx::default();
+        let maybe_parse_tree = parse(&mut state, &input);
+
+        assert!(maybe_parse_tree.is_ok());
+        assert_eq!(state.nodes(), 2);
+
+        // safe from previous assertion.
+        let parse_tree = maybe_parse_tree.unwrap();
+        let expr_node = if let NonTerminal::Expression(lhs) = parse_tree {
+            &state.arena[lhs.as_usize()]
+        } else {
+            panic!("expected primary ")
+        };
+        let lhs_ref = if let ParseTreeNode::Unary(UnaryExpr { lhs }) = expr_node {
+            lhs
+        } else {
+            panic!("expected constant node");
+        };
+
+        let const_expr = &state.arena[lhs_ref.as_usize()];
+        assert!(matches!(
+            const_expr,
+            ParseTreeNode::Constant(Token {
+                kind: TokenKind::StringLiteral,
+                ..
+            })
+        ))
+    }
 
     #[test]
     fn should_parse_standalone_constants() {
