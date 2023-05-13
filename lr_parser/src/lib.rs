@@ -48,33 +48,32 @@ fn reduce_constant<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
-    match elems.pop() {
+    let node = match elems.pop() {
         Some(TermOrNonTerm::Terminal(
             term @ Token {
                 kind: TokenKind::IntegerConstant,
                 ..
             },
-        ))
-        | Some(TermOrNonTerm::Terminal(
+        )) => Ok(ParseTreeNode::IntegerConstant(term)),
+        Some(TermOrNonTerm::Terminal(
             term @ Token {
                 kind: TokenKind::CharacterConstant,
                 ..
             },
-        ))
-        | Some(TermOrNonTerm::Terminal(
+        )) => Ok(ParseTreeNode::CharacterConstant(term)),
+        Some(TermOrNonTerm::Terminal(
             term @ Token {
                 kind: TokenKind::FloatingConstant,
                 ..
             },
-        )) => {
-            let node = ParseTreeNode::Constant(term);
-            let nt_ref = state.add_node_mut(node);
-
-            Ok(NonTerminal::Constant(nt_ref))
-        }
+        )) => Ok(ParseTreeNode::FloatConstant(term)),
 
         _ => Err("expected constant terminal at top of stack".to_string()),
-    }
+    }?;
+
+    let nt_ref = state.add_node_mut(node);
+
+    Ok(NonTerminal::Constant(nt_ref))
 }
 
 #[allow(unused)]
@@ -83,19 +82,35 @@ fn reduce_primary_expression<'a>(
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
     match elems.pop() {
+        // constants
         Some(TermOrNonTerm::NonTerminal(NonTerminal::Constant(inner))) => {
             let node = ParseTreeNode::Unary(UnaryExpr::new(inner));
             let nt_ref = state.add_node_mut(node);
 
             Ok(NonTerminal::Primary(nt_ref))
         }
+
+        // identifer
+        Some(TerminalOrNonTerminal::Terminal(
+            term @ Token {
+                kind: TokenKind::Identifier,
+                ..
+            },
+        )) => {
+            let node = ParseTreeNode::Identifer(term);
+            let nt_ref = state.add_node_mut(node);
+
+            Ok(NonTerminal::Primary(nt_ref))
+        }
+
+        // string literal
         Some(TerminalOrNonTerminal::Terminal(
             term @ Token {
                 kind: TokenKind::StringLiteral,
                 ..
             },
         )) => {
-            let node = ParseTreeNode::Constant(term);
+            let node = ParseTreeNode::StringLiteral(term);
             let nt_ref = state.add_node_mut(node);
 
             Ok(NonTerminal::Primary(nt_ref))
@@ -176,6 +191,7 @@ pub enum NonTerminal<'a> {
     #[goal(r"<Expression>", reduce_goal)]
     #[production(r"<Primary>", reduce_unary_expression)]
     Expression(NodeRef<'a>),
+    #[production(r"Token::Identifier", reduce_primary_expression)]
     #[production(r"<Constant>", reduce_primary_expression)]
     #[production(r"Token::StringLiteral", reduce_primary_expression)]
     Primary(NodeRef<'a>),
@@ -192,7 +208,11 @@ impl<'a> NonTerminalRepresentable for NonTerminal<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseTreeNode<'a> {
     Unary(UnaryExpr<'a>),
-    Constant(Token<'a>),
+    Identifer(Token<'a>),
+    StringLiteral(Token<'a>),
+    IntegerConstant(Token<'a>),
+    CharacterConstant(Token<'a>),
+    FloatConstant(Token<'a>),
 }
 
 pub fn parse<'a>(state: &mut ParseCtx<'a>, input: &'a str) -> Result<NonTerminal<'a>, String> {
@@ -221,35 +241,55 @@ mod tests {
 
     #[test]
     fn should_parse_primary_expr() {
-        let input = "\"hello world\""; // string literal
+        let inputs = [
+            "\"hello world\"", // string literal
+            "test",            // identifier
+        ];
 
         let mut state = ParseCtx::default();
-        let maybe_parse_tree = parse(&mut state, &input);
+        let mut nodes = Vec::new();
+        for input in inputs {
+            let maybe_parse_tree = parse(&mut state, &input);
 
-        assert!(maybe_parse_tree.is_ok());
-        assert_eq!(state.nodes(), 2);
+            assert!(maybe_parse_tree.is_ok());
 
-        // safe from previous assertion.
-        let parse_tree = maybe_parse_tree.unwrap();
-        let expr_node = if let NonTerminal::Expression(lhs) = parse_tree {
-            &state.arena[lhs.as_usize()]
-        } else {
-            panic!("expected primary ")
-        };
-        let lhs_ref = if let ParseTreeNode::Unary(UnaryExpr { lhs }) = expr_node {
-            lhs
-        } else {
-            panic!("expected constant node");
-        };
+            // safe from previous assertion.
+            let parse_tree = maybe_parse_tree.unwrap();
+            let expr_node = if let NonTerminal::Expression(lhs) = parse_tree {
+                &state.arena[lhs.as_usize()]
+            } else {
+                panic!("expected primary ")
+            };
 
-        let const_expr = &state.arena[lhs_ref.as_usize()];
+            let lhs_ref = if let ParseTreeNode::Unary(UnaryExpr { lhs }) = expr_node {
+                lhs
+            } else {
+                panic!("expected constant node");
+            };
+
+            let const_expr = &state.arena[lhs_ref.as_usize()];
+            nodes.push(const_expr.clone());
+        }
+
+        // assert first result is a string literal.
         assert!(matches!(
-            const_expr,
-            ParseTreeNode::Constant(Token {
+            &nodes[0],
+            ParseTreeNode::StringLiteral(Token {
                 kind: TokenKind::StringLiteral,
+                data: Some("hello world"),
                 ..
             })
-        ))
+        ));
+
+        // assert second result is an identifier.
+        assert!(matches!(
+            &nodes[1],
+            ParseTreeNode::Identifer(Token {
+                kind: TokenKind::Identifier,
+                data: Some("test"),
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -272,6 +312,6 @@ mod tests {
     #[test]
     fn should_retain_expected_parse_tree_component_sizes() {
         assert_eq!(std::mem::size_of::<NonTerminal>(), 16);
-        assert_eq!(std::mem::size_of::<ParseTreeNode>(), 72);
+        assert_eq!(std::mem::size_of::<ParseTreeNode>(), 80);
     }
 }
