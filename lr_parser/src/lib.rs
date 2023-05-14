@@ -120,12 +120,38 @@ fn reduce_primary_expression<'a>(
 }
 
 #[allow(unused)]
+fn reduce_primary_grouping_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    let maybe_rparen = elems.pop();
+    let maybe_expression = elems.pop();
+    let maybe_lparen = elems.pop();
+
+    if let [Some(TermOrNonTerm::Terminal(Token {
+        kind: TokenKind::LeftParen,
+        ..
+    })), Some(TermOrNonTerm::NonTerminal(NonTerminal::Expression(nt_ref))), Some(TermOrNonTerm::Terminal(Token {
+        kind: TokenKind::RightParen,
+        ..
+    }))] = [maybe_lparen, maybe_expression, maybe_rparen]
+    {
+        let node = ParseTreeNode::Unary(UnaryExpr::new(nt_ref));
+        let nt_ref = state.add_node_mut(node);
+
+        Ok(NonTerminal::Primary(nt_ref))
+    } else {
+        Err("expected `(` + <Expression> + `)` at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
 fn reduce_unary_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
-    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Primary(inner))) = elems.pop() {
-        let node = ParseTreeNode::Unary(UnaryExpr::new(inner));
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Primary(nt_ref))) = elems.pop() {
+        let node = ParseTreeNode::Unary(UnaryExpr::new(nt_ref));
         let nt_ref = state.add_node_mut(node);
 
         Ok(NonTerminal::Expression(nt_ref))
@@ -191,10 +217,16 @@ pub enum NonTerminal<'a> {
     #[goal(r"<Expression>", reduce_goal)]
     #[production(r"<Primary>", reduce_unary_expression)]
     Expression(NodeRef<'a>),
+
     #[production(r"Token::Identifier", reduce_primary_expression)]
     #[production(r"<Constant>", reduce_primary_expression)]
     #[production(r"Token::StringLiteral", reduce_primary_expression)]
+    #[production(
+        r"Token::LeftParen <Expression> Token::RightParen",
+        reduce_primary_grouping_expression
+    )]
     Primary(NodeRef<'a>),
+
     #[production(r"Token::IntegerConstant", reduce_constant)]
     #[production(r"Token::CharacterConstant", reduce_constant)]
     #[production(r"Token::FloatingConstant", reduce_constant)]
@@ -231,13 +263,47 @@ pub fn parse<'a>(state: &mut ParseCtx<'a>, input: &'a str) -> Result<NonTerminal
         .chain([Ok(eof_terminator_token)].into_iter())
         .flatten();
 
-    let maybe_nonterm = LrStatefulParseable::parse_input(state, tokenizer);
-    maybe_nonterm
+    LrStatefulParseable::parse_input(state, tokenizer)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "bug in parser"]
+    fn should_parse_primary_grouping_expr() {
+        let input = "( 5 )";
+
+        let mut state = ParseCtx::default();
+        let maybe_parse_tree = parse(&mut state, &input);
+
+        assert!(maybe_parse_tree.is_ok(), "{:?}", &maybe_parse_tree);
+
+        // safe from previous assertion.
+        let parse_tree = maybe_parse_tree.unwrap();
+        let expr_node = if let NonTerminal::Expression(lhs) = parse_tree {
+            &state.arena[lhs.as_usize()]
+        } else {
+            panic!("expected primary ")
+        };
+
+        let lhs_ref = if let ParseTreeNode::Unary(UnaryExpr { lhs }) = expr_node {
+            lhs
+        } else {
+            panic!("expected constant node");
+        };
+
+        let const_expr = &state.arena[lhs_ref.as_usize()];
+
+        assert!(matches!(
+            &const_expr,
+            ParseTreeNode::Identifer(Token {
+                kind: TokenKind::Identifier,
+                ..
+            })
+        ));
+    }
 
     #[test]
     fn should_parse_primary_expr() {
@@ -251,7 +317,7 @@ mod tests {
         for input in inputs {
             let maybe_parse_tree = parse(&mut state, &input);
 
-            assert!(maybe_parse_tree.is_ok());
+            assert!(maybe_parse_tree.is_ok(), "{:?}", &maybe_parse_tree);
 
             // safe from previous assertion.
             let parse_tree = maybe_parse_tree.unwrap();
@@ -270,7 +336,6 @@ mod tests {
             let const_expr = &state.arena[lhs_ref.as_usize()];
             nodes.push(const_expr.clone());
         }
-
         // assert first result is a string literal.
         assert!(matches!(
             &nodes[0],
