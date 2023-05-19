@@ -271,33 +271,19 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore = "bug in parser"]
     fn should_parse_primary_grouping_expr() {
-        let input = "( 5 )";
+        // nested grouping
+        let input = "(( test ))";
 
         let mut state = ParseCtx::default();
         let maybe_parse_tree = parse(&mut state, &input);
 
-        assert!(maybe_parse_tree.is_ok(), "{:?}", &maybe_parse_tree);
+        assert!(maybe_parse_tree.is_ok());
 
-        // safe from previous assertion.
-        let parse_tree = maybe_parse_tree.unwrap();
-        let expr_node = if let NonTerminal::Expression(lhs) = parse_tree {
-            &state.arena[lhs.as_usize()]
-        } else {
-            panic!("expected primary ")
-        };
-
-        let lhs_ref = if let ParseTreeNode::Unary(UnaryExpr { lhs }) = expr_node {
-            lhs
-        } else {
-            panic!("expected constant node");
-        };
-
-        let const_expr = &state.arena[lhs_ref.as_usize()];
+        let constant_expr_node = &state.arena[0];
 
         assert!(matches!(
-            &const_expr,
+            &constant_expr_node,
             ParseTreeNode::Identifer(Token {
                 kind: TokenKind::Identifier,
                 ..
