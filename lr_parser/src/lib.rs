@@ -165,11 +165,26 @@ fn reduce_unary_expression<'a>(
 }
 
 #[allow(unused)]
-fn reduce_expression<'a>(
+fn reduce_cast_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
     if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Unary(node_ref))) = elems.pop() {
+        let node = ParseTreeNode::Unary(node_ref);
+        let new_node_ref = state.add_node_mut(node);
+
+        Ok(NonTerminal::Cast(new_node_ref))
+    } else {
+        Err("expected non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Cast(node_ref))) = elems.pop() {
         let node = ParseTreeNode::Unary(node_ref);
         let new_node_ref = state.add_node_mut(node);
 
@@ -234,8 +249,11 @@ impl<'a> Default for ParseCtx<'a> {
 pub enum NonTerminal<'a> {
     #[state(ParseCtx<'a>)]
     #[goal(r"<Expression>", reduce_goal)]
-    #[production(r"<Unary>", reduce_expression)]
+    #[production(r"<Cast>", reduce_expression)]
     Expression(NodeRef<'a>),
+
+    #[production(r"<Unary>", reduce_cast_expression)]
+    Cast(NodeRef<'a>),
 
     #[production(r"<Postfix>", reduce_unary_expression)]
     Unary(NodeRef<'a>),
@@ -368,7 +386,7 @@ mod tests {
             let maybe_parse_tree = parse(&mut state, &input);
 
             assert!(maybe_parse_tree.is_ok());
-            assert_eq!(state.nodes(), 5);
+            assert_eq!(state.nodes(), 6);
         }
     }
 
