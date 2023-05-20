@@ -146,11 +146,26 @@ fn reduce_primary_grouping_expression<'a>(
 }
 
 #[allow(unused)]
-fn reduce_unary_expression<'a>(
+fn reduce_postfix_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
     if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Primary(nt_ref))) = elems.pop() {
+        let node = ParseTreeNode::Unary(UnaryExpr::new(nt_ref));
+        let nt_ref = state.add_node_mut(node);
+
+        Ok(NonTerminal::Postfix(nt_ref))
+    } else {
+        Err("expected non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_unary_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Postfix(nt_ref))) = elems.pop() {
         let node = ParseTreeNode::Unary(UnaryExpr::new(nt_ref));
         let nt_ref = state.add_node_mut(node);
 
@@ -215,8 +230,11 @@ impl<'a> Default for ParseCtx<'a> {
 pub enum NonTerminal<'a> {
     #[state(ParseCtx<'a>)]
     #[goal(r"<Expression>", reduce_goal)]
-    #[production(r"<Primary>", reduce_unary_expression)]
+    #[production(r"<Postfix>", reduce_unary_expression)]
     Expression(NodeRef<'a>),
+
+    #[production(r"<Primary>", reduce_postfix_expression)]
+    Postfix(NodeRef<'a>),
 
     #[production(r"Token::Identifier", reduce_primary_expression)]
     #[production(r"<Constant>", reduce_primary_expression)]
@@ -298,29 +316,16 @@ mod tests {
             "test",            // identifier
         ];
 
-        let mut state = ParseCtx::default();
         let mut nodes = Vec::new();
         for input in inputs {
+            let mut state = ParseCtx::default();
             let maybe_parse_tree = parse(&mut state, &input);
 
             assert!(maybe_parse_tree.is_ok(), "{:?}", &maybe_parse_tree);
 
-            // safe from previous assertion.
-            let parse_tree = maybe_parse_tree.unwrap();
-            let expr_node = if let NonTerminal::Expression(lhs) = parse_tree {
-                &state.arena[lhs.as_usize()]
-            } else {
-                panic!("expected primary ")
-            };
-
-            let lhs_ref = if let ParseTreeNode::Unary(UnaryExpr { lhs }) = expr_node {
-                lhs
-            } else {
-                panic!("expected constant node");
-            };
-
-            let const_expr = &state.arena[lhs_ref.as_usize()];
-            nodes.push(const_expr.clone());
+            // leaf of parse tree.
+            let node = &state.arena[0];
+            nodes.push(node.clone());
         }
         // assert first result is a string literal.
         assert!(matches!(
@@ -330,7 +335,7 @@ mod tests {
                 data: Some("hello world"),
                 ..
             })
-        ));
+        ),);
 
         // assert second result is an identifier.
         assert!(matches!(
@@ -356,7 +361,7 @@ mod tests {
             let maybe_parse_tree = parse(&mut state, &input);
 
             assert!(maybe_parse_tree.is_ok());
-            assert_eq!(state.nodes(), 3);
+            assert_eq!(state.nodes(), 4);
         }
     }
 
