@@ -26,23 +26,21 @@ impl<'a> NodeRef<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UnaryInner<'a> {
-    op: Option<Token<'a>>,
+    oper: Option<Token<'a>>,
     expr: NodeRef<'a>,
 }
 
 impl<'a> UnaryInner<'a> {
     pub fn new(expr: NodeRef<'a>) -> Self {
-        Self { op: None, expr }
+        Self { oper: None, expr }
     }
 
     pub fn with_operator(op: Token<'a>, expr: NodeRef<'a>) -> Self {
-        Self { op: Some(op), expr }
+        Self {
+            oper: Some(op),
+            expr,
+        }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExprInner<'a> {
-    Unary(UnaryInner<'a>),
 }
 
 type TermOrNonTerm<'a> = TerminalOrNonTerminal<Token<'a>, NonTerminal<'a>>;
@@ -89,7 +87,7 @@ fn reduce_primary_expression<'a>(
     match elems.pop() {
         // constants
         Some(TermOrNonTerm::NonTerminal(NonTerminal::Constant(node_ref))) => {
-            let node = ParseTreeNode::Unary(ExprInner::Unary(UnaryInner::new(node_ref)));
+            let node = ParseTreeNode::Unary(UnaryInner::new(node_ref));
             let new_node_ref = state.add_node_mut(node);
 
             Ok(NonTerminal::Primary(new_node_ref))
@@ -141,7 +139,7 @@ fn reduce_primary_grouping_expression<'a>(
         ..
     }))] = [maybe_lparen, maybe_expression, maybe_rparen]
     {
-        let node = ParseTreeNode::Unary(ExprInner::Unary(UnaryInner::new(node_ref)));
+        let node = ParseTreeNode::Unary(UnaryInner::new(node_ref));
         let new_node_ref = state.add_node_mut(node);
 
         Ok(NonTerminal::Primary(new_node_ref))
@@ -151,12 +149,12 @@ fn reduce_primary_grouping_expression<'a>(
 }
 
 #[allow(unused)]
-fn reduce_postfix_expression<'a>(
+fn reduce_primary_to_postfix_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
     if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Primary(node_ref))) = elems.pop() {
-        let node = ParseTreeNode::Unary(ExprInner::Unary(UnaryInner::new(node_ref)));
+        let node = ParseTreeNode::Unary(UnaryInner::new(node_ref));
         let new_node_ref = state.add_node_mut(node);
 
         Ok(NonTerminal::Postfix(new_node_ref))
@@ -166,12 +164,45 @@ fn reduce_postfix_expression<'a>(
 }
 
 #[allow(unused)]
+fn reduce_postfix_inc_dec_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    let maybe_oper = elems.pop();
+    let maybe_expr = elems.pop();
+
+    let oper = maybe_oper.ok_or_else(|| "++/-- token at top of stack".to_string())?;
+    let expr = maybe_expr.ok_or_else(|| "nonterminal 2nd from top of stack".to_string())?;
+
+    match [expr, oper] {
+        [TermOrNonTerm::NonTerminal(NonTerminal::Postfix(node_ref)), TermOrNonTerm::Terminal(
+            tok @ Token {
+                kind: TokenKind::PlusPlus,
+                ..
+            },
+        )]
+        | [TermOrNonTerm::NonTerminal(NonTerminal::Postfix(node_ref)), TermOrNonTerm::Terminal(
+            tok @ Token {
+                kind: TokenKind::MinusMinus,
+                ..
+            },
+        )] => {
+            let node = ParseTreeNode::Unary(UnaryInner::with_operator(tok, node_ref));
+            let new_node_ref = state.add_node_mut(node);
+
+            Ok(NonTerminal::Postfix(new_node_ref))
+        }
+        _ => Err("expected [postfix expression, ++/--] at top of stack.".to_string()),
+    }
+}
+
+#[allow(unused)]
 fn reduce_unary_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
     if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Postfix(node_ref))) = elems.pop() {
-        let node = ParseTreeNode::Unary(ExprInner::Unary(UnaryInner::new(node_ref)));
+        let node = ParseTreeNode::Unary(UnaryInner::new(node_ref));
         let new_node_ref = state.add_node_mut(node);
 
         Ok(NonTerminal::Unary(new_node_ref))
@@ -186,7 +217,7 @@ fn reduce_cast_expression<'a>(
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
     if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Unary(node_ref))) = elems.pop() {
-        let node = ParseTreeNode::Unary(ExprInner::Unary(UnaryInner::new(node_ref)));
+        let node = ParseTreeNode::Unary(UnaryInner::new(node_ref));
         let new_node_ref = state.add_node_mut(node);
 
         Ok(NonTerminal::Cast(new_node_ref))
@@ -201,7 +232,7 @@ fn reduce_expression<'a>(
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
     if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Cast(node_ref))) = elems.pop() {
-        let node = ParseTreeNode::Unary(ExprInner::Unary(UnaryInner::new(node_ref)));
+        let node = ParseTreeNode::Unary(UnaryInner::new(node_ref));
         let new_node_ref = state.add_node_mut(node);
 
         Ok(NonTerminal::Expression(new_node_ref))
@@ -274,7 +305,9 @@ pub enum NonTerminal<'a> {
     #[production(r"<Postfix>", reduce_unary_expression)]
     Unary(NodeRef<'a>),
 
-    #[production(r"<Primary>", reduce_postfix_expression)]
+    #[production(r"<Primary>", reduce_primary_to_postfix_expression)]
+    #[production(r"<Postfix> Token::PlusPlus", reduce_postfix_inc_dec_expression)]
+    #[production(r"<Postfix> Token::MinusMinus", reduce_postfix_inc_dec_expression)]
     Postfix(NodeRef<'a>),
 
     #[production(r"Token::Identifier", reduce_primary_expression)]
@@ -298,7 +331,7 @@ impl<'a> NonTerminalRepresentable for NonTerminal<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseTreeNode<'a> {
-    Unary(ExprInner<'a>),
+    Unary(UnaryInner<'a>),
     Identifer(Token<'a>),
     StringLiteral(Token<'a>),
     IntegerConstant(Token<'a>),
@@ -330,7 +363,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn should_parse_primary_grouping_expr() {
+    fn should_parse_postfix_expression() {
+        // nested grouping
+        let input = "5++";
+
+        let mut state = ParseCtx::default();
+        let maybe_parse_tree = parse(&mut state, &input);
+
+        assert!(maybe_parse_tree.is_ok());
+
+        let postfix_expr_node = &state.arena[3];
+
+        assert!(
+            matches!(
+                postfix_expr_node,
+                ParseTreeNode::Unary(UnaryInner {
+                    oper: Some(Token {
+                        kind: TokenKind::PlusPlus,
+                        ..
+                    }),
+                    ..
+                })
+            ),
+            "{:?}",
+            postfix_expr_node
+        );
+    }
+
+    #[test]
+    fn should_parse_primary_grouping_expression() {
         // nested grouping
         let input = "(( test ))";
 
@@ -351,7 +412,7 @@ mod tests {
     }
 
     #[test]
-    fn should_parse_primary_expr() {
+    fn should_parse_primary_expression() {
         let inputs = [
             "\"hello world\"", // string literal
             "test",            // identifier
