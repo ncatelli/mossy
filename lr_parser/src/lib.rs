@@ -139,7 +139,7 @@ fn reduce_primary_to_postfix_expression<'a>(
 }
 
 #[allow(unused)]
-fn reduce_postfix_two_element_expression<'a>(
+fn reduce_two_element_postfix_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
@@ -282,8 +282,8 @@ pub enum NonTerminal<'a> {
     Unary(NodeRef<'a>),
 
     #[production(r"<Primary>", reduce_primary_to_postfix_expression)]
-    #[production(r"<Postfix> Token::PlusPlus", reduce_postfix_two_element_expression)]
-    #[production(r"<Postfix> Token::MinusMinus", reduce_postfix_two_element_expression)]
+    #[production(r"<Postfix> Token::PlusPlus", reduce_two_element_postfix_expression)]
+    #[production(r"<Postfix> Token::MinusMinus", reduce_two_element_postfix_expression)]
     Postfix(NodeRef<'a>),
 
     #[production(r"Token::Identifier", reduce_primary_expression)]
