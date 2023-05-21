@@ -347,6 +347,44 @@ fn reduce_unary_expression<'a>(
 }
 
 #[allow(unused)]
+fn reduce_inc_dec_unary_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    let maybe_expr = elems.pop();
+    let maybe_oper = elems.pop();
+
+    let expr_node =
+        if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Unary(expr_node))) = maybe_expr {
+            Ok(expr_node)
+        } else {
+            Err("expected nonterminal at top of stack".to_string())
+        }?;
+
+    let new_node = match maybe_oper {
+        Some(TermOrNonTerm::Terminal(
+            tok @ Token {
+                kind: TokenKind::PlusPlus,
+                ..
+            },
+        )) => Ok(ParseTreeNode::PreIncrement(expr_node)),
+        Some(TermOrNonTerm::Terminal(
+            tok @ Token {
+                kind: TokenKind::MinusMinus,
+                ..
+            },
+        )) => Ok(ParseTreeNode::PreDecrement(expr_node)),
+        top_of_stack => Err(format!(
+            "expected [++/--, unary expression] at top of stack.\nfound: {:?}",
+            &top_of_stack
+        )),
+    }?;
+
+    let new_node_ref = state.add_node_mut(new_node);
+    Ok(NonTerminal::Unary(new_node_ref))
+}
+
+#[allow(unused)]
 fn reduce_cast_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
@@ -432,6 +470,8 @@ pub enum NonTerminal<'a> {
     Cast(NodeRef<'a>),
 
     #[production(r"<Postfix>", reduce_unary_expression)]
+    #[production(r"Token::PlusPlus <Unary>", reduce_inc_dec_unary_expression)]
+    #[production(r"Token::MinusMinus <Unary>", reduce_inc_dec_unary_expression)]
     Unary(NodeRef<'a>),
 
     #[production(r"<Primary>", reduce_primary_to_postfix_expression)]
@@ -476,6 +516,11 @@ impl<'a> NonTerminalRepresentable for NonTerminal<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseTreeNode<'a> {
+    // ++<expression>
+    PreIncrement(NodeRef<'a>),
+    // --<expression>
+    PreDecrement(NodeRef<'a>),
+
     // <expr>[<index expr>]
     Subscript {
         expr: NodeRef<'a>,
@@ -499,7 +544,10 @@ pub enum ParseTreeNode<'a> {
         struct_expr: NodeRef<'a>,
         member_ident: Token<'a>,
     },
+
+    // <expression>++
     PostIncrement(NodeRef<'a>),
+    // <expression>--
     PostDecrement(NodeRef<'a>),
     Grouping(NodeRef<'a>),
     Identifer(Token<'a>),
@@ -544,11 +592,22 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_unary_expression() {
+        // pre-increment
+        node_assertion_test_generation!("++5", 1, ParseTreeNode::PreIncrement { .. });
+        // pre-decrement
+        node_assertion_test_generation!("--5", 1, ParseTreeNode::PreDecrement { .. });
+    }
+
+    #[test]
     fn should_parse_postfix_expression() {
-        // post decrement
+        // post increment
         node_assertion_test_generation!("5++", 1, ParseTreeNode::PostIncrement { .. });
+        // post decrement
+        node_assertion_test_generation!("5--", 1, ParseTreeNode::PostDecrement { .. });
 
         // struct member of
+        node_assertion_test_generation!("hello.world", 1, ParseTreeNode::StructureMember { .. });
         node_assertion_test_generation!(
             "hello->world",
             1,
