@@ -530,7 +530,7 @@ pub fn parse<'a>(state: &mut ParseCtx<'a>, input: &'a str) -> Result<NonTerminal
 mod tests {
     use super::*;
 
-    macro_rules! test_gen {
+    macro_rules! node_assertion_test_generation {
         ($input:expr, $expected_node_offset:literal, $expected_node_kind:pat) => {
             let mut state = ParseCtx::default();
             let maybe_parse_tree = parse(&mut state, &$input);
@@ -546,25 +546,25 @@ mod tests {
     #[test]
     fn should_parse_postfix_expression() {
         // post decrement
-        test_gen!("5++", 1, ParseTreeNode::PostIncrement { .. });
+        node_assertion_test_generation!("5++", 1, ParseTreeNode::PostIncrement { .. });
 
         // struct member of
-        test_gen!(
+        node_assertion_test_generation!(
             "hello->world",
             1,
             ParseTreeNode::StructurePointerMember { .. }
         );
 
         // subscript
-        test_gen!("hello[0]", 2, ParseTreeNode::Subscript { .. });
+        node_assertion_test_generation!("hello[0]", 2, ParseTreeNode::Subscript { .. });
 
         // call
-        test_gen!("hello()", 1, ParseTreeNode::Call { .. });
+        node_assertion_test_generation!("hello()", 1, ParseTreeNode::Call { .. });
     }
 
     #[test]
     fn should_parse_primary_grouping_expression() {
-        test_gen!(
+        node_assertion_test_generation!(
             "( test )",
             0,
             ParseTreeNode::Identifer(Token {
@@ -572,10 +572,10 @@ mod tests {
                 ..
             })
         );
-        test_gen!("( test )", 1, ParseTreeNode::Grouping(_));
+        node_assertion_test_generation!("( test )", 1, ParseTreeNode::Grouping(_));
 
         // nested grouping
-        test_gen!(
+        node_assertion_test_generation!(
             "(( test ))",
             0,
             ParseTreeNode::Identifer(Token {
@@ -583,13 +583,13 @@ mod tests {
                 ..
             })
         );
-        test_gen!("(( test ))", 1, ParseTreeNode::Grouping(_));
+        node_assertion_test_generation!("(( test ))", 1, ParseTreeNode::Grouping(_));
     }
 
     #[test]
     fn should_parse_primary_expression() {
         // string literal
-        test_gen!(
+        node_assertion_test_generation!(
             "\"hello world\"",
             0,
             ParseTreeNode::StringLiteral(Token {
@@ -600,7 +600,7 @@ mod tests {
         );
 
         // identifier
-        test_gen!(
+        node_assertion_test_generation!(
             "test",
             0,
             ParseTreeNode::Identifer(Token {
@@ -613,7 +613,7 @@ mod tests {
 
     #[test]
     fn should_parse_standalone_constants() {
-        test_gen!(
+        node_assertion_test_generation!(
             "5",
             0,
             ParseTreeNode::Constant(Token {
@@ -623,7 +623,7 @@ mod tests {
             })
         );
 
-        test_gen!(
+        node_assertion_test_generation!(
             "\'c\'",
             0,
             ParseTreeNode::Constant(Token {
@@ -633,7 +633,7 @@ mod tests {
             })
         );
 
-        test_gen!(
+        node_assertion_test_generation!(
             "5.0",
             0,
             ParseTreeNode::Constant(Token {
