@@ -139,7 +139,7 @@ fn reduce_primary_to_postfix_expression<'a>(
 }
 
 #[allow(unused)]
-fn reduce_two_element_postfix_expression<'a>(
+fn reduce_inc_dec_postfix_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
@@ -154,8 +154,8 @@ fn reduce_two_element_postfix_expression<'a>(
         } else {
             Err("expected nonterminal 2nd from top of stack".to_string())
         }?;
-    // If the expression unwraps, the oper is guaranteed to exist and is safe
-    // to unwrap.
+    // If the expression unwraps, the oper is guranteed safe to unwrap due to
+    // ensuring the stack depth is atleast 2.
     let oper = maybe_oper.unwrap();
 
     let new_node = match oper {
@@ -173,6 +173,65 @@ fn reduce_two_element_postfix_expression<'a>(
         ) => Ok(ParseTreeNode::PostDecrement(postfix_expr_node_ref)),
         top_of_stack => Err(format!(
             "expected [postfix expression, ++/--] at top of stack.\nfound: {:?}",
+            &top_of_stack
+        )),
+    }?;
+
+    let new_node_ref = state.add_node_mut(new_node);
+    Ok(NonTerminal::Postfix(new_node_ref))
+}
+
+#[allow(unused)]
+fn reduce_struct_member_postfix_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    let maybe_third_elem = elems.pop();
+    let maybe_second_elem = elems.pop();
+    let maybe_expr = elems.pop();
+
+    let postfix_expr_node_ref =
+        if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Postfix(postfix_expr_node_ref))) =
+            maybe_expr
+        {
+            Ok(postfix_expr_node_ref)
+        } else {
+            Err("expected postfix non-terminal 3rd from top of stack".to_string())
+        }?;
+    // If the expression unwraps, the second and third elem are safe to unwrap
+    // due to ensuring the stack depth is atleast 3.
+    let second_elem = maybe_second_elem.unwrap();
+    let third_elem = maybe_third_elem.unwrap();
+
+    let new_node = match [second_elem, third_elem] {
+        [TermOrNonTerm::Terminal(Token {
+            kind: TokenKind::Dot,
+            ..
+        }), TermOrNonTerm::Terminal(
+            ident_tok @ Token {
+                kind: TokenKind::Identifier,
+                data: Some(_),
+                ..
+            },
+        )] => Ok(ParseTreeNode::StructureMember {
+            struct_expr: postfix_expr_node_ref,
+            member_ident: ident_tok,
+        }),
+        [TermOrNonTerm::Terminal(Token {
+            kind: TokenKind::Arrow,
+            ..
+        }), TermOrNonTerm::Terminal(
+            ident_tok @ Token {
+                kind: TokenKind::Identifier,
+                data: Some(_),
+                ..
+            },
+        )] => Ok(ParseTreeNode::StructurePointerMember {
+            struct_expr: postfix_expr_node_ref,
+            member_ident: ident_tok,
+        }),
+        top_of_stack => Err(format!(
+            "expected [postfix expression, ./->, identifier] at top of stack.\nfound: {:?}",
             &top_of_stack
         )),
     }?;
@@ -282,8 +341,16 @@ pub enum NonTerminal<'a> {
     Unary(NodeRef<'a>),
 
     #[production(r"<Primary>", reduce_primary_to_postfix_expression)]
-    #[production(r"<Postfix> Token::PlusPlus", reduce_two_element_postfix_expression)]
-    #[production(r"<Postfix> Token::MinusMinus", reduce_two_element_postfix_expression)]
+    #[production(
+        r"<Postfix> Token::Dot Token::Identifier",
+        reduce_struct_member_postfix_expression
+    )]
+    #[production(
+        r"<Postfix> Token::Arrow Token::Identifier",
+        reduce_struct_member_postfix_expression
+    )]
+    #[production(r"<Postfix> Token::PlusPlus", reduce_inc_dec_postfix_expression)]
+    #[production(r"<Postfix> Token::MinusMinus", reduce_inc_dec_postfix_expression)]
     Postfix(NodeRef<'a>),
 
     #[production(r"Token::Identifier", reduce_primary_expression)]
@@ -309,6 +376,16 @@ impl<'a> NonTerminalRepresentable for NonTerminal<'a> {
 pub enum ParseTreeNode<'a> {
     Grouping(NodeRef<'a>),
     Identifer(Token<'a>),
+    // <struct expr>.<ident>
+    StructureMember {
+        struct_expr: NodeRef<'a>,
+        member_ident: Token<'a>,
+    },
+    // <struct expr>-><ident>
+    StructurePointerMember {
+        struct_expr: NodeRef<'a>,
+        member_ident: Token<'a>,
+    },
     PostIncrement(NodeRef<'a>),
     PostDecrement(NodeRef<'a>),
     StringLiteral(Token<'a>),
@@ -342,7 +419,7 @@ mod tests {
 
     #[test]
     fn should_parse_postfix_expression() {
-        // nested grouping
+        // post decrement
         let input = "5++";
 
         let mut state = ParseCtx::default();
@@ -354,6 +431,25 @@ mod tests {
 
         assert!(
             matches!(postfix_expr_node, ParseTreeNode::PostIncrement(_)),
+            "{:?}",
+            postfix_expr_node
+        );
+
+        // struct member of
+        let input = "hello->world";
+
+        let mut state = ParseCtx::default();
+        let maybe_parse_tree = parse(&mut state, &input);
+
+        assert!(maybe_parse_tree.is_ok());
+
+        let postfix_expr_node = &state.arena[1];
+
+        assert!(
+            matches!(
+                postfix_expr_node,
+                ParseTreeNode::StructurePointerMember { .. }
+            ),
             "{:?}",
             postfix_expr_node
         );
@@ -439,6 +535,6 @@ mod tests {
     #[test]
     fn should_retain_expected_parse_tree_component_sizes() {
         assert_eq!(std::mem::size_of::<NonTerminal>(), 16);
-        assert_eq!(std::mem::size_of::<ParseTreeNode>(), 80);
+        assert_eq!(std::mem::size_of::<ParseTreeNode>(), 88);
     }
 }
