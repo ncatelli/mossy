@@ -249,7 +249,6 @@ fn reduce_call_postfix_expression<'a>(
     let maybe_lparen = elems.pop();
     let maybe_expr = elems.pop();
 
-    // check for bracket index wrappers.
     if let [Some(TerminalOrNonTerminal::Terminal(Token {
         kind: TokenKind::LeftParen,
         ..
@@ -261,6 +260,51 @@ fn reduce_call_postfix_expression<'a>(
         Ok(())
     } else {
         Err("expected [(, )] at top of stack".to_string())
+    }?;
+
+    // unpack the lhs expressions.
+    let postfix_expr_node_ref =
+        if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Postfix(postfix_expr_node_ref))) =
+            maybe_expr
+        {
+            Ok(postfix_expr_node_ref)
+        } else {
+            Err("expected postfix non-terminal 3rd from top of stack".to_string())
+        }?;
+
+    let new_node = ParseTreeNode::Call {
+        expr: postfix_expr_node_ref,
+        argument_expression_list: None,
+    };
+
+    let new_node_ref = state.add_node_mut(new_node);
+    Ok(NonTerminal::Postfix(new_node_ref))
+}
+
+#[allow(unused)]
+fn reduce_call_with_argument_expression_list_postfix_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    let maybe_rparen = elems.pop();
+    let maybe_argument_list_expression = elems.pop();
+    let maybe_lparen = elems.pop();
+    let maybe_expr = elems.pop();
+
+    let argument_list_expression_node_ref = if let [Some(TerminalOrNonTerminal::Terminal(Token {
+        kind: TokenKind::LeftParen,
+        ..
+    })), Some(TerminalOrNonTerminal::NonTerminal(
+        NonTerminal::ArgumentExpressionList(argument_list_node_ref),
+    )), Some(TerminalOrNonTerminal::Terminal(Token {
+        kind: TokenKind::RightParen,
+        ..
+    }))] =
+        [maybe_lparen, maybe_argument_list_expression, maybe_rparen]
+    {
+        Ok(argument_list_node_ref)
+    } else {
+        Err("expected [(, argument expression list, )] at top of stack".to_string())
     }?;
 
     // unpack the lhs and index expressions.
@@ -275,7 +319,7 @@ fn reduce_call_postfix_expression<'a>(
 
     let new_node = ParseTreeNode::Call {
         expr: postfix_expr_node_ref,
-        argument_expression_list: (),
+        argument_expression_list: Some(argument_list_expression_node_ref),
     };
 
     let new_node_ref = state.add_node_mut(new_node);
@@ -332,6 +376,18 @@ fn reduce_subscript_postfix_expression<'a>(
 
     let new_node_ref = state.add_node_mut(new_node);
     Ok(NonTerminal::Postfix(new_node_ref))
+}
+
+#[allow(unused)]
+fn reduce_argument_expression_list_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Assignment(node_ref))) = elems.pop() {
+        Ok(NonTerminal::ArgumentExpressionList(node_ref))
+    } else {
+        Err("expected assignment non-terminal at top of stack".to_string())
+    }
 }
 
 #[allow(unused)]
@@ -663,12 +719,10 @@ pub enum NonTerminal<'a> {
         r"<Postfix> Token::LeftParen Token::RightParen",
         reduce_call_postfix_expression
     )]
-    /* TODO: ArgumentExpressionList is not implemented yet.
     #[production(
         r"<Postfix> Token::LeftParen <ArgumentExpressionList> Token::RightParen",
-        reduce_call_postfix_expression
+        reduce_call_with_argument_expression_list_postfix_expression
     )]
-    */
     #[production(
         r"<Postfix> Token::Dot Token::Identifier",
         reduce_struct_member_postfix_expression
@@ -680,6 +734,9 @@ pub enum NonTerminal<'a> {
     #[production(r"<Postfix> Token::PlusPlus", reduce_inc_dec_postfix_expression)]
     #[production(r"<Postfix> Token::MinusMinus", reduce_inc_dec_postfix_expression)]
     Postfix(NodeRef<'a>),
+
+    #[production(r"<Assignment>", reduce_argument_expression_list_expression)]
+    ArgumentExpressionList(NodeRef<'a>),
 
     #[production(r"Token::Identifier", reduce_primary_expression)]
     #[production(r"<Constant>", reduce_primary_expression)]
@@ -718,9 +775,7 @@ pub enum ParseTreeNode<'a> {
     // <expr>()
     Call {
         expr: NodeRef<'a>,
-        // TODO: argument_expression_list
-        // current unit placeholder.
-        argument_expression_list: (),
+        argument_expression_list: Option<NodeRef<'a>>,
     },
     // <struct expr>.<ident>
     StructureMember {
@@ -808,6 +863,14 @@ mod tests {
 
         // call
         node_assertion_test_generation!("hello()", 1, ParseTreeNode::Call { .. });
+        node_assertion_test_generation!(
+            "hello(5)",
+            2,
+            ParseTreeNode::Call {
+                expr: NodeRef { idx: 0, .. },
+                argument_expression_list: Some(NodeRef { idx: 1, .. })
+            }
+        );
     }
 
     #[test]
