@@ -38,19 +38,19 @@ fn reduce_constant<'a>(
                 kind: TokenKind::IntegerConstant,
                 ..
             },
-        )) => Ok(ParseTreeNode::IntegerConstant(term)),
-        Some(TermOrNonTerm::Terminal(
+        ))
+        | Some(TermOrNonTerm::Terminal(
             term @ Token {
                 kind: TokenKind::CharacterConstant,
                 ..
             },
-        )) => Ok(ParseTreeNode::CharacterConstant(term)),
-        Some(TermOrNonTerm::Terminal(
+        ))
+        | Some(TermOrNonTerm::Terminal(
             term @ Token {
                 kind: TokenKind::FloatingConstant,
                 ..
             },
-        )) => Ok(ParseTreeNode::FloatConstant(term)),
+        )) => Ok(ParseTreeNode::Constant(term)),
 
         _ => Err("expected constant terminal at top of stack".to_string()),
     }?;
@@ -241,6 +241,48 @@ fn reduce_struct_member_postfix_expression<'a>(
 }
 
 #[allow(unused)]
+fn reduce_call_postfix_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    let maybe_rparen = elems.pop();
+    let maybe_lparen = elems.pop();
+    let maybe_expr = elems.pop();
+
+    // check for bracket index wrappers.
+    if let [Some(TerminalOrNonTerminal::Terminal(Token {
+        kind: TokenKind::LeftParen,
+        ..
+    })), Some(TerminalOrNonTerminal::Terminal(Token {
+        kind: TokenKind::RightParen,
+        ..
+    }))] = [maybe_lparen, maybe_rparen]
+    {
+        Ok(())
+    } else {
+        Err("expected [(, )] at top of stack".to_string())
+    }?;
+
+    // unpack the lhs and index expressions.
+    let postfix_expr_node_ref =
+        if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Postfix(postfix_expr_node_ref))) =
+            maybe_expr
+        {
+            Ok(postfix_expr_node_ref)
+        } else {
+            Err("expected postfix non-terminal 3rd from top of stack".to_string())
+        }?;
+
+    let new_node = ParseTreeNode::Call {
+        expr: postfix_expr_node_ref,
+        argument_expression_list: (),
+    };
+
+    let new_node_ref = state.add_node_mut(new_node);
+    Ok(NonTerminal::Postfix(new_node_ref))
+}
+
+#[allow(unused)]
 fn reduce_subscript_postfix_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
@@ -398,6 +440,10 @@ pub enum NonTerminal<'a> {
         reduce_subscript_postfix_expression
     )]
     #[production(
+        r"<Postfix> Token::LeftParen Token::RightParen",
+        reduce_call_postfix_expression
+    )]
+    #[production(
         r"<Postfix> Token::Dot Token::Identifier",
         reduce_struct_member_postfix_expression
     )]
@@ -435,11 +481,19 @@ pub enum ParseTreeNode<'a> {
         expr: NodeRef<'a>,
         subscript_expr: NodeRef<'a>,
     },
+    // <expr>()
+    Call {
+        expr: NodeRef<'a>,
+        // TODO: argument_expression_list
+        // current unit placeholder.
+        argument_expression_list: (),
+    },
     // <struct expr>.<ident>
     StructureMember {
         struct_expr: NodeRef<'a>,
         member_ident: Token<'a>,
     },
+
     // <struct expr>-><ident>
     StructurePointerMember {
         struct_expr: NodeRef<'a>,
@@ -450,9 +504,7 @@ pub enum ParseTreeNode<'a> {
     Grouping(NodeRef<'a>),
     Identifer(Token<'a>),
     StringLiteral(Token<'a>),
-    IntegerConstant(Token<'a>),
-    CharacterConstant(Token<'a>),
-    FloatConstant(Token<'a>),
+    Constant(Token<'a>),
 }
 
 pub fn parse<'a>(state: &mut ParseCtx<'a>, input: &'a str) -> Result<NonTerminal<'a>, String> {
@@ -478,135 +530,118 @@ pub fn parse<'a>(state: &mut ParseCtx<'a>, input: &'a str) -> Result<NonTerminal
 mod tests {
     use super::*;
 
+    macro_rules! test_gen {
+        ($input:expr, $expected_node_offset:literal, $expected_node_kind:pat) => {
+            let mut state = ParseCtx::default();
+            let maybe_parse_tree = parse(&mut state, &$input);
+
+            assert!(maybe_parse_tree.is_ok());
+
+            let expr_node = &state.arena[$expected_node_offset];
+
+            assert!(matches!(expr_node, $expected_node_kind), "{:?}", expr_node);
+        };
+    }
+
     #[test]
     fn should_parse_postfix_expression() {
         // post decrement
-        let input = "5++";
-
-        let mut state = ParseCtx::default();
-        let maybe_parse_tree = parse(&mut state, &input);
-
-        assert!(maybe_parse_tree.is_ok());
-
-        let postfix_expr_node = &state.arena[1];
-
-        assert!(
-            matches!(postfix_expr_node, ParseTreeNode::PostIncrement(_)),
-            "{:?}",
-            postfix_expr_node
-        );
+        test_gen!("5++", 1, ParseTreeNode::PostIncrement { .. });
 
         // struct member of
-        let input = "hello->world";
-
-        let mut state = ParseCtx::default();
-        let maybe_parse_tree = parse(&mut state, &input);
-
-        assert!(maybe_parse_tree.is_ok());
-
-        let postfix_expr_node = &state.arena[1];
-
-        assert!(
-            matches!(
-                postfix_expr_node,
-                ParseTreeNode::StructurePointerMember { .. }
-            ),
-            "{:?}",
-            postfix_expr_node
+        test_gen!(
+            "hello->world",
+            1,
+            ParseTreeNode::StructurePointerMember { .. }
         );
 
         // subscript
-        let input = "hello[0]";
+        test_gen!("hello[0]", 2, ParseTreeNode::Subscript { .. });
 
-        let mut state = ParseCtx::default();
-        let maybe_parse_tree = parse(&mut state, &input);
-
-        assert!(maybe_parse_tree.is_ok());
-
-        let postfix_expr_node = &state.arena[2];
-
-        assert!(
-            matches!(postfix_expr_node, ParseTreeNode::Subscript { .. }),
-            "{:?}",
-            postfix_expr_node
-        );
+        // call
+        test_gen!("hello()", 1, ParseTreeNode::Call { .. });
     }
 
     #[test]
     fn should_parse_primary_grouping_expression() {
-        // nested grouping
-        let input = "(( test ))";
-
-        let mut state = ParseCtx::default();
-        let maybe_parse_tree = parse(&mut state, &input);
-
-        assert!(maybe_parse_tree.is_ok());
-
-        let constant_expr_node = &state.arena[0];
-
-        assert!(matches!(
-            &constant_expr_node,
+        test_gen!(
+            "( test )",
+            0,
             ParseTreeNode::Identifer(Token {
                 kind: TokenKind::Identifier,
                 ..
             })
-        ));
+        );
+        test_gen!("( test )", 1, ParseTreeNode::Grouping(_));
+
+        // nested grouping
+        test_gen!(
+            "(( test ))",
+            0,
+            ParseTreeNode::Identifer(Token {
+                kind: TokenKind::Identifier,
+                ..
+            })
+        );
+        test_gen!("(( test ))", 1, ParseTreeNode::Grouping(_));
     }
 
     #[test]
     fn should_parse_primary_expression() {
-        let inputs = [
-            "\"hello world\"", // string literal
-            "test",            // identifier
-        ];
-
-        let mut nodes = Vec::new();
-        for input in inputs {
-            let mut state = ParseCtx::default();
-            let maybe_parse_tree = parse(&mut state, &input);
-
-            assert!(maybe_parse_tree.is_ok(), "{:?}", &maybe_parse_tree);
-
-            // leaf of parse tree.
-            let node = &state.arena[0];
-            nodes.push(node.clone());
-        }
-        // assert first result is a string literal.
-        assert!(matches!(
-            &nodes[0],
+        // string literal
+        test_gen!(
+            "\"hello world\"",
+            0,
             ParseTreeNode::StringLiteral(Token {
                 kind: TokenKind::StringLiteral,
                 data: Some("hello world"),
                 ..
             })
-        ),);
+        );
 
-        // assert second result is an identifier.
-        assert!(matches!(
-            &nodes[1],
+        // identifier
+        test_gen!(
+            "test",
+            0,
             ParseTreeNode::Identifer(Token {
                 kind: TokenKind::Identifier,
                 data: Some("test"),
                 ..
             })
-        ));
+        );
     }
 
     #[test]
     fn should_parse_standalone_constants() {
-        let inputs = [
-            "5",   // integer constant
-            "'c'", // character constant
-            "5.0", // floating constant
-        ];
+        test_gen!(
+            "5",
+            0,
+            ParseTreeNode::Constant(Token {
+                kind: TokenKind::IntegerConstant,
+                data: Some("5"),
+                ..
+            })
+        );
 
-        for input in inputs {
-            let mut state = ParseCtx::default();
-            let maybe_parse_tree = parse(&mut state, &input);
+        test_gen!(
+            "\'c\'",
+            0,
+            ParseTreeNode::Constant(Token {
+                kind: TokenKind::CharacterConstant,
+                data: Some("c"),
+                ..
+            })
+        );
 
-            assert!(maybe_parse_tree.is_ok());
-            assert_eq!(state.nodes(), 1);
-        }
+        test_gen!(
+            "5.0",
+            0,
+            ParseTreeNode::Constant(Token {
+                kind: TokenKind::FloatingConstant,
+                data: Some("5.0"),
+                ..
+            })
+        );
     }
 
     #[test]
