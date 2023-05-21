@@ -397,14 +397,158 @@ fn reduce_cast_expression<'a>(
 }
 
 #[allow(unused)]
-fn reduce_expression<'a>(
+fn reduce_multiplicative_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
     if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Cast(node_ref))) = elems.pop() {
-        Ok(NonTerminal::Expression(node_ref))
+        Ok(NonTerminal::Multiplicative(node_ref))
     } else {
         Err("expected cast non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_additive_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Multiplicative(node_ref))) = elems.pop() {
+        Ok(NonTerminal::Additive(node_ref))
+    } else {
+        Err("expected multiplicative non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_shift_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Additive(node_ref))) = elems.pop() {
+        Ok(NonTerminal::Shift(node_ref))
+    } else {
+        Err("expected aditive non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_relational_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Shift(node_ref))) = elems.pop() {
+        Ok(NonTerminal::Relational(node_ref))
+    } else {
+        Err("expected shift non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_equality_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Relational(node_ref))) = elems.pop() {
+        Ok(NonTerminal::Equality(node_ref))
+    } else {
+        Err("expected Relational non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_and_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Equality(node_ref))) = elems.pop() {
+        Ok(NonTerminal::And(node_ref))
+    } else {
+        Err("expected equality non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_exclusive_or_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::And(node_ref))) = elems.pop() {
+        Ok(NonTerminal::ExclusiveOr(node_ref))
+    } else {
+        Err("expected and non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_inclusive_or_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::ExclusiveOr(node_ref))) = elems.pop() {
+        Ok(NonTerminal::InclusiveOr(node_ref))
+    } else {
+        Err("expected exclusive or non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_logical_and_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::InclusiveOr(node_ref))) = elems.pop() {
+        Ok(NonTerminal::LogicalAnd(node_ref))
+    } else {
+        Err("expected inclusive or non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_logical_or_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::LogicalAnd(node_ref))) = elems.pop() {
+        Ok(NonTerminal::LogicalOr(node_ref))
+    } else {
+        Err("expected logical and non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_conditional_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::LogicalOr(node_ref))) = elems.pop() {
+        Ok(NonTerminal::Conditional(node_ref))
+    } else {
+        Err("expected logical or non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_assignment_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Conditional(node_ref))) = elems.pop() {
+        Ok(NonTerminal::Assignment(node_ref))
+    } else {
+        Err("expected conditional non-terminal at top of stack".to_string())
+    }
+}
+
+#[allow(unused)]
+fn reduce_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Assignment(node_ref))) = elems.pop() {
+        Ok(NonTerminal::Expression(node_ref))
+    } else {
+        Err("expected assignment non-terminal at top of stack".to_string())
     }
 }
 
@@ -463,8 +607,44 @@ impl<'a> Default for ParseCtx<'a> {
 pub enum NonTerminal<'a> {
     #[state(ParseCtx<'a>)]
     #[goal(r"<Expression>", reduce_goal)]
-    #[production(r"<Cast>", reduce_expression)]
+    #[production(r"<Assignment>", reduce_expression)]
     Expression(NodeRef<'a>),
+
+    #[production(r"<Conditional>", reduce_assignment_expression)]
+    Assignment(NodeRef<'a>),
+
+    #[production(r"<LogicalOr>", reduce_conditional_expression)]
+    Conditional(NodeRef<'a>),
+
+    #[production(r"<LogicalAnd>", reduce_logical_or_expression)]
+    LogicalOr(NodeRef<'a>),
+
+    #[production(r"<InclusiveOr>", reduce_logical_and_expression)]
+    LogicalAnd(NodeRef<'a>),
+
+    #[production(r"<ExclusiveOr>", reduce_inclusive_or_expression)]
+    InclusiveOr(NodeRef<'a>),
+
+    #[production(r"<And>", reduce_exclusive_or_expression)]
+    ExclusiveOr(NodeRef<'a>),
+
+    #[production(r"<Equality>", reduce_and_expression)]
+    And(NodeRef<'a>),
+
+    #[production(r"<Relational>", reduce_equality_expression)]
+    Equality(NodeRef<'a>),
+
+    #[production(r"<Shift>", reduce_relational_expression)]
+    Relational(NodeRef<'a>),
+
+    #[production(r"<Additive>", reduce_shift_expression)]
+    Shift(NodeRef<'a>),
+
+    #[production(r"<Multiplicative>", reduce_additive_expression)]
+    Additive(NodeRef<'a>),
+
+    #[production(r"<Cast>", reduce_multiplicative_expression)]
+    Multiplicative(NodeRef<'a>),
 
     #[production(r"<Unary>", reduce_cast_expression)]
     Cast(NodeRef<'a>),
