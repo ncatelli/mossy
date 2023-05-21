@@ -736,6 +736,9 @@ pub enum NonTerminal<'a> {
     Postfix(NodeRef<'a>),
 
     #[production(r"<Assignment>", reduce_argument_expression_list_expression)]
+    /* TODO: Implement recursive expression list.
+    #[production(r"<ArgumentExpressionList> Token::Comma <Assignment>", reduce_argument_expression_list_expanded_expression)]
+    */
     ArgumentExpressionList(NodeRef<'a>),
 
     #[production(r"Token::Identifier", reduce_primary_expression)]
