@@ -241,6 +241,58 @@ fn reduce_struct_member_postfix_expression<'a>(
 }
 
 #[allow(unused)]
+fn reduce_subscript_postfix_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    let maybe_rbracket = elems.pop();
+    let maybe_index_expr = elems.pop();
+    let maybe_lbracket = elems.pop();
+    let maybe_expr = elems.pop();
+
+    // check for bracket index wrappers.
+    if let [Some(TerminalOrNonTerminal::Terminal(Token {
+        kind: TokenKind::LeftBracket,
+        ..
+    })), Some(TerminalOrNonTerminal::Terminal(Token {
+        kind: TokenKind::RightBracket,
+        ..
+    }))] = [maybe_lbracket, maybe_rbracket]
+    {
+        Ok(())
+    } else {
+        Err("expected index expression non-terminal to be l and r bracket wrapped".to_string())
+    }?;
+
+    // unpack the lhs and index expressions.
+    let postfix_expr_node_ref =
+        if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Postfix(postfix_expr_node_ref))) =
+            maybe_expr
+        {
+            Ok(postfix_expr_node_ref)
+        } else {
+            Err("expected postfix non-terminal 4rd from top of stack".to_string())
+        }?;
+
+    let index_expr_node_ref =
+        if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Expression(index_expr_node_ref))) =
+            maybe_index_expr
+        {
+            Ok(postfix_expr_node_ref)
+        } else {
+            Err("expected expression non-terminal 2rd from top of stack".to_string())
+        }?;
+
+    let new_node = ParseTreeNode::Subscript {
+        expr: postfix_expr_node_ref,
+        subscript_expr: index_expr_node_ref,
+    };
+
+    let new_node_ref = state.add_node_mut(new_node);
+    Ok(NonTerminal::Postfix(new_node_ref))
+}
+
+#[allow(unused)]
 fn reduce_unary_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
@@ -342,6 +394,10 @@ pub enum NonTerminal<'a> {
 
     #[production(r"<Primary>", reduce_primary_to_postfix_expression)]
     #[production(
+        r"<Postfix> Token::LeftBracket <Expression> Token::RightBracket",
+        reduce_subscript_postfix_expression
+    )]
+    #[production(
         r"<Postfix> Token::Dot Token::Identifier",
         reduce_struct_member_postfix_expression
     )]
@@ -374,8 +430,11 @@ impl<'a> NonTerminalRepresentable for NonTerminal<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseTreeNode<'a> {
-    Grouping(NodeRef<'a>),
-    Identifer(Token<'a>),
+    // <expr>[<index expr>]
+    Subscript {
+        expr: NodeRef<'a>,
+        subscript_expr: NodeRef<'a>,
+    },
     // <struct expr>.<ident>
     StructureMember {
         struct_expr: NodeRef<'a>,
@@ -388,6 +447,8 @@ pub enum ParseTreeNode<'a> {
     },
     PostIncrement(NodeRef<'a>),
     PostDecrement(NodeRef<'a>),
+    Grouping(NodeRef<'a>),
+    Identifer(Token<'a>),
     StringLiteral(Token<'a>),
     IntegerConstant(Token<'a>),
     CharacterConstant(Token<'a>),
@@ -450,6 +511,22 @@ mod tests {
                 postfix_expr_node,
                 ParseTreeNode::StructurePointerMember { .. }
             ),
+            "{:?}",
+            postfix_expr_node
+        );
+
+        // subscript
+        let input = "hello[0]";
+
+        let mut state = ParseCtx::default();
+        let maybe_parse_tree = parse(&mut state, &input);
+
+        assert!(maybe_parse_tree.is_ok());
+
+        let postfix_expr_node = &state.arena[2];
+
+        assert!(
+            matches!(postfix_expr_node, ParseTreeNode::Subscript { .. }),
             "{:?}",
             postfix_expr_node
         );
