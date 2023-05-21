@@ -822,7 +822,7 @@ pub fn parse<'a>(state: &mut ParseCtx<'a>, input: &'a str) -> Result<NonTerminal
 mod tests {
     use super::*;
 
-    macro_rules! node_assertion_test_generation {
+    macro_rules! assert_node_at_index_is_generated_from {
         ($input:expr, $expected_node_offset:literal, $expected_node_kind:pat) => {
             let mut state = ParseCtx::default();
             let maybe_parse_tree = parse(&mut state, &$input);
@@ -838,32 +838,36 @@ mod tests {
     #[test]
     fn should_parse_unary_expression() {
         // pre-increment
-        node_assertion_test_generation!("++5", 1, ParseTreeNode::PreIncrement { .. });
+        assert_node_at_index_is_generated_from!("++5", 1, ParseTreeNode::PreIncrement { .. });
         // pre-decrement
-        node_assertion_test_generation!("--5", 1, ParseTreeNode::PreDecrement { .. });
+        assert_node_at_index_is_generated_from!("--5", 1, ParseTreeNode::PreDecrement { .. });
     }
 
     #[test]
     fn should_parse_postfix_expression() {
         // post increment
-        node_assertion_test_generation!("5++", 1, ParseTreeNode::PostIncrement { .. });
+        assert_node_at_index_is_generated_from!("5++", 1, ParseTreeNode::PostIncrement { .. });
         // post decrement
-        node_assertion_test_generation!("5--", 1, ParseTreeNode::PostDecrement { .. });
+        assert_node_at_index_is_generated_from!("5--", 1, ParseTreeNode::PostDecrement { .. });
 
         // struct member of
-        node_assertion_test_generation!("hello.world", 1, ParseTreeNode::StructureMember { .. });
-        node_assertion_test_generation!(
+        assert_node_at_index_is_generated_from!(
+            "hello.world",
+            1,
+            ParseTreeNode::StructureMember { .. }
+        );
+        assert_node_at_index_is_generated_from!(
             "hello->world",
             1,
             ParseTreeNode::StructurePointerMember { .. }
         );
 
         // subscript
-        node_assertion_test_generation!("hello[0]", 2, ParseTreeNode::Subscript { .. });
+        assert_node_at_index_is_generated_from!("hello[0]", 2, ParseTreeNode::Subscript { .. });
 
         // call
-        node_assertion_test_generation!("hello()", 1, ParseTreeNode::Call { .. });
-        node_assertion_test_generation!(
+        assert_node_at_index_is_generated_from!("hello()", 1, ParseTreeNode::Call { .. });
+        assert_node_at_index_is_generated_from!(
             "hello(5)",
             2,
             ParseTreeNode::Call {
@@ -875,7 +879,7 @@ mod tests {
 
     #[test]
     fn should_parse_primary_grouping_expression() {
-        node_assertion_test_generation!(
+        assert_node_at_index_is_generated_from!(
             "( test )",
             0,
             ParseTreeNode::Identifer(Token {
@@ -883,10 +887,10 @@ mod tests {
                 ..
             })
         );
-        node_assertion_test_generation!("( test )", 1, ParseTreeNode::Grouping(_));
+        assert_node_at_index_is_generated_from!("( test )", 1, ParseTreeNode::Grouping(_));
 
         // nested grouping
-        node_assertion_test_generation!(
+        assert_node_at_index_is_generated_from!(
             "(( test ))",
             0,
             ParseTreeNode::Identifer(Token {
@@ -894,13 +898,13 @@ mod tests {
                 ..
             })
         );
-        node_assertion_test_generation!("(( test ))", 1, ParseTreeNode::Grouping(_));
+        assert_node_at_index_is_generated_from!("(( test ))", 1, ParseTreeNode::Grouping(_));
     }
 
     #[test]
     fn should_parse_primary_expression() {
         // string literal
-        node_assertion_test_generation!(
+        assert_node_at_index_is_generated_from!(
             "\"hello world\"",
             0,
             ParseTreeNode::StringLiteral(Token {
@@ -911,7 +915,7 @@ mod tests {
         );
 
         // identifier
-        node_assertion_test_generation!(
+        assert_node_at_index_is_generated_from!(
             "test",
             0,
             ParseTreeNode::Identifer(Token {
@@ -924,7 +928,7 @@ mod tests {
 
     #[test]
     fn should_parse_standalone_constants() {
-        node_assertion_test_generation!(
+        assert_node_at_index_is_generated_from!(
             "5",
             0,
             ParseTreeNode::Constant(Token {
@@ -934,7 +938,7 @@ mod tests {
             })
         );
 
-        node_assertion_test_generation!(
+        assert_node_at_index_is_generated_from!(
             "\'c\'",
             0,
             ParseTreeNode::Constant(Token {
@@ -944,7 +948,7 @@ mod tests {
             })
         );
 
-        node_assertion_test_generation!(
+        assert_node_at_index_is_generated_from!(
             "5.0",
             0,
             ParseTreeNode::Constant(Token {
