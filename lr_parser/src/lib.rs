@@ -913,6 +913,12 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_empty_expression_statement() {
+        // empty expression statement `;`. Other cases covered by other tests.
+        assert_node_at_index_is_generated_from!(";", 0, ParseTreeNode::EmptyExpressionStatement(_));
+    }
+
+    #[test]
     fn should_parse_unary_expression() {
         // pre-increment
         assert_node_at_index_is_generated_from!("++5;", 1, ParseTreeNode::PreIncrement { .. });
