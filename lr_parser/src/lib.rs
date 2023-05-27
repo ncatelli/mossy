@@ -726,9 +726,7 @@ pub enum NonTerminal<'a> {
     #[production(r"<ExpressionStatement>", reduce_statement)]
     Statement(NodeRef<'a>),
 
-    /* TODO: Implement empty expression statements.
     #[production(r"Token::SemiColon", reduce_expression_statement)]
-    */
     #[production(r"<Expression> Token::SemiColon", reduce_expression_statement)]
     ExpressionStatement(NodeRef<'a>),
 
