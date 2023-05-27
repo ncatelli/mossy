@@ -1022,9 +1022,18 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_statement_list() {
+        assert_node_at_index_is_generated_from!("{ 5; }", 3, ParseTreeNode::StatementList { .. });
+    }
+
+    #[test]
+    #[ignore = "failing at 6"]
     fn should_parse_recursive_statement_list() {
-        assert_node_at_index_is_generated_from!("{5;}", 3, ParseTreeNode::StatementList { .. });
-        //assert_node_at_index_is_generated_from!("{5;6;}", 5, ParseTreeNode::StatementList { .. });
+        assert_node_at_index_is_generated_from!(
+            "{ 5; 6; }",
+            5,
+            ParseTreeNode::StatementList { .. }
+        );
     }
 
     #[test]
