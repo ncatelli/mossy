@@ -659,6 +659,10 @@ fn reduce_statement<'a>(
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
     let new_node = match elems.pop() {
+        Some(TerminalOrNonTerminal::NonTerminal(NonTerminal::CompoundStatement(node_ref))) => {
+            Ok(ParseTreeNode::Statement(node_ref))
+        }
+
         Some(TerminalOrNonTerminal::NonTerminal(NonTerminal::ExpressionStatement(node_ref))) => {
             Ok(ParseTreeNode::Statement(node_ref))
         }
@@ -804,7 +808,11 @@ impl<'a> Default for ParseCtx<'a> {
 #[derive(Debug, Lr1, PartialEq)]
 pub enum NonTerminal<'a> {
     #[state(ParseCtx<'a>)]
-    #[goal(r"<CompoundStatement>", reduce_goal)]
+    #[goal(r"<Statement>", reduce_goal)]
+    #[production(r"Token::SemiColon", reduce_expression_statement)]
+    #[production(r"<Expression> Token::SemiColon", reduce_expression_statement)]
+    ExpressionStatement(NodeRef<'a>),
+
     #[production(
         r"Token::LeftBrace <StatementList> Token::RightBrace",
         reduce_compound_statement
@@ -815,12 +823,9 @@ pub enum NonTerminal<'a> {
     #[production(r"<StatementList> <Statement>", reduce_statement_list)]
     StatementList(NodeRef<'a>),
 
+    #[production(r"<CompoundStatement>", reduce_statement)]
     #[production(r"<ExpressionStatement>", reduce_statement)]
     Statement(NodeRef<'a>),
-
-    #[production(r"Token::SemiColon", reduce_expression_statement)]
-    #[production(r"<Expression> Token::SemiColon", reduce_expression_statement)]
-    ExpressionStatement(NodeRef<'a>),
 
     #[production(r"<Assignment>", reduce_expression)]
     Expression(NodeRef<'a>),
