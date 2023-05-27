@@ -1060,7 +1060,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "failing at 6"]
+    #[ignore = "will fail until goal conflict is resolved."]
     fn should_parse_recursive_statement_list() {
         assert_node_at_index_is_generated_from!(
             "{ 5; 6; }",
