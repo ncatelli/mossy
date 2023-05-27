@@ -812,7 +812,7 @@ pub enum NonTerminal<'a> {
     CompoundStatement(NodeRef<'a>),
 
     #[production(r"<Statement>", reduce_statement_list)]
-    //#[production(r"<StatementList> <Statement>", reduce_statement_list)]
+    #[production(r"<StatementList> <Statement>", reduce_statement_list)]
     StatementList(NodeRef<'a>),
 
     #[production(r"<ExpressionStatement>", reduce_statement)]
