@@ -626,7 +626,7 @@ fn reduce_expression_statement<'a>(
         Ok(tok)
     } else {
         Err(format!(
-            "expected terminator at top of stack, got {:?}",
+            "expected terminator at top of stack.\nfound {:?}",
             &maybe_terminator
         ))
     }?;
@@ -634,16 +634,20 @@ fn reduce_expression_statement<'a>(
     let new_node = match maybe_expr {
         // an expression statement i.e. `5+5;`.
         Some(TerminalOrNonTerminal::NonTerminal(NonTerminal::Expression(node_ref))) => {
-            Ok(ParseTreeNode::ExpressionStatement(node_ref))
+            ParseTreeNode::ExpressionStatement(node_ref)
         }
 
         // an empty expression statement i.e. `;`.
-        None => Ok(ParseTreeNode::EmptyExpressionStatement(terminator)),
-        top_of_stack => Err(format!(
-            "expected expression non-terminal at top of stack.\nfound: {:?}",
-            &top_of_stack
-        )),
-    }?;
+        None => ParseTreeNode::EmptyExpressionStatement(terminator),
+
+        // an empty expression statement, i.e. `;`, where the next node is not
+        // an expression, i.e. a compound statement.
+        Some(other) => {
+            elems.push(other);
+
+            ParseTreeNode::EmptyExpressionStatement(terminator)
+        }
+    };
 
     let new_node_ref = state.add_node_mut(new_node);
     Ok(NonTerminal::ExpressionStatement(new_node_ref))
@@ -667,6 +671,84 @@ fn reduce_statement<'a>(
 
     let new_node_ref = state.add_node_mut(new_node);
     Ok(NonTerminal::Statement(new_node_ref))
+}
+
+#[allow(unused)]
+fn reduce_statement_list<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    let maybe_statement = elems.pop();
+    let maybe_statement_list = elems.pop();
+
+    let tail_statement_node_ref =
+        if let Some(TerminalOrNonTerminal::NonTerminal(NonTerminal::Statement(node_ref))) =
+            maybe_statement
+        {
+            Ok(node_ref)
+        } else {
+            Err(format!(
+                "expected statement at top of stack.\nfound {:?}",
+                &maybe_statement,
+            ))
+        }?;
+
+    let new_node = match maybe_statement_list {
+        // a recursive statement list `5; 6;`.
+        Some(TerminalOrNonTerminal::NonTerminal(NonTerminal::StatementList(node_ref))) => {
+            ParseTreeNode::StatementList {
+                tail_stmt: tail_statement_node_ref,
+                prev: Some(node_ref),
+            }
+        }
+
+        // a single statement list elem `5;`.
+        None => ParseTreeNode::StatementList {
+            tail_stmt: tail_statement_node_ref,
+            prev: None,
+        },
+
+        // handles all other cases where the statement list can be reduced but
+        // the next element isn't a statement_list, by pushing the non-matching
+        // node back onto the stack.
+        Some(other) => {
+            elems.push(other);
+
+            ParseTreeNode::StatementList {
+                tail_stmt: tail_statement_node_ref,
+                prev: None,
+            }
+        }
+    };
+
+    let new_node_ref = state.add_node_mut(new_node);
+    Ok(NonTerminal::StatementList(new_node_ref))
+}
+
+#[allow(unused)]
+fn reduce_compound_statement<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    let maybe_rbrace = elems.pop();
+    let maybe_statement = elems.pop();
+    let maybe_lbrace = elems.pop();
+
+    let new_node = if let [Some(TermOrNonTerm::Terminal(Token {
+        kind: TokenKind::LeftBrace,
+        ..
+    })), Some(TermOrNonTerm::NonTerminal(NonTerminal::StatementList(node_ref))), Some(TermOrNonTerm::Terminal(Token {
+        kind: TokenKind::RightBrace,
+        ..
+    }))] = [maybe_lbrace, maybe_statement, maybe_rbrace]
+    {
+        Ok(ParseTreeNode::CompoundStatement(node_ref))
+    } else {
+        Err("expected `{` + <CompoundStatement> + `}` at top of stack".to_string())
+    }?;
+
+    let new_node_ref = state.add_node_mut(new_node);
+    Ok(NonTerminal::CompoundStatement(new_node_ref))
 }
 
 #[allow(unused)]
@@ -722,7 +804,17 @@ impl<'a> Default for ParseCtx<'a> {
 #[derive(Debug, Lr1, PartialEq)]
 pub enum NonTerminal<'a> {
     #[state(ParseCtx<'a>)]
-    #[goal(r"<Statement>", reduce_goal)]
+    #[goal(r"<CompoundStatement>", reduce_goal)]
+    #[production(
+        r"Token::LeftBrace <StatementList> Token::RightBrace",
+        reduce_compound_statement
+    )]
+    CompoundStatement(NodeRef<'a>),
+
+    #[production(r"<Statement>", reduce_statement_list)]
+    //#[production(r"<StatementList> <Statement>", reduce_statement_list)]
+    StatementList(NodeRef<'a>),
+
     #[production(r"<ExpressionStatement>", reduce_statement)]
     Statement(NodeRef<'a>),
 
@@ -832,6 +924,18 @@ impl<'a> NonTerminalRepresentable for NonTerminal<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseTreeNode<'a> {
+    // `{ 5; }`
+    CompoundStatement(NodeRef<'a>),
+
+    // `5;`
+    // or
+    // `5; 6;`
+    StatementList {
+        tail_stmt: NodeRef<'a>,
+        // moves toward head of list
+        prev: Option<NodeRef<'a>>,
+    },
+
     Statement(NodeRef<'a>),
 
     // `5+5;`
@@ -904,7 +1008,12 @@ mod tests {
             let mut state = ParseCtx::default();
             let maybe_parse_tree = parse(&mut state, &$input);
 
-            assert!(maybe_parse_tree.is_ok(), "{:?}", &maybe_parse_tree);
+            assert!(
+                maybe_parse_tree.is_ok(),
+                "{:?}\nstate:\n{:#?}",
+                &maybe_parse_tree,
+                &state
+            );
 
             let expr_node = &state.arena[$expected_node_offset];
 
@@ -913,45 +1022,55 @@ mod tests {
     }
 
     #[test]
+    fn should_parse_recursive_statement_list() {
+        assert_node_at_index_is_generated_from!("{5;}", 3, ParseTreeNode::StatementList { .. });
+        //assert_node_at_index_is_generated_from!("{5;6;}", 5, ParseTreeNode::StatementList { .. });
+    }
+
+    #[test]
     fn should_parse_empty_expression_statement() {
         // empty expression statement `;`. Other cases covered by other tests.
-        assert_node_at_index_is_generated_from!(";", 0, ParseTreeNode::EmptyExpressionStatement(_));
+        assert_node_at_index_is_generated_from!(
+            "{;}",
+            0,
+            ParseTreeNode::EmptyExpressionStatement(_)
+        );
     }
 
     #[test]
     fn should_parse_unary_expression() {
         // pre-increment
-        assert_node_at_index_is_generated_from!("++5;", 1, ParseTreeNode::PreIncrement { .. });
+        assert_node_at_index_is_generated_from!("{++5;}", 1, ParseTreeNode::PreIncrement { .. });
         // pre-decrement
-        assert_node_at_index_is_generated_from!("--5;", 1, ParseTreeNode::PreDecrement { .. });
+        assert_node_at_index_is_generated_from!("{--5;}", 1, ParseTreeNode::PreDecrement { .. });
     }
 
     #[test]
     fn should_parse_postfix_expression() {
         // post increment
-        assert_node_at_index_is_generated_from!("5++;", 1, ParseTreeNode::PostIncrement { .. });
+        assert_node_at_index_is_generated_from!("{5++;}", 1, ParseTreeNode::PostIncrement { .. });
         // post decrement
-        assert_node_at_index_is_generated_from!("5--;", 1, ParseTreeNode::PostDecrement { .. });
+        assert_node_at_index_is_generated_from!("{5--;}", 1, ParseTreeNode::PostDecrement { .. });
 
         // struct member of
         assert_node_at_index_is_generated_from!(
-            "hello.world;",
+            "{hello.world;}",
             1,
             ParseTreeNode::StructureMember { .. }
         );
         assert_node_at_index_is_generated_from!(
-            "hello->world;",
+            "{hello->world;}",
             1,
             ParseTreeNode::StructurePointerMember { .. }
         );
 
         // subscript
-        assert_node_at_index_is_generated_from!("hello[0];", 2, ParseTreeNode::Subscript { .. });
+        assert_node_at_index_is_generated_from!("{hello[0];}", 2, ParseTreeNode::Subscript { .. });
 
         // call
-        assert_node_at_index_is_generated_from!("hello();", 1, ParseTreeNode::Call { .. });
+        assert_node_at_index_is_generated_from!("{hello();}", 1, ParseTreeNode::Call { .. });
         assert_node_at_index_is_generated_from!(
-            "hello(5);",
+            "{hello(5);}",
             2,
             ParseTreeNode::Call {
                 expr: NodeRef { idx: 0, .. },
@@ -963,32 +1082,32 @@ mod tests {
     #[test]
     fn should_parse_primary_grouping_expression() {
         assert_node_at_index_is_generated_from!(
-            "( test );",
+            "{( test );}",
             0,
             ParseTreeNode::Identifer(Token {
                 kind: TokenKind::Identifier,
                 ..
             })
         );
-        assert_node_at_index_is_generated_from!("( test );", 1, ParseTreeNode::Grouping(_));
+        assert_node_at_index_is_generated_from!("{( test );}", 1, ParseTreeNode::Grouping(_));
 
         // nested grouping
         assert_node_at_index_is_generated_from!(
-            "(( test ));",
+            "{(( test ));}",
             0,
             ParseTreeNode::Identifer(Token {
                 kind: TokenKind::Identifier,
                 ..
             })
         );
-        assert_node_at_index_is_generated_from!("(( test ));", 1, ParseTreeNode::Grouping(_));
+        assert_node_at_index_is_generated_from!("{(( test ));}", 1, ParseTreeNode::Grouping(_));
     }
 
     #[test]
     fn should_parse_primary_expression() {
         // string literal
         assert_node_at_index_is_generated_from!(
-            "\"hello world\";",
+            "{\"hello world\";}",
             0,
             ParseTreeNode::StringLiteral(Token {
                 kind: TokenKind::StringLiteral,
@@ -999,7 +1118,7 @@ mod tests {
 
         // identifier
         assert_node_at_index_is_generated_from!(
-            "test;",
+            "{test;}",
             0,
             ParseTreeNode::Identifer(Token {
                 kind: TokenKind::Identifier,
@@ -1012,7 +1131,7 @@ mod tests {
     #[test]
     fn should_parse_standalone_constants() {
         assert_node_at_index_is_generated_from!(
-            "5;",
+            "{5;}",
             0,
             ParseTreeNode::Constant(Token {
                 kind: TokenKind::IntegerConstant,
@@ -1022,7 +1141,7 @@ mod tests {
         );
 
         assert_node_at_index_is_generated_from!(
-            "\'c\';",
+            "{\'c\';}",
             0,
             ParseTreeNode::Constant(Token {
                 kind: TokenKind::CharacterConstant,
@@ -1032,7 +1151,7 @@ mod tests {
         );
 
         assert_node_at_index_is_generated_from!(
-            "5.0;",
+            "{5.0;}",
             0,
             ParseTreeNode::Constant(Token {
                 kind: TokenKind::FloatingConstant,
