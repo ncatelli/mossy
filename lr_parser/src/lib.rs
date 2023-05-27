@@ -391,6 +391,53 @@ fn reduce_argument_expression_list_expression<'a>(
 }
 
 #[allow(unused)]
+fn reduce_unary_operator<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    match elems.pop() {
+        Some(TerminalOrNonTerminal::Terminal(
+            term @ Token {
+                kind: TokenKind::Ampersand,
+                ..
+            },
+        ))
+        | Some(TerminalOrNonTerminal::Terminal(
+            term @ Token {
+                kind: TokenKind::Star,
+                ..
+            },
+        ))
+        | Some(TerminalOrNonTerminal::Terminal(
+            term @ Token {
+                kind: TokenKind::Plus,
+                ..
+            },
+        ))
+        | Some(TerminalOrNonTerminal::Terminal(
+            term @ Token {
+                kind: TokenKind::Minus,
+                ..
+            },
+        ))
+        | Some(TerminalOrNonTerminal::Terminal(
+            term @ Token {
+                kind: TokenKind::Tilde,
+                ..
+            },
+        ))
+        | Some(TerminalOrNonTerminal::Terminal(
+            term @ Token {
+                kind: TokenKind::Bang,
+                ..
+            },
+        )) => Ok(NonTerminal::UnaryOperator(term)),
+
+        _ => Err("expected unary operator at top of stack".to_string()),
+    }
+}
+
+#[allow(unused)]
 fn reduce_unary_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
@@ -400,6 +447,35 @@ fn reduce_unary_expression<'a>(
     } else {
         Err("expected postfix non-terminal at top of stack".to_string())
     }
+}
+
+#[allow(unused)]
+fn reduce_unary_operator_unary_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    let maybe_expr = elems.pop();
+    let maybe_oper = elems.pop();
+
+    let node = if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Cast(expr_node))) = maybe_expr {
+        Ok(expr_node)
+    } else {
+        Err("expected non-terminal at top of stack".to_string())
+    }?;
+
+    let new_node = match maybe_oper {
+        Some(TermOrNonTerm::NonTerminal(NonTerminal::UnaryOperator(operator))) => {
+            Ok(ParseTreeNode::AddressOf { node: node })
+        }
+
+        top_of_stack => Err(format!(
+            "expected [unary operator, unary expression] at top of stack.\nfound: {:?}",
+            &top_of_stack
+        )),
+    }?;
+
+    let new_node_ref = state.add_node_mut(new_node);
+    Ok(NonTerminal::Unary(new_node_ref))
 }
 
 #[allow(unused)]
@@ -707,7 +783,16 @@ pub enum NonTerminal<'a> {
     #[production(r"<Postfix>", reduce_unary_expression)]
     #[production(r"Token::PlusPlus <Unary>", reduce_inc_dec_unary_expression)]
     #[production(r"Token::MinusMinus <Unary>", reduce_inc_dec_unary_expression)]
+    #[production(r"<UnaryOperator> <Cast>", reduce_unary_operator_unary_expression)]
     Unary(NodeRef<'a>),
+
+    #[production(r"Token::Ampersand", reduce_unary_operator)]
+    #[production(r"Token::Star", reduce_unary_operator)]
+    #[production(r"Token::Plus", reduce_unary_operator)]
+    #[production(r"Token::Minus", reduce_unary_operator)]
+    #[production(r"Token::Tilde", reduce_unary_operator)]
+    #[production(r"Token::Bang", reduce_unary_operator)]
+    UnaryOperator(Token<'a>),
 
     #[production(r"<Primary>", reduce_primary_to_postfix_expression)]
     #[production(
@@ -764,10 +849,15 @@ impl<'a> NonTerminalRepresentable for NonTerminal<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseTreeNode<'a> {
+    AddressOf {
+        node: NodeRef<'a>,
+    },
     // ++<expression>
     PreIncrement(NodeRef<'a>),
     // --<expression>
     PreDecrement(NodeRef<'a>),
+
+    UnaryOperator(Token<'a>),
 
     // <expr>[<index expr>]
     Subscript {
@@ -848,6 +938,13 @@ mod tests {
         assert_node_at_index_is_generated_from!("++5", 1, ParseTreeNode::PreIncrement { .. });
         // pre-decrement
         assert_node_at_index_is_generated_from!("--5", 1, ParseTreeNode::PreDecrement { .. });
+    }
+
+    #[test]
+    #[ignore = "test"]
+    fn should_parse_unary_operator_expression() {
+        // unary
+        assert_node_at_index_is_generated_from!("&5", 1, ParseTreeNode::AddressOf { .. });
     }
 
     #[test]
@@ -968,7 +1065,7 @@ mod tests {
 
     #[test]
     fn should_retain_expected_parse_tree_component_sizes() {
-        assert_eq!(std::mem::size_of::<NonTerminal>(), 16);
+        assert_eq!(std::mem::size_of::<NonTerminal>(), 72);
         assert_eq!(std::mem::size_of::<ParseTreeNode>(), 88);
     }
 }
