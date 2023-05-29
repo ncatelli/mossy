@@ -938,12 +938,8 @@ mod tests {
         assert_node_at_index_is_generated_from!("++5", 1, ParseTreeNode::PreIncrement { .. });
         // pre-decrement
         assert_node_at_index_is_generated_from!("--5", 1, ParseTreeNode::PreDecrement { .. });
-    }
 
-    #[test]
-    #[ignore = "test"]
-    fn should_parse_unary_operator_expression() {
-        // unary
+        // address of
         assert_node_at_index_is_generated_from!("&5", 1, ParseTreeNode::AddressOf { .. });
     }
 
