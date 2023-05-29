@@ -465,7 +465,7 @@ fn reduce_unary_operator_unary_expression<'a>(
 
     let new_node = match maybe_oper {
         Some(TermOrNonTerm::NonTerminal(NonTerminal::UnaryOperator(operator))) => {
-            Ok(ParseTreeNode::AddressOf { node: node })
+            Ok(ParseTreeNode::AddressOf { node })
         }
 
         top_of_stack => Err(format!(
