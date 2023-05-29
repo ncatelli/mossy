@@ -546,6 +546,53 @@ fn reduce_multiplicative_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
+    let maybe_cast_rhs = elems.pop();
+    let maybe_oper = elems.pop();
+    let maybe_lhs = elems.pop();
+
+    let rhs = if let Some(TerminalOrNonTerminal::NonTerminal(NonTerminal::Cast(node_ref))) =
+        maybe_cast_rhs
+    {
+        Ok(node_ref)
+    } else {
+        Err("expected cast non-terminal at top of stack".to_string())
+    }?;
+
+    // unpack the lhs .
+    let lhs = if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Multiplicative(node_ref))) =
+        maybe_lhs
+    {
+        Ok(node_ref)
+    } else {
+        Err("expected multiplicative non-terminal on lhs, 3rd from top of stack".to_string())
+    }?;
+
+    let oper_token_kind =
+        if let Some(TerminalOrNonTerminal::Terminal(Token { kind, .. })) = maybe_oper {
+            Ok(kind)
+        } else {
+            Err("expected terminal 2nd from top of stack".to_string())
+        }?;
+
+    let new_node = match oper_token_kind {
+        TokenKind::Star => Ok(ParseTreeNode::Multiply { lhs, rhs }),
+        TokenKind::Slash => Ok(ParseTreeNode::Divide { lhs, rhs }),
+        TokenKind::PercentSign => Ok(ParseTreeNode::Modulo { lhs, rhs }),
+        _ => Err(format!(
+            "invalid operator for binary multiply expr: {:?}",
+            oper_token_kind
+        )),
+    }?;
+
+    let new_node_ref = state.add_node_mut(new_node);
+    Ok(NonTerminal::Postfix(new_node_ref))
+}
+
+#[allow(unused)]
+fn reduce_cast_to_multiplicative_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
     if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Cast(node_ref))) = elems.pop() {
         Ok(NonTerminal::Multiplicative(node_ref))
     } else {
@@ -787,10 +834,25 @@ pub enum NonTerminal<'a> {
     #[production(r"<Multiplicative>", reduce_additive_expression)]
     Additive(NodeRef<'a>),
 
-    #[production(r"<Cast>", reduce_multiplicative_expression)]
+    #[production(r"<Cast>", reduce_cast_to_multiplicative_expression)]
+    #[production(
+        r"<Multiplicative> Token::Star <Cast>",
+        reduce_multiplicative_expression
+    )]
+    #[production(
+        r"<Multiplicative> Token::Slash <Cast>",
+        reduce_multiplicative_expression
+    )]
+    #[production(
+        r"<Multiplicative> Token::PercentSign <Cast>",
+        reduce_multiplicative_expression
+    )]
     Multiplicative(NodeRef<'a>),
 
     #[production(r"<Unary>", reduce_cast_expression)]
+    /* TODO: Implement TypeName for cast expression.
+    #[production(r"Token::LeftParen <TypeName> Token::RightParen", reduce_argument_expression_list_expanded_expression)]
+    */
     Cast(NodeRef<'a>),
 
     #[production(r"<Postfix>", reduce_unary_expression)]
@@ -862,62 +924,78 @@ impl<'a> NonTerminalRepresentable for NonTerminal<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseTreeNode<'a> {
-    // ++<expression>
+    /// <expression> * <expression>
+    Multiply {
+        lhs: NodeRef<'a>,
+        rhs: NodeRef<'a>,
+    },
+    /// <expression> / <expression>
+    Divide {
+        lhs: NodeRef<'a>,
+        rhs: NodeRef<'a>,
+    },
+    /// <expression> % <expression>
+    Modulo {
+        lhs: NodeRef<'a>,
+        rhs: NodeRef<'a>,
+    },
+
+    /// ++<expression>
     PreIncrement(NodeRef<'a>),
-    // --<expression>
+    /// --<expression>
     PreDecrement(NodeRef<'a>),
-    // &<expression>
+    /// &<expression>
     AddressOf {
         node: NodeRef<'a>,
     },
-    // *<expression>
+    /// *<expression>
     Indirection {
         node: NodeRef<'a>,
     },
-    // +<expression>
+    /// +<expression>
     UnaryPositive {
         node: NodeRef<'a>,
     },
-    // -<expression>
+    /// -<expression>
     UnaryNegative {
         node: NodeRef<'a>,
     },
-    // ~<expression>
+    /// ~<expression>
     OnesComplement {
         node: NodeRef<'a>,
     },
-    // !<expression>
+    /// !<expression>
     LogicalNegation {
         node: NodeRef<'a>,
     },
 
     UnaryOperator(Token<'a>),
 
-    // <expr>[<index expr>]
+    /// <expr>[<index expr>]
     Subscript {
         expr: NodeRef<'a>,
         subscript_expr: NodeRef<'a>,
     },
-    // <expr>()
+    /// <expr>()
     Call {
         expr: NodeRef<'a>,
         argument_expression_list: Option<NodeRef<'a>>,
     },
-    // <struct expr>.<ident>
+    /// <struct expr>.<ident>
     StructureMember {
         struct_expr: NodeRef<'a>,
         member_ident: Token<'a>,
     },
 
-    // <struct expr>-><ident>
+    /// <struct expr>-><ident>
     StructurePointerMember {
         struct_expr: NodeRef<'a>,
         member_ident: Token<'a>,
     },
 
-    // <expression>++
+    /// <expression>++
     PostIncrement(NodeRef<'a>),
-    // <expression>--
+    /// <expression>--
     PostDecrement(NodeRef<'a>),
     Grouping(NodeRef<'a>),
     Identifer(Token<'a>),
@@ -964,6 +1042,16 @@ mod tests {
 
             assert!(matches!(node, $expected_node_kind), "{:?}", node);
         };
+    }
+
+    #[test]
+    fn should_parse_multiplication_expression() {
+        // multiply
+        assert_node_at_index_is_generated_from!("1 * 2", 2, ParseTreeNode::Multiply { .. });
+        // divide
+        assert_node_at_index_is_generated_from!("10 / 2", 2, ParseTreeNode::Divide { .. });
+        // modulo
+        assert_node_at_index_is_generated_from!("10 % 3", 2, ParseTreeNode::Modulo { .. });
     }
 
     #[test]
