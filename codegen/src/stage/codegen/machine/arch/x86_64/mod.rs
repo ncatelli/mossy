@@ -318,7 +318,6 @@ fn codegen_function_preamble(
 ) -> Vec<String> {
     let param_cnt = allocator.parameter_stack_offsets.len();
     let src_to_dst_param_mapping = (0..param_cnt)
-        .into_iter()
         .flat_map(|slot| {
             let src_reg = allocator.parameter_passing_target_for_slot(slot);
             allocator

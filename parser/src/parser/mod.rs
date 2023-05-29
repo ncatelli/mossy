@@ -637,7 +637,7 @@ fn string_literal<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], Pri
             } => lit.to_string(),
             _ => "".to_string(),
         })
-        .map(|lit| to_ascii_escaped_string(&lit))
+        .map(to_ascii_escaped_string)
         .map(|lit| lit.into_bytes())
         .map(ast::Primary::Str)
 }
@@ -751,11 +751,9 @@ fn type_declarator<'a>() -> impl parcel::Parser<'a, &'a [(usize, Token<'a>)], Ty
     )
     .map(|(ty, pointer_depth)| {
         let nested_pointers = pointer_depth.len() - 1;
-        (0..nested_pointers)
-            .into_iter()
-            .fold(Type::Pointer(Box::new(ty)), |acc, _| {
-                Type::Pointer(Box::new(acc))
-            })
+        (0..nested_pointers).fold(Type::Pointer(Box::new(ty)), |acc, _| {
+            Type::Pointer(Box::new(acc))
+        })
     })
     .or(type_specifier)
 }

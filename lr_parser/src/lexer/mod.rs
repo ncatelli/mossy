@@ -322,7 +322,7 @@ impl<'a> Token<'a> {
     }
 
     /// Returns the token's kind.
-    pub fn to_kind(&self) -> TokenKind {
+    pub fn as_kind(&self) -> TokenKind {
         self.kind
     }
 
@@ -345,7 +345,7 @@ impl<'a> TerminalRepresentable for Token<'a> {
     type Repr = TokenKind;
 
     fn to_variant_repr(&self) -> Self::Repr {
-        self.to_kind()
+        self.as_kind()
     }
 
     fn eof() -> Self::Repr {
@@ -1084,7 +1084,7 @@ fn stack_eval_to_token<'a>(
                 data,
             })],
             Some((cur, c)),
-        ) if c.is_digit(16) && data.map(|s| s.starts_with("0x")).unwrap_or(false) => {
+        ) if c.is_ascii_hexdigit() && data.map(|s| s.starts_with("0x")).unwrap_or(false) => {
             let start = span.start.index;
             let end = cur.index + 1;
             let data = &source[start..end];
@@ -1171,7 +1171,7 @@ fn stack_eval_to_token<'a>(
             )
         }
         // dec integer
-        ([TokenOrLexeme::Lexeme(cur, c)], _) if c.is_digit(10) => {
+        ([TokenOrLexeme::Lexeme(cur, c)], _) if c.is_ascii_digit() => {
             let start = cur.index;
             let end = start + 1;
             let data = &source[start..end];
@@ -1192,7 +1192,7 @@ fn stack_eval_to_token<'a>(
                 ..
             })],
             Some((cur, c)),
-        ) if c.is_digit(10) => {
+        ) if c.is_ascii_digit() => {
             let start = span.start.index;
             let end = cur.index + 1;
             let data = &source[start..end];
@@ -1257,7 +1257,7 @@ fn stack_eval_to_token<'a>(
                 ..
             })],
             Some((cur, c)),
-        ) if c.is_digit(10) => {
+        ) if c.is_ascii_digit() => {
             let start = span.start.index;
             let end = cur.index + 1;
             let data = &source[start..end];

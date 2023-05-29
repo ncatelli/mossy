@@ -126,7 +126,7 @@ where
 }
 
 fn main() -> RuntimeResult<()> {
-    let raw_args: Vec<String> = env::args().into_iter().collect::<Vec<String>>();
+    let raw_args: Vec<String> = env::args().collect::<Vec<String>>();
     let args = raw_args.iter().map(|a| a.as_str()).collect::<Vec<&str>>();
 
     // Flag Definitions
@@ -173,7 +173,7 @@ fn main() -> RuntimeResult<()> {
                             let asm_out_file = Path::new(&file).with_extension("s");
                             write_dest_file(&asm_out_file, asm.as_bytes()).map(|_| asm_out_file)
                         })
-                        .and_then(|asm_src| assemble(&asm_src))
+                        .and_then(assemble)
                 })
                 .collect::<Result<_, RuntimeError>>()?;
 
@@ -190,7 +190,7 @@ fn main() -> RuntimeResult<()> {
                 .ok_or(RuntimeError::FileUnreadable)?;
 
             // link all binaries
-            link(&output_file, &obj_files)
+            link(output_file, &obj_files)
         });
 
     cmd.evaluate(&args[..])

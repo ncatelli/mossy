@@ -56,7 +56,7 @@ fn expect_str<'a>(
 fn expect_character<'a>(
     expected: char,
 ) -> impl Parser<'a, &'a [(usize, SpanEnumaratedChar)], SpanEnumaratedChar> {
-    move |input: &'a [(usize, SpanEnumaratedChar)]| match input.get(0) {
+    move |input: &'a [(usize, SpanEnumaratedChar)]| match input.first() {
         Some(&(pos, next)) if next.1 == expected => Ok(MatchStatus::Match {
             span: pos..pos + 1,
             remainder: &input[1..],
@@ -67,7 +67,7 @@ fn expect_character<'a>(
 }
 
 fn any_character<'a>() -> impl Parser<'a, &'a [(usize, SpanEnumaratedChar)], SpanEnumaratedChar> {
-    move |input: &'a [(usize, SpanEnumaratedChar)]| match input.get(0) {
+    move |input: &'a [(usize, SpanEnumaratedChar)]| match input.first() {
         Some(&(pos, next)) => Ok(MatchStatus::Match {
             span: pos..pos + 1,
             remainder: &input[1..],

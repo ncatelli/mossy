@@ -588,8 +588,8 @@ let ty = ast::Type::from(ty);
                 Ok(ast::TypedExprNode::Primary(
                     ast::Type::Integer(sign, width),
                     ast::Primary::Integer {
-                        sign: sign.into(),
-                        width: width.into(),
+                        sign,
+                        width,
                         value,
                     },
                 ))
@@ -666,8 +666,7 @@ let ty = ast::Type::from(ty);
                                             )),
                                         }
                                     })
-                                    .collect::<Result<Vec<_>, _>>()
-                                    .map_err(|e| e)?;
+                                    .collect::<Result<Vec<_>, _>>()?;
 
                                 let adjusted_args = adjusted_arg_types.into_iter().zip(args.into_iter()).map(|(expr_ty, expr)| {
                                     ast::TypedExprNode::Grouping(expr_ty, Box::new(expr))
