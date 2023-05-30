@@ -558,7 +558,7 @@ fn reduce_multiplicative_expression<'a>(
         Err("expected cast non-terminal at top of stack".to_string())
     }?;
 
-    // unpack the lhs .
+    // unpack the lhs.
     let lhs = if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Multiplicative(node_ref))) =
         maybe_lhs
     {
@@ -579,7 +579,7 @@ fn reduce_multiplicative_expression<'a>(
         TokenKind::Slash => Ok(ParseTreeNode::Divide { lhs, rhs }),
         TokenKind::PercentSign => Ok(ParseTreeNode::Modulo { lhs, rhs }),
         _ => Err(format!(
-            "invalid operator for binary multiply expr: {:?}",
+            "invalid operator for binary multiplicative expr: {:?}",
             oper_token_kind
         )),
     }?;
@@ -601,7 +601,7 @@ fn reduce_cast_to_multiplicative_expression<'a>(
 }
 
 #[allow(unused)]
-fn reduce_additive_expression<'a>(
+fn reduce_multiplicative_to_additive_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
@@ -610,6 +610,51 @@ fn reduce_additive_expression<'a>(
     } else {
         Err("expected multiplicative non-terminal at top of stack".to_string())
     }
+}
+
+#[allow(unused)]
+fn reduce_additive_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    let maybe_cast_rhs = elems.pop();
+    let maybe_oper = elems.pop();
+    let maybe_lhs = elems.pop();
+
+    let rhs =
+        if let Some(TerminalOrNonTerminal::NonTerminal(NonTerminal::Multiplicative(node_ref))) =
+            maybe_cast_rhs
+        {
+            Ok(node_ref)
+        } else {
+            Err("expected multiplicative non-terminal at top of stack".to_string())
+        }?;
+
+    // unpack the lhs.
+    let lhs = if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Additive(node_ref))) = maybe_lhs {
+        Ok(node_ref)
+    } else {
+        Err("expected additive non-terminal on lhs, 3rd from top of stack".to_string())
+    }?;
+
+    let oper_token_kind =
+        if let Some(TerminalOrNonTerminal::Terminal(Token { kind, .. })) = maybe_oper {
+            Ok(kind)
+        } else {
+            Err("expected terminal 2nd from top of stack".to_string())
+        }?;
+
+    let new_node = match oper_token_kind {
+        TokenKind::Plus => Ok(ParseTreeNode::Add { lhs, rhs }),
+        TokenKind::Minus => Ok(ParseTreeNode::Subtract { lhs, rhs }),
+        _ => Err(format!(
+            "invalid operator for binary additive expr: {:?}",
+            oper_token_kind
+        )),
+    }?;
+
+    let new_node_ref = state.add_node_mut(new_node);
+    Ok(NonTerminal::Postfix(new_node_ref))
 }
 
 #[allow(unused)]
@@ -831,7 +876,12 @@ pub enum NonTerminal<'a> {
     #[production(r"<Additive>", reduce_shift_expression)]
     Shift(NodeRef<'a>),
 
-    #[production(r"<Multiplicative>", reduce_additive_expression)]
+    #[production(r"<Multiplicative>", reduce_multiplicative_to_additive_expression)]
+    #[production(r"<Additive> Token::Plus <Multiplicative>", reduce_additive_expression)]
+    #[production(
+        r"<Additive> Token::Minus <Multiplicative>",
+        reduce_additive_expression
+    )]
     Additive(NodeRef<'a>),
 
     #[production(r"<Cast>", reduce_cast_to_multiplicative_expression)]
@@ -924,6 +974,17 @@ impl<'a> NonTerminalRepresentable for NonTerminal<'a> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseTreeNode<'a> {
+    /// <expression> + <expression>
+    Add {
+        lhs: NodeRef<'a>,
+        rhs: NodeRef<'a>,
+    },
+    /// <expression> - <expression>
+    Subtract {
+        lhs: NodeRef<'a>,
+        rhs: NodeRef<'a>,
+    },
+
     /// <expression> * <expression>
     Multiply {
         lhs: NodeRef<'a>,
@@ -1042,6 +1103,14 @@ mod tests {
 
             assert!(matches!(node, $expected_node_kind), "{:?}", node);
         };
+    }
+
+    #[test]
+    fn should_parse_additive_expression() {
+        // addition
+        assert_node_at_index_is_generated_from!("1 + 2", 2, ParseTreeNode::Add { .. });
+        // subtraction
+        assert_node_at_index_is_generated_from!("10 - 2", 2, ParseTreeNode::Subtract { .. });
     }
 
     #[test]
