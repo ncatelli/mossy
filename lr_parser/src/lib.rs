@@ -1126,21 +1126,21 @@ mod tests {
     #[test]
     fn should_parse_unary_expression() {
         // pre-increment
-        assert_node_at_index_is_generated_from!("++5", 1, ParseTreeNode::PreIncrement { .. });
+        assert_node_at_index_is_generated_from!("++1", 1, ParseTreeNode::PreIncrement { .. });
         // pre-decrement
-        assert_node_at_index_is_generated_from!("--5", 1, ParseTreeNode::PreDecrement { .. });
+        assert_node_at_index_is_generated_from!("--2", 1, ParseTreeNode::PreDecrement { .. });
         // address of
-        assert_node_at_index_is_generated_from!("&5", 1, ParseTreeNode::AddressOf { .. });
+        assert_node_at_index_is_generated_from!("&3", 1, ParseTreeNode::AddressOf { .. });
         // indirection
-        assert_node_at_index_is_generated_from!("*5", 1, ParseTreeNode::Indirection { .. });
+        assert_node_at_index_is_generated_from!("*4", 1, ParseTreeNode::Indirection { .. });
         // unary arithmetic positive
         assert_node_at_index_is_generated_from!("+5", 1, ParseTreeNode::UnaryPositive { .. });
         // unary arithmetic negative
-        assert_node_at_index_is_generated_from!("-5", 1, ParseTreeNode::UnaryNegative { .. });
+        assert_node_at_index_is_generated_from!("-6", 1, ParseTreeNode::UnaryNegative { .. });
         // one's complement
-        assert_node_at_index_is_generated_from!("~5", 1, ParseTreeNode::OnesComplement { .. });
+        assert_node_at_index_is_generated_from!("~7", 1, ParseTreeNode::OnesComplement { .. });
         // logical negation
-        assert_node_at_index_is_generated_from!("!5", 1, ParseTreeNode::LogicalNegation { .. });
+        assert_node_at_index_is_generated_from!("!8", 1, ParseTreeNode::LogicalNegation { .. });
     }
 
     #[test]
