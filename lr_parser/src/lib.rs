@@ -158,26 +158,31 @@ fn reduce_inc_dec_postfix_expression<'a>(
     // ensuring the stack depth is atleast 2.
     let oper = maybe_oper.unwrap();
 
-    let new_node = match oper {
+    let op = match oper {
         TermOrNonTerm::Terminal(
             tok @ Token {
                 kind: TokenKind::PlusPlus,
                 ..
             },
-        ) => Ok(ParseTreeNode::PostIncrement(postfix_expr_node_ref)),
+        ) => Ok(UnaryOp::PostIncrement),
         TermOrNonTerm::Terminal(
             tok @ Token {
                 kind: TokenKind::MinusMinus,
                 ..
             },
-        ) => Ok(ParseTreeNode::PostDecrement(postfix_expr_node_ref)),
+        ) => Ok(UnaryOp::PostDecrement),
         top_of_stack => Err(format!(
             "expected [postfix expression, ++/--] at top of stack.\nfound: {:?}",
             &top_of_stack
         )),
     }?;
 
+    let new_node = ParseTreeNode::UnaryExpr {
+        expr: postfix_expr_node_ref,
+        op,
+    };
     let new_node_ref = state.add_node_mut(new_node);
+
     Ok(NonTerminal::Postfix(new_node_ref))
 }
 
@@ -473,13 +478,13 @@ fn reduce_unary_operator_unary_expression<'a>(
         )),
     }?;
 
-    let new_node = match operator_token_kind {
-        TokenKind::Ampersand => Ok(ParseTreeNode::AddressOf { node }),
-        TokenKind::Star => Ok(ParseTreeNode::Indirection { node }),
-        TokenKind::Plus => Ok(ParseTreeNode::UnaryPositive { node }),
-        TokenKind::Minus => Ok(ParseTreeNode::UnaryNegative { node }),
-        TokenKind::Tilde => Ok(ParseTreeNode::OnesComplement { node }),
-        TokenKind::Bang => Ok(ParseTreeNode::LogicalNegation { node }),
+    let op = match operator_token_kind {
+        TokenKind::Ampersand => Ok(UnaryOp::AddressOf),
+        TokenKind::Star => Ok(UnaryOp::Indirection),
+        TokenKind::Plus => Ok(UnaryOp::UnaryPositive),
+        TokenKind::Minus => Ok(UnaryOp::UnaryNegative),
+        TokenKind::Tilde => Ok(UnaryOp::OnesComplement),
+        TokenKind::Bang => Ok(UnaryOp::LogicalNegation),
 
         top_of_stack => Err(format!(
             "expected [unary operator, unary expression] at top of stack.\nfound: {:?}",
@@ -487,7 +492,9 @@ fn reduce_unary_operator_unary_expression<'a>(
         )),
     }?;
 
+    let new_node = ParseTreeNode::UnaryExpr { expr: node, op };
     let new_node_ref = state.add_node_mut(new_node);
+
     Ok(NonTerminal::Unary(new_node_ref))
 }
 
@@ -506,26 +513,31 @@ fn reduce_inc_dec_unary_expression<'a>(
             Err("expected nonterminal at top of stack".to_string())
         }?;
 
-    let new_node = match maybe_oper {
+    let op = match maybe_oper {
         Some(TermOrNonTerm::Terminal(
             tok @ Token {
                 kind: TokenKind::PlusPlus,
                 ..
             },
-        )) => Ok(ParseTreeNode::PreIncrement(expr_node)),
+        )) => Ok(UnaryOp::PreIncrement),
         Some(TermOrNonTerm::Terminal(
             tok @ Token {
                 kind: TokenKind::MinusMinus,
                 ..
             },
-        )) => Ok(ParseTreeNode::PreDecrement(expr_node)),
+        )) => Ok(UnaryOp::PreDecrement),
         top_of_stack => Err(format!(
             "expected [++/--, unary expression] at top of stack.\nfound: {:?}",
             &top_of_stack
         )),
     }?;
 
+    let new_node = ParseTreeNode::UnaryExpr {
+        expr: expr_node,
+        op,
+    };
     let new_node_ref = state.add_node_mut(new_node);
+
     Ok(NonTerminal::Unary(new_node_ref))
 }
 
@@ -574,18 +586,20 @@ fn reduce_multiplicative_expression<'a>(
             Err("expected terminal 2nd from top of stack".to_string())
         }?;
 
-    let new_node = match oper_token_kind {
-        TokenKind::Star => Ok(ParseTreeNode::Multiply { lhs, rhs }),
-        TokenKind::Slash => Ok(ParseTreeNode::Divide { lhs, rhs }),
-        TokenKind::PercentSign => Ok(ParseTreeNode::Modulo { lhs, rhs }),
+    let op = match oper_token_kind {
+        TokenKind::Star => Ok(BinaryOp::Multiply),
+        TokenKind::Slash => Ok(BinaryOp::Divide),
+        TokenKind::PercentSign => Ok(BinaryOp::Modulo),
         _ => Err(format!(
             "invalid operator for binary multiplicative expr: {:?}",
             oper_token_kind
         )),
     }?;
 
+    let new_node = ParseTreeNode::BinaryExpr { lhs, op, rhs };
     let new_node_ref = state.add_node_mut(new_node);
-    Ok(NonTerminal::Postfix(new_node_ref))
+
+    Ok(NonTerminal::Multiplicative(new_node_ref))
 }
 
 #[allow(unused)]
@@ -644,17 +658,19 @@ fn reduce_additive_expression<'a>(
             Err("expected terminal 2nd from top of stack".to_string())
         }?;
 
-    let new_node = match oper_token_kind {
-        TokenKind::Plus => Ok(ParseTreeNode::Add { lhs, rhs }),
-        TokenKind::Minus => Ok(ParseTreeNode::Subtract { lhs, rhs }),
+    let op = match oper_token_kind {
+        TokenKind::Plus => Ok(BinaryOp::Add),
+        TokenKind::Minus => Ok(BinaryOp::Subtract),
         _ => Err(format!(
             "invalid operator for binary additive expr: {:?}",
             oper_token_kind
         )),
     }?;
 
+    let new_node = ParseTreeNode::BinaryExpr { lhs, op, rhs };
     let new_node_ref = state.add_node_mut(new_node);
-    Ok(NonTerminal::Postfix(new_node_ref))
+
+    Ok(NonTerminal::Additive(new_node_ref))
 }
 
 #[allow(unused)]
@@ -973,61 +989,39 @@ impl<'a> NonTerminalRepresentable for NonTerminal<'a> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryOp {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Modulo,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOp {
+    PreIncrement,
+    PreDecrement,
+    AddressOf,
+    Indirection,
+    UnaryPositive,
+    UnaryNegative,
+    OnesComplement,
+    LogicalNegation,
+    PostIncrement,
+    PostDecrement,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParseTreeNode<'a> {
-    /// <expression> + <expression>
-    Add {
+    BinaryExpr {
         lhs: NodeRef<'a>,
-        rhs: NodeRef<'a>,
-    },
-    /// <expression> - <expression>
-    Subtract {
-        lhs: NodeRef<'a>,
+        op: BinaryOp,
         rhs: NodeRef<'a>,
     },
 
-    /// <expression> * <expression>
-    Multiply {
-        lhs: NodeRef<'a>,
-        rhs: NodeRef<'a>,
-    },
-    /// <expression> / <expression>
-    Divide {
-        lhs: NodeRef<'a>,
-        rhs: NodeRef<'a>,
-    },
-    /// <expression> % <expression>
-    Modulo {
-        lhs: NodeRef<'a>,
-        rhs: NodeRef<'a>,
-    },
-
-    /// ++<expression>
-    PreIncrement(NodeRef<'a>),
-    /// --<expression>
-    PreDecrement(NodeRef<'a>),
-    /// &<expression>
-    AddressOf {
-        node: NodeRef<'a>,
-    },
-    /// *<expression>
-    Indirection {
-        node: NodeRef<'a>,
-    },
-    /// +<expression>
-    UnaryPositive {
-        node: NodeRef<'a>,
-    },
-    /// -<expression>
-    UnaryNegative {
-        node: NodeRef<'a>,
-    },
-    /// ~<expression>
-    OnesComplement {
-        node: NodeRef<'a>,
-    },
-    /// !<expression>
-    LogicalNegation {
-        node: NodeRef<'a>,
+    UnaryExpr {
+        expr: NodeRef<'a>,
+        op: UnaryOp,
     },
 
     UnaryOperator(Token<'a>),
@@ -1054,13 +1048,16 @@ pub enum ParseTreeNode<'a> {
         member_ident: Token<'a>,
     },
 
-    /// <expression>++
-    PostIncrement(NodeRef<'a>),
-    /// <expression>--
-    PostDecrement(NodeRef<'a>),
+    /// ( <expr> )
     Grouping(NodeRef<'a>),
+
+    /// test
     Identifer(Token<'a>),
+    /// `"test"`
     StringLiteral(Token<'a>),
+    /// `5`
+    /// `5.0`
+    ///`'c'`
     Constant(Token<'a>),
 }
 
@@ -1108,47 +1105,152 @@ mod tests {
     #[test]
     fn should_parse_additive_expression() {
         // addition
-        assert_node_at_index_is_generated_from!("1 + 2", 2, ParseTreeNode::Add { .. });
+        assert_node_at_index_is_generated_from!(
+            "1 + 2",
+            2,
+            ParseTreeNode::BinaryExpr {
+                op: BinaryOp::Add,
+                ..
+            }
+        );
         // subtraction
-        assert_node_at_index_is_generated_from!("10 - 2", 2, ParseTreeNode::Subtract { .. });
+        assert_node_at_index_is_generated_from!(
+            "10 - 2",
+            2,
+            ParseTreeNode::BinaryExpr {
+                op: BinaryOp::Subtract,
+                ..
+            }
+        );
     }
 
     #[test]
     fn should_parse_multiplication_expression() {
         // multiply
-        assert_node_at_index_is_generated_from!("1 * 2", 2, ParseTreeNode::Multiply { .. });
+        assert_node_at_index_is_generated_from!(
+            "1 * 2",
+            2,
+            ParseTreeNode::BinaryExpr {
+                op: BinaryOp::Multiply,
+                ..
+            }
+        );
         // divide
-        assert_node_at_index_is_generated_from!("10 / 2", 2, ParseTreeNode::Divide { .. });
+        assert_node_at_index_is_generated_from!(
+            "10 / 2",
+            2,
+            ParseTreeNode::BinaryExpr {
+                op: BinaryOp::Divide,
+                ..
+            }
+        );
         // modulo
-        assert_node_at_index_is_generated_from!("10 % 3", 2, ParseTreeNode::Modulo { .. });
+        assert_node_at_index_is_generated_from!(
+            "10 % 3",
+            2,
+            ParseTreeNode::BinaryExpr {
+                op: BinaryOp::Modulo,
+                ..
+            }
+        );
     }
 
     #[test]
     fn should_parse_unary_expression() {
         // pre-increment
-        assert_node_at_index_is_generated_from!("++1", 1, ParseTreeNode::PreIncrement { .. });
+        assert_node_at_index_is_generated_from!(
+            "++1",
+            1,
+            ParseTreeNode::UnaryExpr {
+                op: UnaryOp::PreIncrement,
+                ..
+            }
+        );
         // pre-decrement
-        assert_node_at_index_is_generated_from!("--2", 1, ParseTreeNode::PreDecrement { .. });
+        assert_node_at_index_is_generated_from!(
+            "--2",
+            1,
+            ParseTreeNode::UnaryExpr {
+                op: UnaryOp::PreDecrement,
+                ..
+            }
+        );
         // address of
-        assert_node_at_index_is_generated_from!("&3", 1, ParseTreeNode::AddressOf { .. });
+        assert_node_at_index_is_generated_from!(
+            "&3",
+            1,
+            ParseTreeNode::UnaryExpr {
+                op: UnaryOp::AddressOf,
+                ..
+            }
+        );
         // indirection
-        assert_node_at_index_is_generated_from!("*4", 1, ParseTreeNode::Indirection { .. });
+        assert_node_at_index_is_generated_from!(
+            "*4",
+            1,
+            ParseTreeNode::UnaryExpr {
+                op: UnaryOp::Indirection,
+                ..
+            }
+        );
         // unary arithmetic positive
-        assert_node_at_index_is_generated_from!("+5", 1, ParseTreeNode::UnaryPositive { .. });
+        assert_node_at_index_is_generated_from!(
+            "+5",
+            1,
+            ParseTreeNode::UnaryExpr {
+                op: UnaryOp::UnaryPositive,
+                ..
+            }
+        );
         // unary arithmetic negative
-        assert_node_at_index_is_generated_from!("-6", 1, ParseTreeNode::UnaryNegative { .. });
+        assert_node_at_index_is_generated_from!(
+            "-6",
+            1,
+            ParseTreeNode::UnaryExpr {
+                op: UnaryOp::UnaryNegative,
+                ..
+            }
+        );
         // one's complement
-        assert_node_at_index_is_generated_from!("~7", 1, ParseTreeNode::OnesComplement { .. });
+        assert_node_at_index_is_generated_from!(
+            "~7",
+            1,
+            ParseTreeNode::UnaryExpr {
+                op: UnaryOp::OnesComplement,
+                ..
+            }
+        );
         // logical negation
-        assert_node_at_index_is_generated_from!("!8", 1, ParseTreeNode::LogicalNegation { .. });
+        assert_node_at_index_is_generated_from!(
+            "!8",
+            1,
+            ParseTreeNode::UnaryExpr {
+                op: UnaryOp::LogicalNegation,
+                ..
+            }
+        );
     }
 
     #[test]
     fn should_parse_postfix_expression() {
         // post increment
-        assert_node_at_index_is_generated_from!("5++", 1, ParseTreeNode::PostIncrement { .. });
+        assert_node_at_index_is_generated_from!(
+            "5++",
+            1,
+            ParseTreeNode::UnaryExpr {
+                op: UnaryOp::PostIncrement,
+                ..
+            }
+        );
         // post decrement
-        assert_node_at_index_is_generated_from!("5--", 1, ParseTreeNode::PostDecrement { .. });
+        assert_node_at_index_is_generated_from!(
+            "5--",
+            1,
+            ParseTreeNode::UnaryExpr {
+                op: UnaryOp::PostDecrement,
+                ..
+            }
+        );
 
         // struct member of
         assert_node_at_index_is_generated_from!(
