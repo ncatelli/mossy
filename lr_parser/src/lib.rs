@@ -674,15 +674,61 @@ fn reduce_additive_expression<'a>(
 }
 
 #[allow(unused)]
-fn reduce_shift_expression<'a>(
+fn reduce_additive_to_shift_expression<'a>(
     state: &mut ParseCtx<'a>,
     elems: &mut Vec<TermOrNonTerm<'a>>,
 ) -> Result<NonTerminal<'a>, String> {
     if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Additive(node_ref))) = elems.pop() {
         Ok(NonTerminal::Shift(node_ref))
     } else {
-        Err("expected aditive non-terminal at top of stack".to_string())
+        Err("expected additive non-terminal at top of stack".to_string())
     }
+}
+
+#[allow(unused)]
+fn reduce_shift_expression<'a>(
+    state: &mut ParseCtx<'a>,
+    elems: &mut Vec<TermOrNonTerm<'a>>,
+) -> Result<NonTerminal<'a>, String> {
+    let maybe_cast_rhs = elems.pop();
+    let maybe_oper = elems.pop();
+    let maybe_lhs = elems.pop();
+
+    let rhs = if let Some(TerminalOrNonTerminal::NonTerminal(NonTerminal::Additive(node_ref))) =
+        maybe_cast_rhs
+    {
+        Ok(node_ref)
+    } else {
+        Err("expected additive non-terminal at top of stack".to_string())
+    }?;
+
+    // unpack the lhs.
+    let lhs = if let Some(TermOrNonTerm::NonTerminal(NonTerminal::Shift(node_ref))) = maybe_lhs {
+        Ok(node_ref)
+    } else {
+        Err("expected additive non-terminal on lhs, 3rd from top of stack".to_string())
+    }?;
+
+    let oper_token_kind =
+        if let Some(TerminalOrNonTerminal::Terminal(Token { kind, .. })) = maybe_oper {
+            Ok(kind)
+        } else {
+            Err("expected terminal 2nd from top of stack".to_string())
+        }?;
+
+    let op = match oper_token_kind {
+        TokenKind::LeftShift => Ok(BinaryOp::LeftShift),
+        TokenKind::RightShift => Ok(BinaryOp::RightShift),
+        _ => Err(format!(
+            "invalid operator for binary additive expr: {:?}",
+            oper_token_kind
+        )),
+    }?;
+
+    let new_node = ParseTreeNode::BinaryExpr { lhs, op, rhs };
+    let new_node_ref = state.add_node_mut(new_node);
+
+    Ok(NonTerminal::Shift(new_node_ref))
 }
 
 #[allow(unused)]
@@ -889,7 +935,9 @@ pub enum NonTerminal<'a> {
     #[production(r"<Shift>", reduce_relational_expression)]
     Relational(NodeRef<'a>),
 
-    #[production(r"<Additive>", reduce_shift_expression)]
+    #[production(r"<Additive>", reduce_additive_to_shift_expression)]
+    #[production(r"<Shift> Token::LeftShift <Additive>", reduce_shift_expression)]
+    #[production(r"<Shift> Token::RightShift <Additive>", reduce_shift_expression)]
     Shift(NodeRef<'a>),
 
     #[production(r"<Multiplicative>", reduce_multiplicative_to_additive_expression)]
@@ -992,9 +1040,13 @@ impl<'a> NonTerminalRepresentable for NonTerminal<'a> {
 pub enum BinaryOp {
     Add,
     Subtract,
+
     Multiply,
     Divide,
     Modulo,
+
+    LeftShift,
+    RightShift,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1100,6 +1152,29 @@ mod tests {
 
             assert!(matches!(node, $expected_node_kind), "{:?}", node);
         };
+    }
+
+    #[test]
+    fn should_parse_shift_expression() {
+        // left shift
+        assert_node_at_index_is_generated_from!(
+            "1 << 2",
+            2,
+            ParseTreeNode::BinaryExpr {
+                op: BinaryOp::LeftShift,
+                ..
+            }
+        );
+
+        // right shift
+        assert_node_at_index_is_generated_from!(
+            "1 >> 2",
+            2,
+            ParseTreeNode::BinaryExpr {
+                op: BinaryOp::RightShift,
+                ..
+            }
+        );
     }
 
     #[test]
