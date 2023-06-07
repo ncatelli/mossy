@@ -5,12 +5,12 @@ version = 3
 [[package]]
 name = "lr-core"
 version = "0.1.0"
-source = "git+https://github.com/ncatelli/lr?branch=main#c9dcb52733eb42f3c909a962c4bc0cc0dd5631aa"
+source = "git+https://github.com/ncatelli/lr?branch=main#5f3638e2b52e60230011cd902d80156bc55a98b1"
 
 [[package]]
 name = "lr-derive"
 version = "0.1.0"
-source = "git+https://github.com/ncatelli/lr?branch=main#c9dcb52733eb42f3c909a962c4bc0cc0dd5631aa"
+source = "git+https://github.com/ncatelli/lr?branch=main#5f3638e2b52e60230011cd902d80156bc55a98b1"
 dependencies = [
  "lr-core",
  "proc-macro2",
